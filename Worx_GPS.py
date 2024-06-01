@@ -4,6 +4,7 @@ import json
 import webbrowser
 import os
 from collections import deque
+from folium.plugins import HeatMapWithTime
 
 # MQTT-Einstellungen
 broker = "192.168.1.117"
@@ -62,9 +63,9 @@ def create_heatmap(data, filename, show_path=False):
     ).add_to(m)
     folium.LayerControl().add_to(m)
 
-    # Heatmap-Layer hinzufügen
-    heatmap_data = [(point["lat"], point["lon"]) for point in data]
-    folium.plugins.HeatMap(heatmap_data, radius=15).add_to(m)
+    # Heatmap-Layer hinzufügen (mit Zeitstempeln für HeatMapWithTime)
+    heatmap_data = [[point["lat"], point["lon"], point["timestamp"]] for point in data]
+    HeatMapWithTime(heatmap_data, radius=15).add_to(m)
 
     # Pfad anzeigen (optional)
     if show_path:
