@@ -1,95 +1,192 @@
 import paho.mqtt.client as mqtt
-import folium
-import json
-import webbrowser
+import time
+import random
+from dotenv import load_dotenv
 import os
-from collections import deque
-from folium.plugins import HeatMapWithTime
+from datetime import datetime, timedelta
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import json
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+# Load environment variables from .env file
+load_dotenv("secrets.env")
+
+# Get MQTT credentials from environment variables after loading
+MQTT_HOST = os.getenv("MQTT_HOST")
+MQTT_PORT = int(os.getenv("MQTT_PORT"))
+MQTT_USER = os.getenv("MQTT_USER")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
 # MQTT-Einstellungen
-broker = "192.168.1.117"
-port = 1883
-topic_gps = "worx/gps"
-topic_status = "worx/status"
-user = "nilsgollub"
-password = "JhiswenP3003!"
+CONTROL_TOPIC = "worx/control"
+GPS_TOPIC = "worx/gps"
+STATUS_TOPIC = "worx/status"
+MAP_FILE = "heatmap.html"
+LAST_10_MOWS_FILE = "last_10_mows.csv"
+PROBLEM_DATA_FILE = "problem_data.csv"
+MOW_HISTORY_FILE = "mow_history.jsonl"  # Datei für einzelne Mähvorgänge
 
-# Grundstücksgrenzen
-lat_bounds = [46.811819, 46.812107]
-lon_bounds = [7.132838, 7.133173]
-map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
+# Grundstücksgrenzen (als Liste von Koordinaten)
+BOUNDARY_COORDS = [(46.812107, 7.132857), (46.812085, 7.133173), (46.811819, 7.133167), (46.811838, 7.132838)]
 
-# Google Maps API Key
-google_maps_api_key = "AIzaSyCeUl8GA9G9XnnbxMgljrc1i1utlz3jm1o"
+# Datenstrukturen
+last_mow_data = []
+problem_data = pd.DataFrame(columns=["Latitude", "Longitude", "Timestamp"])
+all_mows_data = pd.DataFrame(columns=["Latitude", "Longitude", "Timestamp"])
 
-# Dateinamen für Heatmaps
-heatmap_filename = "maehvorgang_heatmap.html"
-heatmap_10_maehvorgang_filename = "10_maehvorgang_heatmap.html"
-problemzonen_heatmap_filename = "problemzonen_heatmap.html"
-
-# GPS-Daten-Speicher
-maehvorgang_data = deque(maxlen=10)
-problemzonen_data = []
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc):
-    print("Verbunden mit MQTT Broker")
-    client.subscribe(topic_gps)
-    client.subscribe(topic_status)
+    print("Verbunden mit MQTT-Broker")
+    client.subscribe(GPS_TOPIC)
+    client.subscribe(STATUS_TOPIC)
+
+    # Lade vorherige Mähdaten beim Verbinden, falls vorhanden
+    if os.path.exists(LAST_10_MOWS_FILE):
+        global all_mows_data
+        all_mows_data = pd.read_csv(LAST_10_MOWS_FILE)
+
 
 def on_message(client, userdata, msg):
-    payload = json.loads(msg.payload.decode())
+    global last_mow_data, problem_data, all_mows_data
 
-    if msg.topic == topic_gps:
-        maehvorgang_data.append(payload)
-        create_heatmap(payload, heatmap_filename, True)
-        create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
-    elif msg.topic == topic_status:
-        problemzonen_data.append(payload)
-        create_heatmap(problemzonen_data, problemzonen_heatmap_filename, False)
+    if msg.topic == GPS_TOPIC:
+        payload = msg.payload.decode()
+        if payload:
+            last_mow_data = process_gps_data(payload, is_gps=True)  # Mark as GPS data
+            create_heatmap(last_mow_data, "Letzter Mähvorgang", MAP_FILE)
 
-# Funktion zum Erstellen der Heatmap
-def create_heatmap(data, filename, show_path=False):
-    m = folium.Map(location=map_center, zoom_start=18, control_scale=True)
+            # Speichere den aktuellen Mähvorgang als JSON Lines
+            mow_data = {
+                "start_time": datetime.fromtimestamp(last_mow_data[0][2]).isoformat() + 'Z',
+                "end_time": datetime.fromtimestamp(last_mow_data[-1][2]).isoformat() + 'Z',
+                "gps_data": last_mow_data
+            }
+            with open(MOW_HISTORY_FILE, "a") as f:
+                f.write(json.dumps(mow_data) + "\n")
+
+            # Füge die neuen Daten zu den gesamten Mähdaten hinzu
+            all_mows_data = pd.concat(
+                [all_mows_data, pd.DataFrame(last_mow_data, columns=["Latitude", "Longitude", "Timestamp"])])
+
+            # Behalte nur die letzten 10 Mähvorgänge
+            all_mows_data = all_mows_data.sort_values("Timestamp", ascending=False).head(
+                10 * 3600)  # 10 Mähvorgänge * 3600 Sekunden pro Mähvorgang
+
+            # Speichere die aktualisierten Mähdaten
+            all_mows_data.to_csv(LAST_10_MOWS_FILE, index=False)
+
+            # Erstelle die Heatmap für die letzten 10 Mähvorgänge
+            create_heatmap(all_mows_data.values.tolist(), "Letzte 10 Mähvorgänge", "last_10_heatmap.html")
+
+    elif msg.topic == STATUS_TOPIC:  # Handle problem data here
+        payload = msg.payload.decode()
+        process_problem_data(payload)
+        create_problem_heatmap(problem_data, "Problemzonen", "problem_heatmap.html")
+
+
+# Update process_gps_data function to handle both cases
+def process_gps_data(payload, is_gps=True):
+    data = []
+    for point in payload.split(";"):
+        if point:
+            if is_gps:
+                lat, lon, timestamp = point.split(",")
+                data.append((float(lat), float(lon), int(timestamp)))
+            else:  # Problem data
+                lat, lon = point.split(",")
+                data.append((float(lat), float(lon)))  # No timestamp for problem data
+    return data
+
+
+def process_problem_data(payload):
+    global problem_data
+    lat, lon, timestamp = payload.split(",")
+    problem_data = problem_data.append({"Latitude": float(lat), "Longitude": float(lon), "Timestamp": int(timestamp)},
+                                       ignore_index=True)
+    problem_data.to_csv(PROBLEM_DATA_FILE, index=False)  # Speichern der Problemdaten
+
+
+def create_heatmap(data, title, filename):
+    df = pd.DataFrame(data, columns=["Latitude", "Longitude", "Timestamp"])
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"], unit="s")
+
+    # Filter für die letzten 7 Tage (nur für die zweite Heatmap)
+    if title == "Letzter Mähvorgang":
+        df_filtered = df
+    else:
+        df_filtered = df[df["Timestamp"] >= datetime.now() - timedelta(days=7)]
+
+    m = folium.Map(location=[df_filtered["Latitude"].mean(), df_filtered["Longitude"].mean()], zoom_start=18,
+                   tiles="OpenStreetMap")
+    folium.Marker(location=[df["Latitude"].iloc[0], df["Longitude"].iloc[0]], icon=folium.Icon(color="green")).add_to(
+        m)  # Startpunkt
+    folium.Marker(location=[df["Latitude"].iloc[-1], df["Longitude"].iloc[-1]], icon=folium.Icon(color="red")).add_to(
+        m)  # Endpunkt
+
+    # Heatmap erstellen
+    heatmap = sns.kdeplot(
+        x=df_filtered["Longitude"],
+        y=df_filtered["Latitude"],
+        cmap="Reds",
+        shade=True,
+        bw_adjust=0.5,
+    )
+    plt.figure(figsize=(10, 8))  # Größe der Heatmap anpassen
+    plt.title(title)
+    plt.axis("off")  # Achsenbeschriftungen entfernen
+    plt.savefig("heatmap.png", bbox_inches="tight", pad_inches=0)  # Heatmap als PNG speichern
+    plt.close()
+
+    # Heatmap als ImageOverlay zur Karte hinzufügen
+    folium.raster_layers.ImageOverlay(
+        image="heatmap.png",
+        bounds=[[df_filtered["Latitude"].min(), df_filtered["Longitude"].min()],
+                [df_filtered["Latitude"].max(), df_filtered["Longitude"].max()]],
+        opacity=0.7,
+    ).add_to(m)
+
+    # Grundstücksgrenzen hinzufügen
+    folium.PolyLine(BOUNDARY_COORDS, color="blue", weight=2.5, opacity=1).add_to(m)
 
     # LayerControl hinzufügen
-    folium.TileLayer('OpenStreetMap').add_to(m)
-    folium.TileLayer(
-        tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-        attr='Google',
-        name='Google Maps',
-        max_zoom=20,
-        subdomains=['mt0', 'mt1', 'mt2', 'mt3']
-    ).add_to(m)
     folium.LayerControl().add_to(m)
 
-    # Heatmap-Layer hinzufügen (mit Zeitstempeln für HeatMapWithTime)
-    heatmap_data = [[point["lat"], point["lon"], point["timestamp"]] for point in data]
-    HeatMapWithTime(heatmap_data, radius=15).add_to(m)
-
-    # Pfad anzeigen (optional)
-    if show_path:
-        locations = [(point["lat"], point["lon"]) for point in data]
-        folium.PolyLine(locations, color="green", weight=2.5, opacity=1).add_to(m)
-        for i in range(len(locations) - 1):
-            folium.RegularPolygonMarker(location=locations[i], fill_color='green', number_of_sides=3, radius=5, rotation=90).add_to(m)
-
-    # Grundstücksgrenzen als Rechteck hinzufügen
-    folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
-
-    # Karte speichern und im Browser öffnen
     m.save(filename)
-    if show_path:  # Nur die Heatmap des aktuellen Mähvorgangs öffnen
-        webbrowser.open('file://' + os.path.realpath(filename))
 
-# MQTT-Client erstellen und konfigurieren
+
+def create_problem_heatmap(data, title, filename):
+    if not data.empty:
+        m = folium.Map(location=[data["Latitude"].mean(), data["Longitude"].mean()], zoom_start=18,
+                       tiles="OpenStreetMap")
+
+        for _, row in data.iterrows():
+            folium.CircleMarker(
+                location=[row["Latitude"], row["Longitude"]],
+                radius=5,
+                color="red",
+                fill=True,
+                fill_color="red",
+                fill_opacity=0.7,
+                popup=f"Problem at {row['Timestamp']}"
+            ).add_to(m)
+
+        # LayerControl hinzufügen
+        folium.LayerControl().add_to(m)
+
+        m.save(filename)
+
+
+# MQTT-Client erstellen und verbinden
 client = mqtt.Client()
-client.username_pw_set(user, password)
 client.on_connect = on_connect
 client.on_message = on_message
-
-# Verbindung zum Broker herstellen
-client.connect(broker, port)
+client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+client.connect(MQTT_HOST, MQTT_PORT, 60)
 
 # MQTT-Schleife starten
 client.loop_forever()

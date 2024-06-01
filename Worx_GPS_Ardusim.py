@@ -1,78 +1,84 @@
 import paho.mqtt.client as mqtt
 import time
 import random
-import json
+from dotenv import load_dotenv
+import os
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-# MQTT-Einstellungen (wie im Arduino-Sketch)
-broker = "192.168.1.117"
-port = 1883
-topic_control = "worx/control"
-topic_gps = "worx/gps"
-topic_status = "worx/status"
-user = "nilsgollub"
-password = "JhiswenP3003!"
+# Load environment variables from .env file
+load_dotenv("secrets.env")
 
-# Grundstücksgrenzen (wie im Arduino-Sketch)
-lat_bounds = [46.811819, 46.812107]
-lon_bounds = [7.132838, 7.133173]
+# MQTT topics
+CONTROL_TOPIC = "worx/control"
+GPS_TOPIC = "worx/gps"
+STATUS_TOPIC = "worx/status"
 
-# Simulationsdauer in Sekunden
-simulation_duration = 5  # Simuliert einen 2-stündigen Mähvorgang in 5 Sekunden
+# Grundstückgrenzen
+LAT_BOUNDS = [46.811819, 46.812107]
+LON_BOUNDS = [7.132838, 7.133173]
 
-# GPS-Intervall in Sekunden (für die Simulation beschleunigt)
-gps_interval = 0.1
+# GPS-Daten
+gps_data = []
 
-# Funktion zur Generierung zufälliger GPS-Koordinaten innerhalb der Grenzen
-def generate_random_gps():
-    lat = random.uniform(lat_bounds[0], lat_bounds[1])
-    lon = random.uniform(lon_bounds[0], lon_bounds[1])
-    return lat, lon
-
-# Funktion zur Simulation des Mähvorgangs
-def simulate_mowing(client):
-    gps_data = []
-    start_time = time.time()
-
-    while time.time() - start_time < simulation_duration:
-        lat, lon = generate_random_gps()
-        timestamp = int(time.time())
-        gps_data.append({"lat": lat, "lon": lon, "timestamp": timestamp})
-        time.sleep(gps_interval)
-
-    client.publish(topic_gps, json.dumps(gps_data))
-
-# Funktion zur Simulation eines Problems
-def simulate_problem(client):
-    lat, lon = generate_random_gps()
-    timestamp = int(time.time())
-    problem_data = {"lat": lat, "lon": lon, "timestamp": timestamp}
-    client.publish(topic_status, json.dumps(problem_data))
-
-# MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc):
-    print("Verbunden mit MQTT Broker")
-    client.subscribe(topic_control)
+    print(f"Connected with result code {rc}")
+    client.subscribe(CONTROL_TOPIC)
 
 def on_message(client, userdata, msg):
+    global gps_data
     payload = msg.payload.decode()
 
     if payload == "start":
-        print("Mähvorgang simulieren...")
+        gps_data = []
         simulate_mowing(client)
     elif payload == "stop":
-        print("Mähvorgang beendet.")
+        send_gps_data(client)
+        send_problem_data(client)
     elif payload == "problem":
-        print("Problem simulieren...")
-        simulate_problem(client)
+        send_problem_data(client)
 
-# MQTT-Client erstellen und konfigurieren
+def simulate_mowing(client):
+    num_points = 2 * 60 * 60 // 2
+    lat_step = (LAT_BOUNDS[1] - LAT_BOUNDS[0]) / 20
+    lon_step = (LON_BOUNDS[1] - LON_BOUNDS[0]) / 20
+
+    lat = LAT_BOUNDS[0]
+    lon = LON_BOUNDS[0]
+    direction = 1
+    timestamp = int(time.time())
+
+    for _ in range(num_points):
+        gps_data.append(f"{lat:.6f},{lon:.6f};{timestamp}\n")
+        timestamp += 2
+
+        # Bewegung simulieren
+        lon += direction * lon_step
+        if lon > LON_BOUNDS[1] or lon < LON_BOUNDS[0]:
+            direction *= -1
+            lat += lat_step
+
+def send_gps_data(client):
+    payload = "".join(gps_data)
+    client.publish(GPS_TOPIC, payload)
+
+def send_problem_data(client):
+    lat = random.uniform(*LAT_BOUNDS)
+    lon = random.uniform(*LON_BOUNDS)
+    timestamp = int(time.time())
+    payload = f"{lat:.6f},{lon:.6f};{timestamp}"
+    client.publish(STATUS_TOPIC, payload)
+
+# Get MQTT credentials from environment variables
+MQTT_HOST = os.getenv("MQTT_HOST")
+MQTT_PORT = int(os.getenv("MQTT_PORT"))
+MQTT_USER = os.getenv("MQTT_USER")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+
 client = mqtt.Client()
-client.username_pw_set(user, password)
 client.on_connect = on_connect
 client.on_message = on_message
+client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
+client.connect(MQTT_HOST, MQTT_PORT, 60)
 
-# Verbindung zum Broker herstellen
-client.connect(broker, port)
-
-# MQTT-Schleife starten
 client.loop_forever()
