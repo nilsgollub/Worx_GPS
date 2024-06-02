@@ -35,16 +35,20 @@ GPS_INTERVAL = 0.1  # in seconds
 # GPS-Daten
 gps_data = []
 
+
 # Funktion, um eine zufällige Zahl innerhalb der Grenzen zu erzeugen
 def generate_random_gps():
-    lat = random.uniform(*LAT_BOUNDS)
-    lon = random.uniform(*LON_BOUNDS)
-    return lat, lon
+    while True:
+        lat = random.uniform(*LAT_BOUNDS)
+        lon = random.uniform(*LON_BOUNDS)
+        if is_inside_boundaries(lat, lon):  # Überprüfen, ob Punkt innerhalb liegt
+            return lat, lon
 
-# Funktion zum Senden der GPS-Daten
+# Funktion zum Senden der GPS-Daten (nur bei "stop"-Befehl)
 def send_gps_data(client):
-    logging.info("Sende GPS-Daten...")
-    client.publish(GPS_TOPIC, json.dumps(gps_data))
+    if gps_data:  # Nur senden, wenn Daten vorhanden sind
+        logging.info("Sende GPS-Daten...")
+        client.publish(GPS_TOPIC, json.dumps(gps_data))
 
 # Funktion zum Senden der Problem-Daten
 def send_problem_data(client):
@@ -52,6 +56,10 @@ def send_problem_data(client):
     timestamp = int(time.time())
     payload = {"lat": lat, "lon": lon, "timestamp": timestamp, "command": "problem"}
     client.publish(STATUS_TOPIC, json.dumps(payload))
+
+# Funktion zur Überprüfung, ob ein Punkt innerhalb der Grenzen liegt
+def is_inside_boundaries(lat, lon):
+    return LAT_BOUNDS[0] <= lat <= LAT_BOUNDS[1] and LON_BOUNDS[0] <= lon <= LON_BOUNDS[1]
 
 def simulate_mowing(client):
     start_time = time.time()
@@ -63,16 +71,16 @@ def simulate_mowing(client):
     max_turn_time = 10  # Maximale Zeit zwischen Richtungsänderungen
 
     while time.time() - start_time < SIMULATION_DURATION:
-        # Bewegung in Richtung berechnen
-        lat_rad = lat * (math.pi / 180)  # Umrechnung in Bogenmaß
-        lon_rad = lon * (math.pi / 180)
-        lat += speed * math.cos(direction * (math.pi / 180))
-        lon += speed * math.sin(direction * (math.pi / 180)) / math.cos(lat_rad)
+        # Berechnung der neuen Position basierend auf Richtung und Geschwindigkeit
+        new_lat = lat + speed * math.cos(math.radians(direction))
+        new_lon = lon + speed * math.sin(math.radians(direction)) / math.cos(math.radians(lat))
 
-        # Begrenzung auf die Grundstücksgrenzen
-        if not (LAT_BOUNDS[0] <= lat <= LAT_BOUNDS[1] and LON_BOUNDS[0] <= lon <= LON_BOUNDS[1]):
-            # Richtungsänderung an den Grenzen erzwingen
-            direction = random.uniform(0, 360)
+        # Überprüfung, ob die neue Position innerhalb der Grenzen liegt
+        if is_inside_boundaries(new_lat, new_lon):
+            lat, lon = new_lat, new_lon
+        else:
+            # Wenn die neue Position außerhalb liegt, Richtung ändern
+            direction = (direction + 180) % 360  # Umkehr der Richtung
 
         # Richtungsänderung nach zufälliger Zeit
         turn_time -= 1
@@ -85,7 +93,6 @@ def simulate_mowing(client):
         logging.debug(f"GPS-Daten: {lat:.6f}, {lon:.6f}, {timestamp}")
         time.sleep(GPS_INTERVAL)
 
-    send_gps_data(client)
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -98,10 +105,11 @@ def on_message(client, userdata, msg):
     logging.info(f"Nachricht empfangen: {payload}")
 
     if payload == "start":
-        gps_data = []
+        gps_data = []  # Daten nur bei "start" zurücksetzen
         simulate_mowing(client)
     elif payload == "stop":
         send_gps_data(client)
+        gps_data = []  # Daten nach dem Senden zurücksetzen
     elif payload == "problem":  # Problemzonen-Meldung nur bei "problem"
         send_problem_data(client)
     else:
