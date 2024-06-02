@@ -34,6 +34,7 @@ GPS_INTERVAL = 0.1  # in seconds
 
 # GPS-Daten
 gps_data = []
+
 # Funktion, um eine zufällige Zahl innerhalb der Grenzen zu erzeugen
 def generate_random_gps():
     lat = random.uniform(*LAT_BOUNDS)
@@ -51,6 +52,7 @@ def send_problem_data(client):
     timestamp = int(time.time())
     payload = {"lat": lat, "lon": lon, "timestamp": timestamp, "command": "problem"}
     client.publish(STATUS_TOPIC, json.dumps(payload))
+
 def simulate_mowing(client):
     start_time = time.time()
     lat, lon = generate_random_gps()  # Startposition
@@ -84,6 +86,7 @@ def simulate_mowing(client):
         time.sleep(GPS_INTERVAL)
 
     send_gps_data(client)
+
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     logging.info(f"Connected with result code {rc}")
@@ -99,7 +102,7 @@ def on_message(client, userdata, msg):
         simulate_mowing(client)
     elif payload == "stop":
         send_gps_data(client)
-    elif payload == "problem":
+    elif payload == "problem":  # Problemzonen-Meldung nur bei "problem"
         send_problem_data(client)
     else:
         logging.warning(f"Unbekannter Befehl: {payload}")
