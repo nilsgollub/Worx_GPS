@@ -7,9 +7,9 @@ from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
 
-load_dotenv("secrets.env")  # Geben Sie den Dateinamen explizit an
+load_dotenv("secrets.env")  # Laden der Umgebungsvariablen
 
-# MQTT-Einstellungen aus secrets.env
+# MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
 port = int(os.getenv("MQTT_PORT", 1883))  # Fehlerbehandlung für fehlenden Port
 topic_gps = os.getenv("MQTT_TOPIC_GPS")
@@ -21,60 +21,43 @@ password = os.getenv("MQTT_PASSWORD")
 topic_gps = str(topic_gps) if topic_gps else None
 topic_status = str(topic_status) if topic_status else None
 
-# Grundstücksgrenzen
+# Grundstücksgrenzen, Map-Center und Dateinamen
 lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
 map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
+heatmap_filename = "heatmap_aktuell.html"
+heatmap_10_maehvorgang_filename = "heatmap_10_maehvorgang.html"
+heatmap_kumuliert_filename = "heatmap_kumuliert.html"
+problemzonen_heatmap_filename = "heatmap_problemzonen.html"
 
-# Dateinamen und Speicher für Heatmaps
-heatmap_filename = "maehvorgang_heatmap.html"
-heatmap_10_maehvorgang_filename = "10_maehvorgang_heatmap.html"
-problemzonen_heatmap_filename = "problemzonen_heatmap.html"
+# Anzahl der zu speichernden Problemzonen (einfach anpassbar)
+MAX_PROBLEMZONEN = 20
+
+# Speicher für Heatmap-Daten
 maehvorgang_data = deque(maxlen=10)
-problemzonen_data = []
-
+alle_maehvorgang_data = []
+problemzonen_data = deque(maxlen=MAX_PROBLEMZONEN)
 # Funktion zum Speichern von GPS-Daten
 def save_gps_data(data, filename):
     with open(filename, "w") as f:
         json.dump(data, f)
 
-# MQTT-Callback-Funktionen (aktualisiert für MQTTv5)
-def on_connect(client, userdata, flags, rc, properties=None):  # Extra Argument properties hinzugefügt
-    print("Verbunden mit MQTT Broker, return code:", rc)
-    if topic_gps:  # Nur abonnieren, wenn das Topic definiert ist
-        client.subscribe(topic_gps)
-    if topic_status:
-        client.subscribe(topic_status)
-
-def on_message(client, userdata, msg):
-    try:
-        payload = json.loads(msg.payload.decode())
-
-        if msg.topic == topic_gps:
-            maehvorgang_data.append(payload)
-            save_gps_data(payload, f"maehvorgang_{len(maehvorgang_data)}.json")  # Speichern des aktuellen Mähvorgangs
-            create_heatmap([payload], heatmap_filename, True)
-            create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
-        elif msg.topic == topic_status:
-            if payload.get("command") == "problem":
-                problemzonen_data.append(payload)
-                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)  # Problemzonen
-
-    except json.JSONDecodeError as e:
-        print(f"Fehler beim Decodieren der JSON-Nachricht: {e}")
-        print(f"Empfangene Nachricht: {msg.payload.decode()}")
+# Funktion zum Speichern von Problemzonen-Daten
+def save_problemzonen_data(data):
+    with open("problemzonen.json", "w") as f:
+        json.dump(list(data), f)  # Konvertiere deque zu Liste für JSON
 
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
-    m = folium.Map(location=map_center, zoom_start=18, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    m = folium.Map(location=map_center, zoom_start=20, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
         attr='Google',
         name='Google Maps',
         max_zoom=20,
         subdomains=['mt0', 'mt1', 'mt2', 'mt3'])  # Google Maps Satellitenansicht
 
-    if data:  # Überprüfen, ob Daten vorhanden sind
-        # Heatmap-Layer hinzufügen (mit Zeitstempeln für HeatMapWithTime)
-        heatmap_data = [[[point["lat"], point["lon"], point["timestamp"]] for point in mow_data] for mow_data in data]
+    if data:
+        # Heatmap-Layer hinzufügen
+        heatmap_data = [[[point["lat"], point["lon"], point.get("timestamp", 0)] for point in mow_data] for mow_data in data]
         HeatMapWithTime(heatmap_data, radius=15, auto_play=True, max_opacity=0.8).add_to(m)
 
         # Pfad anzeigen (optional)
@@ -87,18 +70,49 @@ def create_heatmap(data, filename, show_path=False):
     # Grundstücksgrenzen als Rechteck hinzufügen
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
 
-    # Karte speichern
     m.save(filename)
-
-    # Karte nur öffnen, wenn der aktuelle Mähvorgang angezeigt wird
     if show_path:
         webbrowser.open('file://' + os.path.realpath(filename))
+# MQTT-Callback-Funktionen
+def on_connect(client, userdata, flags, rc, properties=None):
+    print("Verbunden mit MQTT Broker, return code:", rc)
+    if topic_gps:
+        client.subscribe(topic_gps)
+    if topic_status:
+        client.subscribe(topic_status)
+
+def on_message(client, userdata, msg):
+    try:
+        payload = json.loads(msg.payload.decode())
+
+        if msg.topic == topic_gps:
+            maehvorgang_data.append(payload)
+            alle_maehvorgang_data.extend(payload)  # Zur kumulierten Liste hinzufügen
+            save_gps_data(payload, f"maehvorgang_{len(maehvorgang_data)}.json")
+            create_heatmap([payload], heatmap_filename, True)
+            create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
+            create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)  # Kumulierte Heatmap
+        elif msg.topic == topic_status:
+            if payload.get("command") == "problem":
+                problemzonen_data.append(payload)
+                save_problemzonen_data(problemzonen_data)
+                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)
+
+    except json.JSONDecodeError as e:
+        print(f"Fehler beim Decodieren der JSON-Nachricht: {e}")
+        print(f"Empfangene Nachricht: {msg.payload.decode()}")
 
 # MQTT-Client erstellen und konfigurieren
 client = mqtt.Client(client_id="", userdata=None, protocol=mqtt.MQTTv5)
 client.username_pw_set(user, password)
 client.on_connect = on_connect
 client.on_message = on_message
+
+# Überprüfen, ob MQTT-Topics definiert sind
+if not topic_gps:
+    print("Fehler: MQTT_TOPIC_GPS ist nicht in der secrets.env-Datei definiert.")
+if not topic_status:
+    print("Fehler: MQTT_TOPIC_STATUS ist nicht in der secrets.env-Datei definiert.")
 
 try:
     # Verbindung zum Broker herstellen
