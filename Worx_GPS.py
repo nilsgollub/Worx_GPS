@@ -66,7 +66,7 @@ def on_message(client, userdata, msg):
 
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
-    m = folium.Map(location=map_center, zoom_start=18, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    m = folium.Map(location=map_center, zoom_start=20, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
         attr='Google',
         name='Google Maps',
         max_zoom=20,
