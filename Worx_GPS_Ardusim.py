@@ -30,7 +30,7 @@ LON_BOUNDS = [7.132838, 7.133173]
 
 # Simulations parameter
 SIMULATION_DURATION = 5.0  # in seconds
-GPS_INTERVAL = 0.1  # in seconds
+GPS_INTERVAL = 0.005  # in seconds
 
 # GPS-Daten
 gps_data = []
@@ -65,7 +65,7 @@ def simulate_mowing(client):
     start_time = time.time()
     lat, lon = generate_random_gps()  # Startposition
     direction = random.uniform(0, 360)  # Startrichtung in Grad
-    speed = 0.00005  # Geschwindigkeit (Anpassen für realistischere Simulation)
+    speed = 0.00007  # Geschwindigkeit (Anpassen für realistischere Simulation)
     turn_angle = 30  # Winkel für Richtungsänderungen
     turn_time = 0  # Zeit bis zur nächsten Richtungsänderung
     max_turn_time = 10  # Maximale Zeit zwischen Richtungsänderungen
@@ -92,6 +92,10 @@ def simulate_mowing(client):
         gps_data.append({"lat": lat, "lon": lon, "timestamp": timestamp})
         logging.debug(f"GPS-Daten: {lat:.6f}, {lon:.6f}, {timestamp}")
         time.sleep(GPS_INTERVAL)
+
+        # Sende Statusmeldung, wenn der Status sich ändert
+        if len(gps_data) % 10 == 0:  # Alle 10 Datenpunkte
+            client.publish(STATUS_TOPIC, json.dumps({"status": "mowing"}))
 
 
 # MQTT-Callback-Funktionen
