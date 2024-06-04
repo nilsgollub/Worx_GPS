@@ -65,7 +65,7 @@ def simulate_mowing(client):
     start_time = time.time()
     lat, lon = generate_random_gps()  # Startposition
     direction = random.uniform(0, 360)  # Startrichtung in Grad
-    speed = 0.00007  # Geschwindigkeit (Anpassen für realistischere Simulation)
+    speed = 0.00001  # Geschwindigkeit (Anpassen für realistischere Simulation)
     turn_angle = 30  # Winkel für Richtungsänderungen
     turn_time = 0  # Zeit bis zur nächsten Richtungsänderung
     max_turn_time = 10  # Maximale Zeit zwischen Richtungsänderungen
