@@ -7,8 +7,8 @@
 #include <TinyGPS++.h>
 
 // WLAN-Zugangsdaten
-const char* ssid[] = { "Skynet", "Skynet2", "NiniHotspot" };
-const char* pass[] = { "JhiswenP3003!", "JhiswenP3003!", "JhiswenP3003!" };
+const char* ssid[] = {"Skynet2", "Skynet", "NiniHotspot"};
+const char* pass[] = {"JhiswenP3003!", "JhiswenP3003!", "JhiswenP3003!"};
 const int numNetworks = sizeof(ssid) / sizeof(ssid[0]);
 
 // MQTT-Einstellungen
@@ -24,15 +24,14 @@ const char* password = "JhiswenP3003!";
 
 // GPS und IMU Variablen
 TinyGPSPlus gps;
-// GPS-Koordinaten
-float latitude = 0.0; // Initialwert 0.0
-float longitude = 0.0; // Initialwert 0.0
-
+const int GPSBaud = 9600; // GPS Baudrate als Konstante
+float latitude = 0.0;
+float longitude = 0.0;
 bool gpsFix = false;
 bool fakeGpsMode = false; // Flag für Fake GPS Modus
 bool serialOutput = true; // Flag für Serial Monitor Ausgabe
 unsigned long lastGpsTime = 0;
-int gpsInterval = 2000; // Standardmäßig 2 Sekunden
+const int gpsInterval = 2; 
 float imuThreshold = 0.5; // Bewegungsschwelle für IMU (anpassen!)
 bool maehenAktiv = false;
 bool problemDetected = false;
@@ -57,9 +56,9 @@ const int numCalibrationMeasurements = 100;
 void setup() {
   Serial.begin(115200);
   while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+    ; // Warten, bis serielle Verbindung hergestellt ist. Nur für native USB-Ports erforderlich
   }
-  
+
   if (serialOutput) {
     Serial.println("Starting Worx Mower GPS Tracker...");
   }
@@ -81,7 +80,7 @@ void setup() {
   }
 
   // GPS initialisieren
-  Serial1.begin(9600);
+  Serial1.begin(GPSBaud);
 
   connectToWifi();
   mqttClient.setUsernamePassword(username, password);
@@ -134,7 +133,6 @@ void connectToMqtt() {
   mqttClient.subscribe(topicControl);
 }
 
-
 void loop() {
   // MQTT-Client überprüfen und Nachrichten verarbeiten
   mqttClient.poll();
@@ -150,7 +148,6 @@ void loop() {
     simulateGpsData();
   }
 }
-
 
 void getGpsData() {
   while (Serial1.available() > 0) {
@@ -213,8 +210,7 @@ void checkImuForMovement() {
   }
 }
 
-
-// 5. Datenaufzeichnung und MQTT-Kommunikation:
+// ... (Fortsetzung im nächsten Kommentar)
 
 void recordGpsData() {
   if (!SD.exists("gps_data.json")) {
@@ -225,7 +221,7 @@ void recordGpsData() {
 
   dataFile = SD.open("gps_data.json", O_APPEND); // Korrigierte Verwendung von O_APPEND
   if (dataFile) {
-    StaticJsonDocument doc; // Speicherkapazität explizit angegeben (200 Bytes)
+    DynamicJsonDocument doc(200); // Dynamische Speicherzuweisung
     doc["lat"] = latitude;
     doc["lon"] = longitude;
     doc["timestamp"] = lastGpsTime; // Timestamp vom GPS-Modul
@@ -243,6 +239,7 @@ void recordGpsData() {
     }
   }
 }
+
 
 void sendGpsData() {
   dataFile = SD.open("gps_data.json", FILE_READ);
@@ -280,7 +277,7 @@ void sendGpsData() {
 }
 
 void sendProblemData(float lat, float lon) {
-  StaticJsonDocument doc; // Speicherkapazität explizit angegeben (200 Bytes)
+  DynamicJsonDocument doc(200); // Dynamische Speicherzuweisung
   doc["lat"] = lat;
   doc["lon"] = lon;
   doc["timestamp"] = millis();
@@ -299,8 +296,6 @@ void sendProblemData(float lat, float lon) {
     }
   }
 }
-
-// 6. MQTT-Callback-Funktionen:
 
 void onMqttMessage(int messageSize) {
   if (mqttClient.messageTopic() == topicControl) {
@@ -339,6 +334,8 @@ void onMqttMessage(int messageSize) {
     }
   }
 }
+
+
 
 // 7. Hilfsfunktionen:
 
@@ -391,7 +388,35 @@ void calibrateIMU() {
   }
 }
 
-// (handleSerialInput() Funktion ist optional und kann nach Bedarf implementiert werden)
+void handleSerialInput() {
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+
+    if (command.startsWith("imuThreshold ")) {
+      float newThreshold = command.substring(12).toFloat();
+      if (newThreshold > 0) {
+        imuThreshold = newThreshold;
+        Serial.print("IMU threshold set to: ");
+        Serial.println(imuThreshold);
+      } else {
+        Serial.println("Invalid threshold value. Must be greater than 0.");
+      }
+    } else if (command == "fakegps_on") {
+      fakeGpsMode = true;
+    } else if (command == "fakegps_off") {
+      fakeGpsMode = false;
+    } else if (command == "serial_on") {
+      serialOutput = true;
+    } else if (command == "serial_off") {
+      serialOutput = false;
+    } else {
+      if (serialOutput) {
+        Serial.println("Unknown command");
+      }
+    }
+  }
+}
 
 bool isInsideBoundaries(float lat, float lon) {
   return (lat >= minLatitude && lat <= maxLatitude && lon >= minLongitude && lon <= maxLongitude);
