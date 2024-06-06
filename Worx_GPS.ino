@@ -5,22 +5,16 @@
 #include <SD.h>
 #include <ArduinoJson.h>
 #include <TinyGPS++.h>
+#include "credentials.h"
 
 // WLAN-Zugangsdaten
-const char* ssid[] = {"Skynet2", "Skynet", "NiniHotspot"};
-const char* pass[] = {"JhiswenP3003!", "JhiswenP3003!", "JhiswenP3003!"};
+
 const int numNetworks = sizeof(ssid) / sizeof(ssid[0]);
 
 // MQTT-Einstellungen
 WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
-const char broker[] = "192.168.1.117";
-int port = 1883;
-const char topicControl[] = "worx/control";
-const char topicGps[] = "worx/gps";
-const char topicStatus[] = "worx/status";
-const char* username = "nilsgollub";
-const char* password = "JhiswenP3003!";
+
 
 // GPS und IMU Variablen
 TinyGPSPlus gps;
