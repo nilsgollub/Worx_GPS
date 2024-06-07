@@ -1,13 +1,26 @@
 import paho.mqtt.client as mqtt
 import folium
 import json
+import webbrowser
 import os
 from collections import deque
 from folium.plugins import HeatMapWithTime
-from dotenv import load_dotenv
-import webbrowser
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()  # Laden der Umgebungsvariablen
+# Umgebung und Ausführungspfad anzeigen
+if os.getenv("HASSIO_TOKEN"):
+    print("Skript wird in Home Assistant ausgeführt.")
+else:
+    print("Skript wird lokal ausgeführt.")
+
+# Pfad zur .env-Datei ermitteln und laden
+env_path = find_dotenv()
+if env_path:
+    print(f".env-Datei gefunden unter: {env_path}")
+    load_dotenv(env_path)
+else:
+    print("Fehler: .env-Datei nicht gefunden.")
+    exit(1)  # Beenden, wenn die .env-Datei nicht gefunden wird
 
 # MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
@@ -20,6 +33,8 @@ password = os.getenv("MQTT_PASSWORD")
 # Sicherstellen, dass Topics Strings sind und vorhanden
 topic_gps = str(topic_gps) if topic_gps else None
 topic_status = str(topic_status) if topic_status else None
+
+# ... (Rest des Skripts wie zuvor)
 
 # Grundstücksgrenzen, Map-Center und Dateinamen
 lat_bounds = [46.811819, 46.812107]
