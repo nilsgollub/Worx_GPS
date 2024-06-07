@@ -11,7 +11,7 @@ import os
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Load environment variables from .env file
-load_dotenv("secrets.env")
+load_dotenv()
 
 # Get MQTT credentials from environment variables
 MQTT_HOST = os.getenv("MQTT_HOST")
@@ -19,7 +19,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))  # Default-Port 1883
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
-# MQTT topics from secrets.env
+# MQTT topics from .env
 CONTROL_TOPIC = os.getenv("MQTT_TOPIC_CONTROL")
 GPS_TOPIC = os.getenv("MQTT_TOPIC_GPS")
 STATUS_TOPIC = os.getenv("MQTT_TOPIC_STATUS")

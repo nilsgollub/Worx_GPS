@@ -7,7 +7,7 @@ from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
 
-load_dotenv("secrets.env")  # Laden der Umgebungsvariablen
+load_dotenv()  # Laden der Umgebungsvariablen
 
 # MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
@@ -25,10 +25,12 @@ topic_status = str(topic_status) if topic_status else None
 lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
 map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
-heatmap_filename = "heatmap_aktuell.html"
-heatmap_10_maehvorgang_filename = "heatmap_10_maehvorgang.html"
-heatmap_kumuliert_filename = "heatmap_kumuliert.html"
-problemzonen_heatmap_filename = "heatmap_problemzonen.html"
+output_dir = os.getenv("OUTPUT_DIR", "output")  # Standardmäßig "output" im aktuellen Verzeichnis
+heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
+heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
+heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
+problemzonen_heatmap_filename = os.path.join(output_dir, "heatmap_problemzonen.html")
+
 
 # Anzahl der zu speichernden Problemzonen (einfach anpassbar)
 MAX_PROBLEMZONEN = 20
@@ -39,12 +41,14 @@ alle_maehvorgang_data = []
 problemzonen_data = deque(maxlen=MAX_PROBLEMZONEN)
 # Funktion zum Speichern von GPS-Daten
 def save_gps_data(data, filename):
+    filename = os.path.join(output_dir, filename)  # Pfad anpassen
     with open(filename, "w") as f:
         json.dump(data, f)
 
 # Funktion zum Speichern von Problemzonen-Daten
 def save_problemzonen_data(data):
-    with open("problemzonen.json", "w") as f:
+    filename = os.path.join(output_dir, "problemzonen.json")  # Pfad anpassen
+    with open(filename, "w") as f:
         json.dump(list(data), f)  # Konvertiere deque zu Liste für JSON
 
 # Funktion zum Erstellen der Heatmap
@@ -71,9 +75,10 @@ def create_heatmap(data, filename, show_path=False):
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
 
     m.save(filename)
-    if show_path:
-        webbrowser.open('file://' + os.path.realpath(filename))
-# MQTT-Callback-Funktionen
+    # Nur öffnen, wenn nicht auf Home Assistant ausgeführt wird
+    if not os.getenv("HASSIO_TOKEN"):
+        if show_path:
+            webbrowser.open('file://' + os.path.realpath(filename))# MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
     if topic_gps:
@@ -103,16 +108,19 @@ def on_message(client, userdata, msg):
         print(f"Empfangene Nachricht: {msg.payload.decode()}")
 
 # MQTT-Client erstellen und konfigurieren
-client = mqtt.Client(client_id="", userdata=None, protocol=mqtt.MQTTv5)
-client.username_pw_set(user, password)
+client = mqtt.Client()
+
+# Callbacks setzen (neue Methode)
 client.on_connect = on_connect
 client.on_message = on_message
 
+client.username_pw_set(user, password)
+
 # Überprüfen, ob MQTT-Topics definiert sind
 if not topic_gps:
-    print("Fehler: MQTT_TOPIC_GPS ist nicht in der secrets.env-Datei definiert.")
+    print("Fehler: MQTT_TOPIC_GPS ist nicht in der .env-Datei definiert.")
 if not topic_status:
-    print("Fehler: MQTT_TOPIC_STATUS ist nicht in der secrets.env-Datei definiert.")
+    print("Fehler: MQTT_TOPIC_STATUS ist nicht in der .env-Datei definiert.")
 
 try:
     # Verbindung zum Broker herstellen
