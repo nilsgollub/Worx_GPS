@@ -1,17 +1,17 @@
 import paho.mqtt.client as mqtt
 import folium
 import json
-import webbrowser
 import os
 from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
+import webbrowser
 
 load_dotenv()  # Laden der Umgebungsvariablen
 
 # MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
-port = int(os.getenv("MQTT_PORT", 1883))  # Fehlerbehandlung für fehlenden Port
+port = int(os.getenv("MQTT_PORT", 1883))
 topic_gps = os.getenv("MQTT_TOPIC_GPS")
 topic_status = os.getenv("MQTT_TOPIC_STATUS")
 user = os.getenv("MQTT_USER")
@@ -25,14 +25,13 @@ topic_status = str(topic_status) if topic_status else None
 lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
 map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
-output_dir = os.getenv("OUTPUT_DIR", "output")  # Standardmäßig "output" im aktuellen Verzeichnis
+output_dir = os.getenv("OUTPUT_DIR", "output")
 heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
 heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
 heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
 problemzonen_heatmap_filename = os.path.join(output_dir, "heatmap_problemzonen.html")
 
-
-# Anzahl der zu speichernden Problemzonen (einfach anpassbar)
+# Anzahl der zu speichernden Problemzonen
 MAX_PROBLEMZONEN = 20
 
 # Speicher für Heatmap-Daten
@@ -53,6 +52,7 @@ def save_problemzonen_data(data):
 
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
+    print(f"Erstelle Heatmap: {filename}")  # Statusmeldung hinzufügen
     m = folium.Map(location=map_center, zoom_start=20, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
         attr='Google',
         name='Google Maps',
@@ -83,10 +83,13 @@ def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
     if topic_gps:
         client.subscribe(topic_gps)
+        print(f"Abonniert auf Topic: {topic_gps}")  # Statusmeldung hinzufügen
     if topic_status:
         client.subscribe(topic_status)
+        print(f"Abonniert auf Topic: {topic_status}")  # Statusmeldung hinzufügen
 
 def on_message(client, userdata, msg):
+    print(f"Nachricht empfangen auf Topic: {msg.topic}")  # Statusmeldung hinzufügen
     try:
         payload = json.loads(msg.payload.decode())
 
