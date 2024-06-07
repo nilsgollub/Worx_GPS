@@ -94,8 +94,8 @@ def simulate_mowing(client):
         time.sleep(GPS_INTERVAL)
 
         # Sende Statusmeldung, wenn der Status sich ändert
-        if len(gps_data) % 10 == 0:  # Alle 10 Datenpunkte
-            client.publish(STATUS_TOPIC, json.dumps({"status": "mowing"}))
+        #if len(gps_data) % 10 == 0:  # Alle 10 Datenpunkte
+        #    client.publish(STATUS_TOPIC, json.dumps({"status": "mowing"}))
 
 
 # MQTT-Callback-Funktionen
