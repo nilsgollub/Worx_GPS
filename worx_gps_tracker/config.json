@@ -1,17 +1,13 @@
 {
   "name": "Worx GPS Tracker",
-  "version": "1.0.3",
+  "version": "1.0.0",
   "slug": "worx_gps_tracker",
-  "description": "Ein Add-on zur Auswertung von GPS-Daten des Worx Rasenmäherroboters",
-  "arch": ["aarch64", "amd64", "armhf", "armv7", "i386"],
+  "description": "Add-on zur Auswertung von GPS-Daten des Worx Rasenmäherroboters",
+  "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
   "boot": "auto",
   "hassio_api": true,
   "host_network": true,
   "map": ["config", "ssl"],
   "options": {},
-  "schema": {},
-  "environment": {
-    "OUTPUT_DIR": "/config/www/worx_gps_tracker"
-  }
-
+  "schema": {}
 }
