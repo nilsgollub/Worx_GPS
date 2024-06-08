@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY Worx_GPS.py .
+COPY .env .
 
 # Ordner für Heatmaps erstellen
 RUN mkdir /app/output
