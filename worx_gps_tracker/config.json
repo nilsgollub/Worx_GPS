@@ -1,6 +1,6 @@
 {
   "name": "Worx GPS Tracker",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "slug": "worx_gps_tracker",
   "description": "Add-on zur Auswertung von GPS-Daten des Worx Rasenmäherroboters",
   "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
