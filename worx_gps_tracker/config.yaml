@@ -8,19 +8,8 @@ arch:
   - armhf
   - armv7
   - i386
-boot: manual
+boot: auto  # Add-on startet automatisch
 hassio_api: true
 host_network: true
 map:
   - config
-init: false
-options:
-  env_file: /app/.env
-  output_dir: /config/www/worx_gps_tracker
-schema:
-  env_file:
-    type: string
-    required: true
-  output_dir:
-    type: string
-    required: true
