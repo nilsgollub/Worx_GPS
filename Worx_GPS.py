@@ -14,17 +14,17 @@ else:
     print("Skript wird lokal ausgeführt.")
 
 # Pfad zur .env-Datei ermitteln und laden
-env_path = find_dotenv()
-if env_path:
-    print(f".env-Datei gefunden unter: {env_path}")
-    load_dotenv(env_path)
+env_file = os.getenv("ENV_FILE")
+if env_file:
+    print(f".env-Datei gefunden unter: {env_file}")
+    load_dotenv(env_file)
 else:
-    print("Fehler: .env-Datei nicht gefunden.")
+    print("Fehler: .env-Datei nicht gefunden. Überprüfen Sie die Add-on-Konfiguration.")
     exit(1)  # Beenden, wenn die .env-Datei nicht gefunden wird
 
 # MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
-port = int(os.getenv("MQTT_PORT", 1883))
+port = int(os.getenv("MQTT_PORT", 1883))  # Fehlerbehandlung für fehlenden Port
 topic_gps = os.getenv("MQTT_TOPIC_GPS")
 topic_status = os.getenv("MQTT_TOPIC_STATUS")
 user = os.getenv("MQTT_USER")
