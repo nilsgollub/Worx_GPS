@@ -18,6 +18,9 @@ options:
   env_file: /app/.env
   output_dir: /config/www/worx_gps_tracker
 schema:
-  env_file: string
-  output_dir: string
-
+  env_file:
+    type: string
+    required: true
+  output_dir:
+    type: string
+    required: true
