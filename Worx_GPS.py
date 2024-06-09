@@ -14,12 +14,12 @@ else:
     print("Skript wird lokal ausgeführt.")
 
 # Pfad zur .env-Datei ermitteln und laden
-env_file = os.getenv("ENV_FILE")
-if env_file:
-    print(f".env-Datei gefunden unter: {env_file}")
-    load_dotenv(env_file)
+env_path = find_dotenv()
+if env_path:
+    print(f".env-Datei gefunden unter: {env_path}")
+    load_dotenv(env_path)
 else:
-    print("Fehler: .env-Datei nicht gefunden. Überprüfen Sie die Add-on-Konfiguration.")
+    print("Fehler: .env-Datei nicht gefunden.")
     exit(1)  # Beenden, wenn die .env-Datei nicht gefunden wird
 
 # MQTT-Einstellungen
@@ -34,13 +34,13 @@ password = os.getenv("MQTT_PASSWORD")
 topic_gps = str(topic_gps) if topic_gps else None
 topic_status = str(topic_status) if topic_status else None
 
-# ... (Rest des Skripts wie zuvor)
-
 # Grundstücksgrenzen, Map-Center und Dateinamen
 lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
 map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
-output_dir = os.getenv("OUTPUT_DIR", "output")
+
+# Ausgabeverzeichnis (Standardmäßig im Add-on-Ordner)
+output_dir = "/config/www/worx_gps_tracker" 
 heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
 heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
 heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
