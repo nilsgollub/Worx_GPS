@@ -40,7 +40,7 @@ lon_bounds = [7.132838, 7.133173]
 map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
 
 # Ausgabeverzeichnis (Standardmäßig im Add-on-Ordner)
-output_dir = "/config/www/worx_gps_tracker" 
+output_dir = os.getenv("OUTPUT_DIR", "/home/homeassistant/www/worx_gps_tracker") 
 heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
 heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
 heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
