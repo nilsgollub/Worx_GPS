@@ -4,23 +4,11 @@ FROM arm64v8/python:3.9-slim-buster
 # Arbeitsverzeichnis im Container
 WORKDIR /app
 
-# Basis-Image für ARM-Architektur (Raspberry Pi) \
-    FROM arm64v8/python:3.9-slim-buster
-
-    # Arbeitsverzeichnis im Container
-    WORKDIR /app
-
-    # Abhängigkeiten installieren (apk-tools zuerst installieren) \
-    RUN apk update && apk add --no-cache apk-tools && \
-        apk add --no-cache --virtual .build-deps \
-            python3-dev \
-            build-base \
-            libffi-dev \
-                    openssl-dev && \
-                        apk del .build-deps
-
-                        # ... restliche Anweisungen (wie zuvor)
-
+# Abhängigkeiten installieren
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libssl-dev \
+    libffi-dev
 
 # Virtuelle Python-Umgebung erstellen
 RUN python3 -m venv /app/venv
@@ -40,6 +28,6 @@ COPY .env .
 
 # Volume für den Zugriff auf /config/www
 VOLUME /config/www
-
+USER root
 # Befehl zum Ausführen des Skripts
 CMD ["python3", "Worx_GPS.py"]
