@@ -10,8 +10,10 @@ from dotenv import load_dotenv, find_dotenv
 # Umgebung und Ausführungspfad anzeigen
 if os.getenv("HASSIO_TOKEN"):
     print("Skript wird in Home Assistant ausgeführt.")
+    output_dir = "/share/worx_gps_tracker"  # Ausgabeverzeichnis in Home Assistant
 else:
     print("Skript wird lokal ausgeführt.")
+    output_dir = "output"  # Ausgabeverzeichnis auf dem PC
 
 # Pfad zur .env-Datei ermitteln und laden
 env_path = find_dotenv()
@@ -39,12 +41,13 @@ lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
 map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
 
-# Ausgabeverzeichnis (Standardmäßig im Add-on-Ordner)
-output_dir = os.getenv("OUTPUT_DIR", "/home/homeassistant/www/worx_gps_tracker") 
+# Dateinamen mit output_dir zusammenfügen
 heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
 heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
 heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
 problemzonen_heatmap_filename = os.path.join(output_dir, "heatmap_problemzonen.html")
+
+# ... (Rest des Skripts wie zuvor)
 
 # Anzahl der zu speichernden Problemzonen
 MAX_PROBLEMZONEN = 20

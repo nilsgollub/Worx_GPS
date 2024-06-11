@@ -12,8 +12,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY Worx_GPS.py .
 COPY .env .
 
-# Volume für den Zugriff auf /config/www
-VOLUME /config/www
-
 # Befehl zum Ausführen des Skripts
 CMD ["python3", "Worx_GPS.py"]
