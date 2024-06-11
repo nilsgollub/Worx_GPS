@@ -6,7 +6,7 @@ import os
 from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv, find_dotenv
-
+print("gestartet")
 # Umgebung und Ausführungspfad anzeigen
 if os.getenv("HASSIO_TOKEN"):
     print("Skript wird in Home Assistant ausgeführt.")
