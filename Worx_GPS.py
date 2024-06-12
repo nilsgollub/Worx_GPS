@@ -1,70 +1,50 @@
 import paho.mqtt.client as mqtt
 import folium
 import json
-import webbrowser
 import os
 from collections import deque
 from folium.plugins import HeatMapWithTime
-from dotenv import load_dotenv, find_dotenv
-print("gestartet")
-# Umgebung und Ausführungspfad anzeigen
-if os.getenv("HASSIO_TOKEN"):
-    print("Skript wird in Home Assistant ausgeführt.")
-    output_dir = "/share/worx_gps_tracker"  # Ausgabeverzeichnis in Home Assistant
-else:
-    print("Skript wird lokal ausgeführt.")
-    output_dir = "output"  # Ausgabeverzeichnis auf dem PC
+from dotenv import load_dotenv
 
-# Pfad zur .env-Datei ermitteln und laden
-env_path = find_dotenv()
-if env_path:
-    print(f".env-Datei gefunden unter: {env_path}")
-    load_dotenv(env_path)
-else:
-    print("Fehler: .env-Datei nicht gefunden.")
-    exit(1)  # Beenden, wenn die .env-Datei nicht gefunden wird
+# .env-Datei laden
+load_dotenv()
 
-# MQTT-Einstellungen
-broker = os.getenv("MQTT_HOST")
-port = int(os.getenv("MQTT_PORT", 1883))  # Fehlerbehandlung für fehlenden Port
-topic_gps = os.getenv("MQTT_TOPIC_GPS")
-topic_status = os.getenv("MQTT_TOPIC_STATUS")
-user = os.getenv("MQTT_USER")
-password = os.getenv("MQTT_PASSWORD")
-
-# Sicherstellen, dass Topics Strings sind und vorhanden
-topic_gps = str(topic_gps) if topic_gps else None
-topic_status = str(topic_status) if topic_status else None
+# MQTT-Einstellungen aus Umgebungsvariablen
+MQTT_HOST = os.getenv("MQTT_HOST")
+MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
+MQTT_USER = os.getenv("MQTT_USER")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+MQTT_TOPIC_GPS = os.getenv("MQTT_TOPIC_GPS")
+MQTT_TOPIC_STATUS = os.getenv("MQTT_TOPIC_STATUS")
 
 # Grundstücksgrenzen, Map-Center und Dateinamen
-lat_bounds = [46.811819, 46.812107]
-lon_bounds = [7.132838, 7.133173]
-map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
+LAT_BOUNDS = [46.811819, 46.812107]
+LON_BOUNDS = [7.132838, 7.133173]
+MAP_CENTER = [(LAT_BOUNDS[0] + LAT_BOUNDS[1]) / 2, (LON_BOUNDS[0] + LON_BOUNDS[1]) / 2]
+OUTPUT_DIR = "/config/www/worx_gps_tracker"  # Ausgabeverzeichnis in Home Assistant
 
-# Dateinamen mit output_dir zusammenfügen
-heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
-heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
-heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
-problemzonen_heatmap_filename = os.path.join(output_dir, "heatmap_problemzonen.html")
+heatmap_filename = os.path.join(OUTPUT_DIR, "heatmap_aktuell.html")
+heatmap_10_maehvorgang_filename = os.path.join(OUTPUT_DIR, "heatmap_10_maehvorgang.html")
+heatmap_kumuliert_filename = os.path.join(OUTPUT_DIR, "heatmap_kumuliert.html")
+problemzonen_heatmap_filename = os.path.join(OUTPUT_DIR, "heatmap_problemzonen.html")
 
-# ... (Rest des Skripts wie zuvor)
-
-# Anzahl der zu speichernden Problemzonen
+# Anzahl der zu speichernden Problemzonen (einfach anpassbar)
 MAX_PROBLEMZONEN = 20
 
 # Speicher für Heatmap-Daten
 maehvorgang_data = deque(maxlen=10)
 alle_maehvorgang_data = []
 problemzonen_data = deque(maxlen=MAX_PROBLEMZONEN)
+
 # Funktion zum Speichern von GPS-Daten
 def save_gps_data(data, filename):
-    filename = os.path.join(output_dir, filename)  # Pfad anpassen
+    filename = os.path.join(OUTPUT_DIR, filename)  # Pfad anpassen
     with open(filename, "w") as f:
         json.dump(data, f)
 
 # Funktion zum Speichern von Problemzonen-Daten
 def save_problemzonen_data(data):
-    filename = os.path.join(output_dir, "problemzonen.json")  # Pfad anpassen
+    filename = os.path.join(OUTPUT_DIR, "problemzonen.json")  # Pfad anpassen
     with open(filename, "w") as f:
         json.dump(list(data), f)  # Konvertiere deque zu Liste für JSON
 
@@ -93,10 +73,8 @@ def create_heatmap(data, filename, show_path=False):
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
 
     m.save(filename)
-    # Nur öffnen, wenn nicht auf Home Assistant ausgeführt wird
-    if not os.getenv("HASSIO_TOKEN"):
-        if show_path:
-            webbrowser.open('file://' + os.path.realpath(filename))# MQTT-Callback-Funktionen
+
+# MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
     if topic_gps:
@@ -143,11 +121,17 @@ if not topic_gps:
 if not topic_status:
     print("Fehler: MQTT_TOPIC_STATUS ist nicht in der .env-Datei definiert.")
 
-try:
-    # Verbindung zum Broker herstellen
-    client.connect(broker, port)
+# Endlosschleife in PyScript
+@time_trigger("startup")
+def start_mqtt_loop():
+    task.unique("mqtt_loop")
+    try:
+        # Verbindung zum Broker herstellen
+        client.connect(broker, port)
 
-    # MQTT-Schleife starten
-    client.loop_forever()
-except ConnectionRefusedError:
-    print(f"Verbindung zum MQTT-Broker '{broker}:{port}' konnte nicht hergestellt werden. Überprüfen Sie die Einstellungen und die Erreichbarkeit des Brokers.")
+        # MQTT-Schleife starten
+        while True:
+            client.loop(timeout=1.0)  # MQTT-Ereignisse verarbeiten
+            time.sleep(1)  # Pause zwischen den Schleifendurchläufen
+    except ConnectionRefusedError:
+        print(f"Verbindung zum MQTT-Broker '{broker}:{port}' konnte nicht hergestellt werden. Überprüfen Sie die Einstellungen und die Erreichbarkeit des Brokers.")
