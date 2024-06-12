@@ -12,6 +12,5 @@ boot: auto
 hassio_api: true
 host_network: true
 map:
-  - share # share Verzeichnis einbinden
   - config
 init: false
