@@ -10,7 +10,7 @@ print("gestartet")
 # Umgebung und Ausführungspfad anzeigen
 if os.getenv("HASSIO_TOKEN"):
     print("Skript wird in Home Assistant ausgeführt.")
-    output_dir = "/share/worx_gps_tracker"  # Ausgabeverzeichnis in Home Assistant
+    output_dir = "/config/www//worx_gps_tracker"  # Ausgabeverzeichnis in Home Assistant
 else:
     print("Skript wird lokal ausgeführt.")
     output_dir = "output"  # Ausgabeverzeichnis auf dem PC

@@ -27,7 +27,8 @@ COPY Worx_GPS.py .
 COPY .env .
 
 # Volume für den Zugriff auf /config/www
-VOLUME /config/www
+VOLUME /config/www/worx_gps_tracker
+VOLUME /share
 USER root
 # Befehl zum Ausführen des Skripts
 CMD ["python3", "Worx_GPS.py"]
