@@ -1,5 +1,7 @@
+# Basis-Image für ARM-Architektur (Raspberry Pi)
 FROM arm64v8/python:3.9-slim-buster
 
+# Arbeitsverzeichnis im Container
 WORKDIR /app
 
 # Abhängigkeiten installieren
@@ -20,7 +22,7 @@ RUN mkdir -p /config/www/worx_gps_tracker
 
 # Kopieren der benötigten Dateien
 COPY requirements.txt .
-RUN . /app/venv/bin/activate && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY Worx_GPS.py .
 COPY .env .
