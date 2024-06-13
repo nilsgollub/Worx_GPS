@@ -28,7 +28,7 @@ print(f"MQTT-Einstellungen: {MQTT_HOST}:{MQTT_PORT}, {MQTT_USER}, {MQTT_TOPIC_GP
 LAT_BOUNDS = [46.811819, 46.812107]
 LON_BOUNDS = [7.132838, 7.133173]
 MAP_CENTER = [(LAT_BOUNDS[0] + LAT_BOUNDS[1]) / 2, (LON_BOUNDS[0] + LON_BOUNDS[1]) / 2]
-OUTPUT_DIR = "/config/www/worx_gps_tracker"
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/config/www/worx_gps_tracker")  # Ausgabeverzeichnis aus .env lesen
 
 heatmap_filename = os.path.join(OUTPUT_DIR, "heatmap_aktuell.html")
 heatmap_10_maehvorgang_filename = os.path.join(OUTPUT_DIR, "heatmap_10_maehvorgang.html")

@@ -1,5 +1,5 @@
 name: Worx GPS Tracker
-version: 2.3.5
+version: 2.4.1
 slug: worx_gps_tracker
 description: Ein Add-on zur Auswertung von GPS-Daten des Worx Rasenmäherroboters
 arch:

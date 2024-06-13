@@ -17,9 +17,6 @@ RUN python3 -m venv /app/venv
 # Virtuelle Umgebung aktivieren
 ENV PATH="/app/venv/bin:$PATH"
 
-# Ordner für Heatmaps erstellen
-RUN mkdir -p /config/www/worx_gps_tracker
-
 # Kopieren der benötigten Dateien
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -29,8 +26,12 @@ COPY .env .
 
 # Volume für den Zugriff auf /config/www
 VOLUME /config/www
+ARG USER_ID
+ARG GROUP_ID
+RUN addgroup --gid $GROUP_ID user
+RUN adduser --disabled-password --gecos "" --uid $USER_ID --gid $GROUP_ID user
 
-# Benutzer auf "root" setzen (oder einen anderen Benutzer mit Schreibrechten für /config/www)
+# Benutzer auf "root" setzen
 USER root
 
 # Befehl zum Ausführen des Skripts
