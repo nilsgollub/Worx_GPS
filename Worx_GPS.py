@@ -20,13 +20,13 @@ MQTT_TOPIC_STATUS = os.getenv("MQTT_TOPIC_STATUS")
 # Grundstücksgrenzen, Map-Center und Dateinamen
 lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
-map_center = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
-output_dir = "/config/www/worx_gps_tracker"
+MAP_CENTER = [(lat_bounds[0] + lat_bounds[1]) / 2, (lon_bounds[0] + lon_bounds[1]) / 2]
+OUTPUT_DIR = "/config/www/worx_gps_tracker"
 
-heatmap_filename = os.path.join(output_dir, "heatmap_aktuell.html")
-heatmap_10_maehvorgang_filename = os.path.join(output_dir, "heatmap_10_maehvorgang.html")
-heatmap_kumuliert_filename = os.path.join(output_dir, "heatmap_kumuliert.html")
-problemzonen_heatmap_filename = os.path.join(output_dir, "heatmap_problemzonen.html")
+heatmap_filename = os.path.join(OUTPUT_DIR, "heatmap_aktuell.html")
+heatmap_10_maehvorgang_filename = os.path.join(OUTPUT_DIR, "heatmap_10_maehvorgang.html")
+heatmap_kumuliert_filename = os.path.join(OUTPUT_DIR, "heatmap_kumuliert.html")
+problemzonen_heatmap_filename = os.path.join(OUTPUT_DIR, "heatmap_problemzonen.html")
 
 # Anzahl der zu speichernden Daten
 MAX_MAEHVORGAENGE = 10
@@ -39,20 +39,20 @@ problemzonen_data = deque(maxlen=MAX_PROBLEMZONEN)
 
 # Funktion zum Speichern von GPS-Daten
 def save_gps_data(data, filename):
-    filename = os.path.join(output_dir, filename)
+    filename = os.path.join(OUTPUT_DIR, filename)
     with open(filename, "w") as f:
         json.dump(data, f)
 
 # Funktion zum Speichern von Problemzonen-Daten
 def save_problemzonen_data(data):
-    filename = os.path.join(output_dir, "problemzonen.json")
+    filename = os.path.join(OUTPUT_DIR, "problemzonen.json")
     with open(filename, "w") as f:
         json.dump(list(data), f)
 
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
     print(f"Erstelle Heatmap: {filename}")
-    m = folium.Map(location=map_center, zoom_start=20, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    m = folium.Map(location=MAP_CENTER, zoom_start=20, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
                   attr='Google', name='Google Maps', max_zoom=20, subdomains=['mt0', 'mt1', 'mt2', 'mt3'])
 
     if data:
@@ -75,26 +75,26 @@ def create_heatmap(data, filename, show_path=False):
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
-    if topic_gps:
-        client.subscribe(topic_gps)
-        print(f"Abonniert auf Topic: {topic_gps}")  # Statusmeldung hinzufügen
-    if topic_status:
-        client.subscribe(topic_status)
-        print(f"Abonniert auf Topic: {topic_status}")  # Statusmeldung hinzufügen
+    if MQTT_TOPIC_GPS:
+        client.subscribe(MQTT_TOPIC_GPS)
+        print(f"Abonniert auf Topic: {MQTT_TOPIC_GPS}")
+    if MQTT_TOPIC_STATUS:
+        client.subscribe(MQTT_TOPIC_STATUS)
+        print(f"Abonniert auf Topic: {MQTT_TOPIC_STATUS}")
 
 def on_message(client, userdata, msg):
-    print(f"Nachricht empfangen auf Topic: {msg.topic}")  # Statusmeldung hinzufügen
+    print(f"Nachricht empfangen auf Topic: {msg.topic}")
     try:
         payload = json.loads(msg.payload.decode())
 
-        if msg.topic == topic_gps:
+        if msg.topic == MQTT_TOPIC_GPS:
             maehvorgang_data.append(payload)
-            alle_maehvorgang_data.extend(payload)  # Zur kumulierten Liste hinzufügen
+            alle_maehvorgang_data.extend(payload)
             save_gps_data(payload, f"maehvorgang_{len(maehvorgang_data)}.json")
             create_heatmap([payload], heatmap_filename, True)
             create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
-            create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)  # Kumulierte Heatmap
-        elif msg.topic == topic_status:
+            create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
+        elif msg.topic == MQTT_TOPIC_STATUS:
             if payload.get("command") == "problem":
                 problemzonen_data.append(payload)
                 save_problemzonen_data(problemzonen_data)
@@ -106,24 +106,12 @@ def on_message(client, userdata, msg):
 
 # MQTT-Client erstellen und konfigurieren
 client = mqtt.Client()
-
-# Callbacks setzen (neue Methode)
 client.on_connect = on_connect
 client.on_message = on_message
+client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
 
-client.username_pw_set(user, password)
+# Verbindung zum Broker herstellen
+client.connect(MQTT_HOST, MQTT_PORT)
 
-# Überprüfen, ob MQTT-Topics definiert sind
-if not topic_gps:
-    print("Fehler: MQTT_TOPIC_GPS ist nicht in der .env-Datei definiert.")
-if not topic_status:
-    print("Fehler: MQTT_TOPIC_STATUS ist nicht in der .env-Datei definiert.")
-
-try:
-    # Verbindung zum Broker herstellen
-    client.connect(broker, port)
-
-    # MQTT-Schleife starten
-    client.loop_forever()
-except ConnectionRefusedError:
-    print(f"Verbindung zum MQTT-Broker '{broker}:{port}' konnte nicht hergestellt werden. Überprüfen Sie die Einstellungen und die Erreichbarkeit des Brokers.")
+# Endlosschleife für MQTT
+client.loop_forever()
