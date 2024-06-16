@@ -1,327 +1,363 @@
 #include <ArduinoMqttClient.h>
 #include <WiFiNINA.h>
-#include <ArduinoJson.h>
 #include <TinyGPS++.h>
-#include "credentials.h"
 
-// WLAN-Zugangsdaten
-const int numNetworks = sizeof(ssid) / sizeof(ssid[0]);
+// Einbinden der Anmeldeinformationen aus credentials.h
+#include "credentials.h"
 
 // MQTT-Einstellungen
 WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
-// GPS-Variablen
+// GPS-Einstellungen
 TinyGPSPlus gps;
-const int GPSBaud = 9600;
-float latitude = 0.0;
-float longitude = 0.0;
-bool gpsFix = false;
-bool fakeGpsMode = false;
-bool serialOutput = true;
-unsigned long lastGpsTime = 0;
-const int gpsInterval = 2; // Sekunden
-bool maehenAktiv = false;
-bool problemDetected = false;
+#define SerialGPS Serial1
 
-// Grundstücksgrenzen
-const float minLatitude = 46.811819;
-const float maxLatitude = 46.812107;
-const float minLongitude = 7.132838;
-const float maxLongitude = 7.133173;
+// Speicherintervall für GPS-Daten (in Millisekunden)
+const unsigned long gpsInterval = 2000;
+unsigned long lastGPStime = 0;
 
-// Speicher für GPS-Daten und Problemkoordinaten im RAM
-const int maxGpsPoints = 10000; // Maximale Anzahl an GPS-Punkten
-struct GpsPoint {
-  float lat;
-  float lon;
-  unsigned long timestamp;
-};
-GpsPoint gpsData[maxGpsPoints];
-int currentGpsIndex = 0;
+// Speicher für Problemzonen (dynamische Größe)
+const int maxProblemPositions = 10;
+float problemLatitudes[maxProblemPositions];
+float problemLongitudes[maxProblemPositions];
+int problemPositionCount = 0;
 
-float problemLatitude = 0.0;
-float problemLongitude = 0.0;
+// Flags und Variablen
+bool isRecording = false;
+bool isVerbose = true;
+bool checkBoundaries = true;
+bool isFakeGPS = true;
+unsigned long lastFakeGPStime = 0;
 
-// Neue Variablen für Stillstandserkennung
-unsigned long lastMovementTime = 0;
-const unsigned long movementTimeout = 10000; // Timeout in Millisekunden (10 Sekunden)
-float lastLatitude = 0.0;
-float lastLongitude = 0.0;
-const float movementThreshold = 0.00001; // Bewegungsschwelle (anpassen!)
+// Verbindungsstatus
+bool isWifiConnected = false;
+bool isMqttConnected = false;
+
+// Dynamischer Speicher für GPS-Daten
+String gpsData = "";
+
+// Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
+const float latBounds[] = {46.811819, 46.812107};
+const float lonBounds[] = {7.132838, 7.133173};
+// Funktion zum Verbinden mit WLAN (mit Timeout)
+void connectToWiFi() {
+    isWifiConnected = false;
+    int connectionAttempts = 0;
+    unsigned long lastConnectAttempt = 0;
+
+    while (!isWifiConnected && connectionAttempts < numNetworks) {
+        if (millis() - lastConnectAttempt > 5000) {
+            Serial.print("Verbinde mit ");
+            Serial.println(ssid[connectionAttempts]);
+            WiFi.begin(ssid[connectionAttempts], pass[connectionAttempts]);
+
+            int wifiConnectTimeout = 10000; // Timeout in Millisekunden
+            unsigned long startTime = millis();
+
+            while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < wifiConnectTimeout) {
+                delay(500);
+            }
+
+            if (WiFi.status() == WL_CONNECTED) {
+                isWifiConnected = true;
+                Serial.println("WLAN verbunden!");
+                Serial.print("IP-Adresse: ");
+                Serial.println(WiFi.localIP());
+            } else {
+                connectionAttempts++;
+            }
+
+            lastConnectAttempt = millis();
+        }
+    }
+
+    if (!isWifiConnected) {
+        Serial.println("Verbindung zu allen WLAN-Netzwerken fehlgeschlagen.");
+    }
+}
+
+// Funktion zum Verbinden mit MQTT
+void connectToMqtt() {
+    isMqttConnected = false;
+
+    if (isWifiConnected) {
+        Serial.print("Verbinde mit MQTT Broker: ");
+        Serial.println(broker);
+
+        // Client-ID festlegen (vor dem Verbinden!)
+        mqttClient.setId("RasenmaeherRoboter_12345");
+
+        mqttClient.setUsernamePassword(user, password);
+
+        while (!mqttClient.connect(broker, port)) {
+            Serial.print(".");
+            delay(500);
+        }
+
+        if (mqttClient.connected()) {
+            isMqttConnected = true;
+            Serial.println("MQTT verbunden!");
+
+            // Abonnieren der Steuerungs-Topics
+            mqttClient.subscribe(topicControl);
+            Serial.print("Abonniert: ");
+            Serial.println(topicControl);
+        } else {
+            Serial.println("MQTT-Verbindung fehlgeschlagen.");
+        }
+    }
+}
+// Funktion zum Verarbeiten von GPS-Daten (mit Grenzwertprüfung und Speicherung)
+// Funktion zum Verarbeiten von GPS-Daten (mit Grenzwertprüfung, Speicherung und Zeitstempel)
+void processGPS() {
+    while (SerialGPS.available() > 0) {
+        if (gps.encode(SerialGPS.read())) {
+            if (gps.location.isValid() && gps.location.age() < 2000) {
+                float latitude = gps.location.lat();
+                float longitude = gps.location.lng();
+                unsigned long timestamp = millis(); // Zeitstempel in Millisekunden
+
+                if (checkBoundaries && !isInsideBoundaries(latitude, longitude)) {
+                    if (isVerbose) {
+                        Serial.println("GPS-Daten außerhalb der Grundstücksgrenzen verworfen.");
+                    }
+                    continue; // GPS-Daten verwerfen, wenn sie außerhalb der Grenzen liegen
+                }
+
+                if (isRecording) {
+                    gpsData += String(latitude, 6) + "," + String(longitude, 6) + "," + String(timestamp) + ";";
+                }
+
+                // Statusmeldung mit aktuellen GPS-Daten und Zeitstempel senden
+                sendMqttMessage(topicStatus, String("GPS: ") + String(latitude, 6) + ", " + String(longitude, 6) + ", " + String(timestamp));
+            } else {
+                handleError("Ungültige GPS-Daten!", topicStatus, "error_gps_invalid");
+            }
+        }
+    }
+}
+
+// Funktion zum Generieren zufälliger GPS-Daten innerhalb der Grundstücksgrenzen (mit Zeitstempel)
+void generateFakeGPS() {
+    if (millis() - lastFakeGPStime >= gpsInterval) {
+        float lat = random(latBounds[0] * 1000000, latBounds[1] * 1000000) / 1000000.0;
+        float lon = random(lonBounds[0] * 1000000, lonBounds[1] * 1000000) / 1000000.0;
+        unsigned long timestamp = millis(); // Zeitstempel in Millisekunden
+
+        if (isRecording) {
+            gpsData += String(lat, 6) + "," + String(lon, 6) + "," + String(timestamp) + ";";
+        }
+
+        // Problemposition mit Zeitstempel speichern (nur im Fake-GPS-Modus)
+        if (problemPositionCount < maxProblemPositions) {
+            problemLatitudes[problemPositionCount] = lat;
+            problemLongitudes[problemPositionCount] = lon;
+            // Hier fehlt die Speicherung des Zeitstempels für Problempositionen, da kein Array dafür vorgesehen ist.
+            problemPositionCount++;
+        } else {
+            handleError("Maximale Anzahl Problempositionen erreicht!", topicStatus, "error_max_problems");
+        }
+
+        lastFakeGPStime = millis();
+    }
+}
+
+// Funktion zum Versenden von MQTT-Nachrichten
+void sendMqttMessage(const String& topic, const String& payload) {
+    if (mqttClient.connected()) {
+        mqttClient.beginMessage(topic);
+        mqttClient.print(payload);
+        mqttClient.endMessage();
+        if (isVerbose) {
+            Serial.print("MQTT-Nachricht gesendet an ");
+            Serial.print(topic);
+            Serial.print(": ");
+            Serial.println(payload);
+        }
+    } else {
+        if (isVerbose) {
+            Serial.println("MQTT nicht verbunden. Nachricht nicht gesendet.");
+        }
+    }
+}
+
+// Funktion zum Leeren des GPS-Datenspeichers
+void clearGPSData() {
+    gpsData = "";
+}
+
+// Funktion zur Überprüfung, ob Koordinaten innerhalb der Grundstücksgrenzen liegen
+bool isInsideBoundaries(float lat, float lon) {
+    return (lat >= latBounds[0] && lat <= latBounds[1] && lon >= lonBounds[0] && lon <= lonBounds[1]);
+}
+
+// Funktion zur Fehlerbehandlung
+void handleError(const String& message, const String& topic, const String& errorCode) {
+    if (isVerbose) {
+        Serial.println(message);
+    }
+    sendMqttMessage(topic, errorCode);
+}
+
 void setup() {
-  Serial.begin(115200);
-  while (!Serial) {
-    ; // Warten auf serielle Verbindung
-  }
-  if (serialOutput) {
-    Serial.println("Starting Worx Mower GPS Tracker...");
-  }
-
-  // GPS initialisieren
-  Serial1.begin(GPSBaud);
-
-  // WLAN-Verbindung herstellen
-  int currentNetwork = 0;
-  if (serialOutput) {
-    Serial.print("Connecting to WiFi");
-  }
-  while (WiFi.status() != WL_CONNECTED) {
-    if (serialOutput) {
-      Serial.print(".");
+    Serial.begin(9600);
+    SerialGPS.begin(9600);
+    if (isVerbose) {
+        Serial.println("Serielle Kommunikation und GPS initialisiert");
     }
-    WiFi.begin(ssid[currentNetwork], pass[currentNetwork]);
-    delay(5000); // Warte 5 Sekunden, bevor zum nächsten Netzwerk gewechselt wird
-    currentNetwork = (currentNetwork + 1) % numNetworks;
-  }
-  if (serialOutput) {
-    Serial.println("\nConnected to WiFi");
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
-  }
 
-  // MQTT-Verbindung herstellen
-  mqttClient.setUsernamePassword(username, password);
-  if (serialOutput) {
-    Serial.print("Connecting to MQTT broker ");
-  }
-  while (!mqttClient.connect(broker, port)) {
-    if (serialOutput) {
-      Serial.print(".");
-    }
-    delay(2500);
-  }
-  if (serialOutput) {
-    Serial.println(" connected!");
-  }
-
-  // MQTT-Nachrichten-Handler registrieren und Topics abonnieren
-  mqttClient.onMessage(onMqttMessage);
-  mqttClient.subscribe(topicControl);
+    connectToWiFi();
+    connectToMqtt();
 }
 void loop() {
-  mqttClient.poll();
-  getGpsData();
-  handleSerialInput();
-
-  if (maehenAktiv) {
-    checkMovement(); 
-    if (gpsFix && isInsideBoundaries(latitude, longitude)) {
-      recordGpsData();
+    // WLAN- und MQTT-Verbindung prüfen und ggf. wiederherstellen
+    if (!isWifiConnected) {
+        connectToWiFi();
     }
-  } else if (fakeGpsMode) {
-    simulateGpsData();
-  }
-
-  // Überprüfe und sende gespeicherte Problemdaten
-  sendProblemData();
-}
-
-void getGpsData() {
-  while (Serial1.available() > 0) {
-    if (gps.encode(Serial1.read())) {
-      if (gps.location.isValid()) {
-        latitude = gps.location.lat();
-        longitude = gps.location.lng();
-        gpsFix = true;
-        lastGpsTime = millis(); 
-        if (serialOutput) {
-          Serial.print("GPS: ");
-          Serial.print(latitude, 6); 
-          Serial.print(", ");
-          Serial.println(longitude, 6);
-        }
-      } else {
-        gpsFix = false;
-      }
+    if (isWifiConnected && !isMqttConnected) {
+        connectToMqtt();
     }
-  }
-}
-void checkMovement() {
-  if (gpsFix) {
-    float distance = TinyGPSPlus::distanceBetween(
-      lastLatitude, lastLongitude,
-      latitude, longitude
-    );
 
-    if (distance > movementThreshold) {
-      lastMovementTime = millis();
-      lastLatitude = latitude;
-      lastLongitude = longitude;
-    } else {
-      if (millis() - lastMovementTime > movementTimeout) {
-        static unsigned long lastProblemTime = 0;
-        const unsigned long problemTimeout = 5000; // Timeout in Millisekunden
+    // MQTT-Nachrichten verarbeiten
+    if (isMqttConnected) {
+        mqttClient.poll();
+        if (mqttClient.available()) {
+            String topic = mqttClient.messageTopic();
+            String payload = mqttClient.readString();
+            Serial.println("MQTT-Nachricht empfangen:");
+            Serial.print("  Topic: ");
+            Serial.println(topic);
+            Serial.print("  Payload: ");
+            Serial.println(payload);
 
-        if (millis() - lastProblemTime > problemTimeout) {
-          if (!problemDetected) {
-            problemDetected = true;
-            if (serialOutput) {
-              Serial.println("Problem detected (no movement)!");
+            if (topic == topicControl) {
+                if (payload == "start") {
+                    isRecording = true;
+                    clearGPSData();
+                    Serial.println("Aufzeichnung gestartet.");
+                } else if (payload == "stop") {
+                    isRecording = false;
+                    Serial.println("Aufzeichnung gestoppt.");
+                    sendMqttMessage(topicGPS, gpsData);
+                    clearGPSData();
+                    for (int i = 0; i < problemPositionCount; i++) {
+                        String problemData = String(problemLatitudes[i], 6) + "," + String(problemLongitudes[i], 6);
+                        sendMqttMessage(topicStatus, problemData);
+                    }
+                    problemPositionCount = 0; // Problemzonen-Zähler zurücksetzen
+                } else if (payload == "problem") {
+                    handleProblemCommand(); // Funktion für Problembehandlung
+                } else if (payload == "fakegps_on") {
+                    isFakeGPS = true;
+                    Serial.println("Fake GPS Modus aktiviert.");
+                } else if (payload == "fakegps_off") {
+                    isFakeGPS = false;
+                    Serial.println("Fake GPS Modus deaktiviert.");
+                } else {
+                    if (isVerbose) {
+                        Serial.println("Unbekannter Befehl empfangen.");
+                    }
+                }
             }
-            // GPS-Position bei Problem speichern
-            problemLatitude = latitude;
-            problemLongitude = longitude;
-          }
-          lastProblemTime = millis();
         }
-      }
     }
-  }
-}
-void recordGpsData() {
-  // GPS-Daten im RAM speichern
-  if (currentGpsIndex < maxGpsPoints) {
-    gpsData[currentGpsIndex].lat = latitude;
-    gpsData[currentGpsIndex].lon = longitude;
-    gpsData[currentGpsIndex].timestamp = lastGpsTime;
-    currentGpsIndex++;
-  } else {
-    if (serialOutput) {
-      Serial.println("GPS data buffer full!");
-    }
-  }
-}
 
-void sendGpsData() {
-  // GPS-Daten aus dem RAM per MQTT senden
-  if (mqttClient.connected()) {
-    DynamicJsonDocument doc(2048); // Größeres JSON-Dokument für alle GPS-Punkte
-    JsonArray data = doc.createNestedArray("data");
-    for (int i = 0; i < currentGpsIndex; i++) {
-      JsonObject point = data.createNestedObject();
-      point["lat"] = gpsData[i].lat;
-      point["lon"] = gpsData[i].lon;
-      point["timestamp"] = gpsData[i].timestamp;
-    }
-    char jsonBuffer[2048];
-    serializeJson(doc, jsonBuffer);
-    mqttClient.beginMessage(topicGps);
-    mqttClient.print(jsonBuffer);
-    mqttClient.endMessage();
+    // Serielle Befehle verarbeiten (ähnlich wie MQTT-Verarbeitung)
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
 
-    // RAM-Puffer leeren
-    currentGpsIndex = 0;
-  } else {
-    if (serialOutput) {
-      Serial.println("MQTT not connected. Cannot send GPS data.");
-    }
-  }
-}
+        if (command == "start") {
+            isRecording = true;
+            clearGPSData();
+            if (isVerbose) {
+                Serial.println("Aufzeichnung (seriell) gestartet.");
+            }
+        } else if (command == "stop") {
+            isRecording = false;
+            if (isVerbose) {
+                Serial.println("Aufzeichnung (seriell) gestoppt.");
+            }
+            sendMqttMessage(topicGPS, gpsData);
+            clearGPSData();
+            for (int i = 0; i < problemPositionCount; i++) {
+                String problemData = String(problemLatitudes[i], 6) + "," + String(problemLongitudes[i], 6);
+                sendMqttMessage(topicStatus, problemData);
+            }
+            problemPositionCount = 0; // Problemzonen-Zähler zurücksetzen
+        } else if (command == "problem") {
+            handleProblemCommand(); // Funktion für Problembehandlung
+        } else if (command == "verbose") {
+            isVerbose = !isVerbose; // verbose Modus umschalten
+            Serial.print("Ausführliche Ausgabe ");
+            Serial.println(isVerbose ? "aktiviert" : "deaktiviert");
+        } else if (command == "fakegps_on") {
+            isFakeGPS = true;
+            Serial.println("Fake GPS Modus aktiviert.");
+        } else if (command == "fakegps_off") {
+            isFakeGPS = false;
+            Serial.println("Fake GPS Modus deaktiviert.");
+        } else {
+            if (isVerbose) {
+                Serial.println("Unbekannter Befehl empfangen.");
+            }
+        }
 
-void sendProblemData() {
-  // Sende die aktuelle Problemposition (lat, lon) per MQTT, wenn eine Verbindung besteht und ein Problem erkannt wurde
-  if (problemDetected && mqttClient.connected()) {
-    DynamicJsonDocument doc(200);
-    doc["lat"] = problemLatitude;
-    doc["lon"] = problemLongitude;
-    doc["timestamp"] = millis();
-    doc["command"] = "problem";
-    char jsonBuffer[256];
-    serializeJson(doc, jsonBuffer);
-    mqttClient.beginMessage(topicStatus);
-    mqttClient.print(jsonBuffer);
-    mqttClient.endMessage();
-
-    // Problem als gesendet markieren
-    problemDetected = false;
-  }
-}
-void onMqttMessage(int messageSize) {
-  // Verarbeite eingehende MQTT-Nachrichten
-  if (mqttClient.messageTopic() == topicControl) {
-    String payload = mqttClient.readString();
-    if (serialOutput) {
-      Serial.print("MQTT message received: ");
-      Serial.println(payload);
+        // Seriellen Eingabepuffer leeren
+        while (Serial.available() > 0) {
+            Serial.read();
+        }
     }
-    if (payload == "start") {
-      maehenAktiv = true;
-      if (serialOutput) {
-        Serial.println("Start recording GPS data");
-      }
-    } else if (payload == "stop") {
-      maehenAktiv = false;
-      if (serialOutput) {
-        Serial.println("Stop recording and send GPS data");
-      }
-      sendGpsData();
-    } else if (payload == "laden") {
-      if (serialOutput) {
-        Serial.println("Clear problem data");
-      }
-      problemLatitude = 0.0;
-      problemLongitude = 0.0;
-    } else if (payload == "fakegps_on") {
-      fakeGpsMode = true;
-    } else if (payload == "fakegps_off") {
-      fakeGpsMode = false;
-    } else if (payload == "serial_on") {
-      serialOutput = true;
-    } else if (payload == "serial_off") {
-      serialOutput = false;
+
+    // GPS-Daten verarbeiten (entweder echt oder fake)
+    if (isRecording) {
+        if (isFakeGPS) {
+            generateFakeGPS();
+        } else {
+            processGPS();
+        }
+    }
+
+    // GPS-Status anzeigen
+    Serial.print("Satelliten: ");
+    Serial.println(gps.satellites.value());
+    if (gps.location.isValid()) {
+        Serial.print("Latitude: ");
+        Serial.println(gps.location.lat(), 6);
+        Serial.print("Longitude: ");
+        Serial.println(gps.location.lng(), 6);
     } else {
-      if (serialOutput) {
-        Serial.println("Unknown command");
-      }
+        Serial.println("Keine gültigen GPS-Daten");
     }
-  }
+    delay(1000); // Kleine Verzögerung, um die Ausgabe lesbarer zu machen
 }
 
-void simulateGpsData() {
-  // Simuliere GPS-Daten, wenn kein GPS-Empfang möglich ist
-  static unsigned long lastSimulatedGpsTime = 0;
-  if (millis() - lastSimulatedGpsTime > gpsInterval) {
-    latitude += random(-0.00005, 0.00005); 
-    longitude += random(-0.00005, 0.00005); 
-    lastSimulatedGpsTime = millis();
-    if (serialOutput) {
-      Serial.print("Simulated GPS: ");
-      Serial.print(latitude, 6);
-      Serial.print(", ");
-      Serial.println(longitude, 6);
-    }
-  }
-}
-
-
-void handleSerialInput() {
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    if (command == "start") {
-      maehenAktiv = true;
-      if (serialOutput) {
-        Serial.println("Start recording GPS data");
-      }
-    } else if (command == "stop") {
-      maehenAktiv = false;
-      if (serialOutput) {
-        Serial.println("Stop recording and send GPS data");
-      }
-      sendGpsData();
-    } else if (command == "laden") {
-      if (serialOutput) {
-        Serial.println("Clear problem data");
-      }
-      problemLatitude = 0.0;
-      problemLongitude = 0.0;
-    } else if (command == "fakegps_on") {
-      fakeGpsMode = true;
-    } else if (command == "fakegps_off") {
-      fakeGpsMode = false;
-    } else if (command == "serial_on") {
-      serialOutput = true;
-    } else if (command == "serial_off") {
-      serialOutput = false;
+// Funktion für die Problembehandlung (ausgelagert aus loop())
+void handleProblemCommand() {
+    if (isFakeGPS) {
+        generateFakeGPS();
+        String problemData = String(problemLatitudes[problemPositionCount - 1], 6) + "," + String(problemLongitudes[problemPositionCount - 1], 6);
+        sendMqttMessage(topicStatus, problemData);
+        if (isVerbose) {
+            Serial.println("Problemmeldung (Fake GPS) gesendet.");
+        }
     } else {
-      if (serialOutput) {
-        Serial.println("Unknown command");
-      }
+        if (gps.location.isValid()) {
+            if (problemPositionCount < maxProblemPositions) {
+                problemLatitudes[problemPositionCount] = gps.location.lat();
+                problemLongitudes[problemPositionCount] = gps.location.lng();
+                problemPositionCount++;
+            } else {
+                handleError("Maximale Anzahl Problempositionen erreicht!", topicStatus, "error_max_problems");
+            }
+            String problemData = String(problemLatitudes[problemPositionCount - 1], 6) + "," + String(problemLongitudes[problemPositionCount - 1], 6);
+            sendMqttMessage(topicStatus, problemData);
+            if (isVerbose) {
+                Serial.println("Problemmeldung gesendet.");
+            }
+        } else {
+            handleError("Keine gültigen GPS-Daten für Problemmeldung verfügbar.", topicStatus, "error_no_gps");
+        }
     }
-  }
-}
-
-bool isInsideBoundaries(float lat, float lon) {
-  return (lat >= minLatitude && lat <= maxLatitude && lon >= minLongitude && lon <= maxLongitude);
 }
