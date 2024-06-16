@@ -1,146 +1,120 @@
 #include <ArduinoMqttClient.h>
 #include <WiFiNINA.h>
-#include <Arduino_LSM9DS1.h>
-#include <SPI.h>
-#include <SD.h>
 #include <ArduinoJson.h>
 #include <TinyGPS++.h>
 #include "credentials.h"
 
 // WLAN-Zugangsdaten
-
 const int numNetworks = sizeof(ssid) / sizeof(ssid[0]);
 
 // MQTT-Einstellungen
 WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
-
-// GPS und IMU Variablen
+// GPS-Variablen
 TinyGPSPlus gps;
-const int GPSBaud = 9600; // GPS Baudrate als Konstante
+const int GPSBaud = 9600;
 float latitude = 0.0;
 float longitude = 0.0;
 bool gpsFix = false;
-bool fakeGpsMode = false; // Flag für Fake GPS Modus
-bool serialOutput = true; // Flag für Serial Monitor Ausgabe
+bool fakeGpsMode = false;
+bool serialOutput = true;
 unsigned long lastGpsTime = 0;
-const int gpsInterval = 2; 
-float imuThreshold = 0.5; // Bewegungsschwelle für IMU (anpassen!)
+const int gpsInterval = 2; // Sekunden
 bool maehenAktiv = false;
 bool problemDetected = false;
 
-// SD-Karte
-const int chipSelect = 4;
-File dataFile;
-
-// Grundstücksgrenzen 
+// Grundstücksgrenzen
 const float minLatitude = 46.811819;
 const float maxLatitude = 46.812107;
 const float minLongitude = 7.132838;
 const float maxLongitude = 7.133173;
 
-// IMU-Kalibrierungsdaten
-float gyroBiasX = 0.0, gyroBiasY = 0.0, gyroBiasZ = 0.0;
-float accelBiasX = 0.0, accelBiasY = 0.0, accelBiasZ = 0.0;
+// Speicher für GPS-Daten und Problemkoordinaten im RAM
+const int maxGpsPoints = 10000; // Maximale Anzahl an GPS-Punkten
+struct GpsPoint {
+  float lat;
+  float lon;
+  unsigned long timestamp;
+};
+GpsPoint gpsData[maxGpsPoints];
+int currentGpsIndex = 0;
 
-// Anzahl der Kalibrierungsmessungen
-const int numCalibrationMeasurements = 100;
+float problemLatitude = 0.0;
+float problemLongitude = 0.0;
 
+// Neue Variablen für Stillstandserkennung
+unsigned long lastMovementTime = 0;
+const unsigned long movementTimeout = 10000; // Timeout in Millisekunden (10 Sekunden)
+float lastLatitude = 0.0;
+float lastLongitude = 0.0;
+const float movementThreshold = 0.00001; // Bewegungsschwelle (anpassen!)
 void setup() {
   Serial.begin(115200);
   while (!Serial) {
-    ; // Warten, bis serielle Verbindung hergestellt ist. Nur für native USB-Ports erforderlich
+    ; // Warten auf serielle Verbindung
   }
-
   if (serialOutput) {
     Serial.println("Starting Worx Mower GPS Tracker...");
-  }
-
-  // IMU initialisieren
-  if (!IMU.begin()) {
-    if (serialOutput) {
-      Serial.println("Failed to initialize IMU!");
-    }
-    while (1);
-  }
-
-  // SD-Karte initialisieren
-  if (!SD.begin(chipSelect)) {
-    if (serialOutput) {
-      Serial.println("Card failed, or not present");
-    }
-    while (1); // Don't do anything more
   }
 
   // GPS initialisieren
   Serial1.begin(GPSBaud);
 
-  connectToWifi();
-  mqttClient.setUsernamePassword(username, password);
-  connectToMqtt();
-}
-
-void connectToWifi() {
+  // WLAN-Verbindung herstellen
   int currentNetwork = 0;
-
   if (serialOutput) {
     Serial.print("Connecting to WiFi");
   }
-
   while (WiFi.status() != WL_CONNECTED) {
     if (serialOutput) {
       Serial.print(".");
     }
     WiFi.begin(ssid[currentNetwork], pass[currentNetwork]);
     delay(5000); // Warte 5 Sekunden, bevor zum nächsten Netzwerk gewechselt wird
-
     currentNetwork = (currentNetwork + 1) % numNetworks;
   }
-
   if (serialOutput) {
     Serial.println("\nConnected to WiFi");
     Serial.println("IP address: ");
     Serial.println(WiFi.localIP());
   }
-}
 
-void connectToMqtt() {
+  // MQTT-Verbindung herstellen
+  mqttClient.setUsernamePassword(username, password);
   if (serialOutput) {
     Serial.print("Connecting to MQTT broker ");
   }
-
   while (!mqttClient.connect(broker, port)) {
     if (serialOutput) {
       Serial.print(".");
     }
     delay(2500);
   }
-
   if (serialOutput) {
     Serial.println(" connected!");
   }
 
+  // MQTT-Nachrichten-Handler registrieren und Topics abonnieren
   mqttClient.onMessage(onMqttMessage);
-
-  // Abonniere MQTT-Topics
   mqttClient.subscribe(topicControl);
 }
-
 void loop() {
-  // MQTT-Client überprüfen und Nachrichten verarbeiten
   mqttClient.poll();
-
-  getGpsData(); // GPS-Daten lesen und verarbeiten
+  getGpsData();
+  handleSerialInput();
 
   if (maehenAktiv) {
-    checkImuForMovement();
-    if (gpsFix) {  // Nur Daten aufzeichnen, wenn ein GPS-Fix vorhanden ist
+    checkMovement(); 
+    if (gpsFix && isInsideBoundaries(latitude, longitude)) {
       recordGpsData();
     }
   } else if (fakeGpsMode) {
     simulateGpsData();
   }
+
+  // Überprüfe und sende gespeicherte Problemdaten
+  sendProblemData();
 }
 
 void getGpsData() {
@@ -150,10 +124,10 @@ void getGpsData() {
         latitude = gps.location.lat();
         longitude = gps.location.lng();
         gpsFix = true;
-        lastGpsTime = millis(); // Zeitstempel aktualisieren
+        lastGpsTime = millis(); 
         if (serialOutput) {
           Serial.print("GPS: ");
-          Serial.print(latitude, 6); // 6 Nachkommastellen
+          Serial.print(latitude, 6); 
           Serial.print(", ");
           Serial.println(longitude, 6);
         }
@@ -163,142 +137,104 @@ void getGpsData() {
     }
   }
 }
+void checkMovement() {
+  if (gpsFix) {
+    float distance = TinyGPSPlus::distanceBetween(
+      lastLatitude, lastLongitude,
+      latitude, longitude
+    );
 
-void checkImuForMovement() {
-  if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()) {
-    float ax, ay, az, gx, gy, gz;
-    IMU.readAcceleration(ax, ay, az);
-    IMU.readGyroscope(gx, gy, gz);
+    if (distance > movementThreshold) {
+      lastMovementTime = millis();
+      lastLatitude = latitude;
+      lastLongitude = longitude;
+    } else {
+      if (millis() - lastMovementTime > movementTimeout) {
+        static unsigned long lastProblemTime = 0;
+        const unsigned long problemTimeout = 5000; // Timeout in Millisekunden
 
-    // Subtrahiere den Bias von den IMU-Werten
-    ax -= accelBiasX;
-    ay -= accelBiasY;
-    az -= accelBiasZ;
-    gx -= gyroBiasX;
-    gy -= gyroBiasY;
-    gz -= gyroBiasZ;
-
-    // Berechne die Gesamtbeschleunigung und Winkelgeschwindigkeit
-    float accelMagnitude = sqrt(ax*ax + ay*ay + az*az);
-    float gyroMagnitude = sqrt(gx*gx + gy*gy + gz*gz);
-
-    // Überprüfe, ob die Bewegung unter den Schwellenwerten liegt
-    if (accelMagnitude < imuThreshold && gyroMagnitude < imuThreshold) {
-      static unsigned long lastProblemTime = 0; // Zeitstempel des letzten Problems
-      const unsigned long problemTimeout = 5000; // Timeout in Millisekunden
-
-      // Überprüfe, ob der Timeout abgelaufen ist
-      if (millis() - lastProblemTime > problemTimeout) {
-        if (!problemDetected && isInsideBoundaries(latitude, longitude)) {
-          problemDetected = true;
-          if (serialOutput) {
-            Serial.println("Problem detected!");
+        if (millis() - lastProblemTime > problemTimeout) {
+          if (!problemDetected) {
+            problemDetected = true;
+            if (serialOutput) {
+              Serial.println("Problem detected (no movement)!");
+            }
+            // GPS-Position bei Problem speichern
+            problemLatitude = latitude;
+            problemLongitude = longitude;
           }
-          sendProblemData(latitude, longitude);
-          lastProblemTime = millis(); // Zeitstempel aktualisieren
+          lastProblemTime = millis();
         }
       }
-    } else {
-      problemDetected = false;
     }
   }
 }
-
-// ... (Fortsetzung im nächsten Kommentar)
-
 void recordGpsData() {
-  if (!SD.exists("gps_data.json")) {
-    dataFile = SD.open("gps_data.json", FILE_WRITE);
-    dataFile.println("["); // Starte JSON-Array
-    dataFile.close();
-  }
-
-  dataFile = SD.open("gps_data.json", O_APPEND); // Korrigierte Verwendung von O_APPEND
-  if (dataFile) {
-    DynamicJsonDocument doc(200); // Dynamische Speicherzuweisung
-    doc["lat"] = latitude;
-    doc["lon"] = longitude;
-    doc["timestamp"] = lastGpsTime; // Timestamp vom GPS-Modul
-
-    // Füge Komma hinzu, wenn es nicht der erste Eintrag ist
-    if (dataFile.size() > 2) {
-      dataFile.print(",");
-    }
-
-    serializeJson(doc, dataFile);
-    dataFile.close();
+  // GPS-Daten im RAM speichern
+  if (currentGpsIndex < maxGpsPoints) {
+    gpsData[currentGpsIndex].lat = latitude;
+    gpsData[currentGpsIndex].lon = longitude;
+    gpsData[currentGpsIndex].timestamp = lastGpsTime;
+    currentGpsIndex++;
   } else {
     if (serialOutput) {
-      Serial.println("Error opening gps_data.json");
+      Serial.println("GPS data buffer full!");
     }
   }
 }
-
 
 void sendGpsData() {
-  dataFile = SD.open("gps_data.json", FILE_READ);
-  if (dataFile) {
-    // Füge schließende Klammer für JSON-Array hinzu
-    dataFile.seek(dataFile.size() - 1); // Gehe zum letzten Zeichen vor EOF
-    if (dataFile.peek() == ',') { // Wenn das letzte Zeichen ein Komma ist
-      dataFile.seek(dataFile.size() - 2); // Überschreibe das Komma
+  // GPS-Daten aus dem RAM per MQTT senden
+  if (mqttClient.connected()) {
+    DynamicJsonDocument doc(2048); // Größeres JSON-Dokument für alle GPS-Punkte
+    JsonArray data = doc.createNestedArray("data");
+    for (int i = 0; i < currentGpsIndex; i++) {
+      JsonObject point = data.createNestedObject();
+      point["lat"] = gpsData[i].lat;
+      point["lon"] = gpsData[i].lon;
+      point["timestamp"] = gpsData[i].timestamp;
     }
-    dataFile.println("]");
-    dataFile.seek(0); // Zurück zum Anfang
+    char jsonBuffer[2048];
+    serializeJson(doc, jsonBuffer);
+    mqttClient.beginMessage(topicGps);
+    mqttClient.print(jsonBuffer);
+    mqttClient.endMessage();
 
-    // Sende Daten per MQTT
-    if (mqttClient.connected()) { // Überprüfen, ob MQTT verbunden ist
-      mqttClient.beginMessage(topicGps);
-      while (dataFile.available()) {
-        mqttClient.write(dataFile.read());
-      }
-      mqttClient.endMessage();
-    } else {
-      if (serialOutput) {
-        Serial.println("MQTT not connected. Cannot send GPS data.");
-      }
-    }
-
-    dataFile.close();
-
-    // Lösche Datei nach dem Senden
-    SD.remove("gps_data.json");
+    // RAM-Puffer leeren
+    currentGpsIndex = 0;
   } else {
     if (serialOutput) {
-      Serial.println("Error opening gps_data.json");
+      Serial.println("MQTT not connected. Cannot send GPS data.");
     }
   }
 }
 
-void sendProblemData(float lat, float lon) {
-  DynamicJsonDocument doc(200); // Dynamische Speicherzuweisung
-  doc["lat"] = lat;
-  doc["lon"] = lon;
-  doc["timestamp"] = millis();
-  doc["command"] = "problem";
-
-  char jsonBuffer[256];
-  serializeJson(doc, jsonBuffer);
-
-  if (mqttClient.connected()) { // Überprüfen, ob MQTT verbunden ist
+void sendProblemData() {
+  // Sende die aktuelle Problemposition (lat, lon) per MQTT, wenn eine Verbindung besteht und ein Problem erkannt wurde
+  if (problemDetected && mqttClient.connected()) {
+    DynamicJsonDocument doc(200);
+    doc["lat"] = problemLatitude;
+    doc["lon"] = problemLongitude;
+    doc["timestamp"] = millis();
+    doc["command"] = "problem";
+    char jsonBuffer[256];
+    serializeJson(doc, jsonBuffer);
     mqttClient.beginMessage(topicStatus);
     mqttClient.print(jsonBuffer);
     mqttClient.endMessage();
-  } else {
-    if (serialOutput) {
-      Serial.println("MQTT not connected. Cannot send problem data.");
-    }
+
+    // Problem als gesendet markieren
+    problemDetected = false;
   }
 }
-
 void onMqttMessage(int messageSize) {
+  // Verarbeite eingehende MQTT-Nachrichten
   if (mqttClient.messageTopic() == topicControl) {
     String payload = mqttClient.readString();
     if (serialOutput) {
       Serial.print("MQTT message received: ");
       Serial.println(payload);
     }
-
     if (payload == "start") {
       maehenAktiv = true;
       if (serialOutput) {
@@ -311,8 +247,11 @@ void onMqttMessage(int messageSize) {
       }
       sendGpsData();
     } else if (payload == "laden") {
-      // IMU kalibrieren, wenn der Worx in der Ladestation ist
-      calibrateIMU();
+      if (serialOutput) {
+        Serial.println("Clear problem data");
+      }
+      problemLatitude = 0.0;
+      problemLongitude = 0.0;
     } else if (payload == "fakegps_on") {
       fakeGpsMode = true;
     } else if (payload == "fakegps_off") {
@@ -329,18 +268,13 @@ void onMqttMessage(int messageSize) {
   }
 }
 
-
-
-// 7. Hilfsfunktionen:
-
 void simulateGpsData() {
   // Simuliere GPS-Daten, wenn kein GPS-Empfang möglich ist
   static unsigned long lastSimulatedGpsTime = 0;
   if (millis() - lastSimulatedGpsTime > gpsInterval) {
-    latitude += random(-0.00005, 0.00005);  // Zufällige Änderung
-    longitude += random(-0.00005, 0.00005); // Zufällige Änderung
+    latitude += random(-0.00005, 0.00005); 
+    longitude += random(-0.00005, 0.00005); 
     lastSimulatedGpsTime = millis();
-
     if (serialOutput) {
       Serial.print("Simulated GPS: ");
       Serial.print(latitude, 6);
@@ -350,52 +284,28 @@ void simulateGpsData() {
   }
 }
 
-void calibrateIMU() {
-  // IMU-Kalibrierung durchführen, wenn der Worx in der Ladestation steht
-  gyroBiasX = 0; gyroBiasY = 0; gyroBiasZ = 0;
-  accelBiasX = 0; accelBiasY = 0; accelBiasZ = 0;
-
-  for (int i = 0; i < numCalibrationMeasurements; i++) {
-    float gx, gy, gz, ax, ay, az;
-    IMU.readGyroscope(gx, gy, gz);
-    IMU.readAcceleration(ax, ay, az);
-
-    gyroBiasX += gx;
-    gyroBiasY += gy;
-    gyroBiasZ += gz;
-    accelBiasX += ax;
-    accelBiasY += ay;
-    accelBiasZ += az;
-
-    delay(10); // Kurze Pause zwischen den Messungen
-  }
-
-  gyroBiasX /= numCalibrationMeasurements;
-  gyroBiasY /= numCalibrationMeasurements;
-  gyroBiasZ /= numCalibrationMeasurements;
-  accelBiasX /= numCalibrationMeasurements;
-  accelBiasY /= numCalibrationMeasurements;
-  accelBiasZ /= numCalibrationMeasurements;
-
-  if (serialOutput) {
-    Serial.println("IMU calibration complete");
-  }
-}
 
 void handleSerialInput() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
-
-    if (command.startsWith("imuThreshold ")) {
-      float newThreshold = command.substring(12).toFloat();
-      if (newThreshold > 0) {
-        imuThreshold = newThreshold;
-        Serial.print("IMU threshold set to: ");
-        Serial.println(imuThreshold);
-      } else {
-        Serial.println("Invalid threshold value. Must be greater than 0.");
+    if (command == "start") {
+      maehenAktiv = true;
+      if (serialOutput) {
+        Serial.println("Start recording GPS data");
       }
+    } else if (command == "stop") {
+      maehenAktiv = false;
+      if (serialOutput) {
+        Serial.println("Stop recording and send GPS data");
+      }
+      sendGpsData();
+    } else if (command == "laden") {
+      if (serialOutput) {
+        Serial.println("Clear problem data");
+      }
+      problemLatitude = 0.0;
+      problemLongitude = 0.0;
     } else if (command == "fakegps_on") {
       fakeGpsMode = true;
     } else if (command == "fakegps_off") {
