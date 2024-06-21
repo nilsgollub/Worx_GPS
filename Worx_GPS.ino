@@ -1,10 +1,11 @@
 #include <ArduinoMqttClient.h>
 #include <WiFiNINA.h>
 #include <TinyGPS++.h>
-#include <ArduinoJson.h>
+#include <SPI.h>
+#include <SD.h>
+#include "credentials.h" // WLAN-Anmeldeinformationen, MQTT-Einstellungen
 
-#include "credentials.h"
-// MQTT-Einstellungen
+// Global MQTT client declaration
 WiFiClient wifiClient;
 MqttClient mqttClient(wifiClient);
 
@@ -12,11 +13,15 @@ MqttClient mqttClient(wifiClient);
 TinyGPSPlus gps;
 #define SerialGPS Serial1
 
+// SD-Karten-Einstellungen
+const int chipSelect = 4;
+File dataFile;
+
 // Speicherintervall für GPS-Daten (in Millisekunden)
-const unsigned long gpsInterval = 2000;
+const unsigned long gpsInterval = 500;
 unsigned long lastDataTime = 0; 
 
-// Speicher für Problemzonen (dynamische Größe)
+// Problemzonen (Anzahl und Koordinaten)
 const int maxProblemPositions = 10;
 float problemLatitudes[maxProblemPositions];
 float problemLongitudes[maxProblemPositions];
@@ -32,10 +37,6 @@ bool isFakeGPS = true;
 bool isWifiConnected = false;
 bool isMqttConnected = false;
 
-// Dynamischer Speicher für GPS-Daten
-DynamicJsonDocument gpsDoc(4096); 
-JsonArray gpsDataArray = gpsDoc.createNestedArray();
-
 // Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
 const float latBounds[] = {46.811819, 46.812107};
 const float lonBounds[] = {7.132838, 7.133173};
@@ -46,80 +47,81 @@ const unsigned long stationaryTime = 5000;
 float lastLatitude = 0.0;
 float lastLongitude = 0.0;
 unsigned long lastMovementTime = 0;
+
 // Funktion zum Verbinden mit WLAN (mit Timeout)
 void connectToWiFi() {
-    isWifiConnected = false;
-    int connectionAttempts = 0;
-    unsigned long lastConnectAttempt = 0;
+  isWifiConnected = false;
+  int connectionAttempts = 0;
+  unsigned long lastConnectAttempt = 0;
 
-    while (!isWifiConnected && connectionAttempts < numNetworks) {
-        if (millis() - lastConnectAttempt > 5000) {
-            Serial.print("Verbinde mit ");
-            Serial.println(ssid[connectionAttempts]);
-            WiFi.begin(ssid[connectionAttempts], pass[connectionAttempts]);
+  while (!isWifiConnected && connectionAttempts < numNetworks) {
+    if (millis() - lastConnectAttempt > 5000) {
+      Serial.print("Verbinde mit ");
+      Serial.println(ssid[connectionAttempts]);
+      WiFi.begin(ssid[connectionAttempts], pass[connectionAttempts]);
 
-            int wifiConnectTimeout = 10000; 
-            unsigned long startTime = millis();
+      int wifiConnectTimeout = 10000; 
+      unsigned long startTime = millis();
 
-            while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < wifiConnectTimeout) {
-                delay(500);
-            }
+      while (WiFi.status() != WL_CONNECTED && (millis() - startTime) < wifiConnectTimeout) {
+        delay(500);
+      }
 
-            if (WiFi.status() == WL_CONNECTED) {
-                isWifiConnected = true;
-                Serial.println("WLAN verbunden!");
-                Serial.print("IP-Adresse: ");
-                Serial.println(WiFi.localIP());
-            } else {
-                connectionAttempts++;
-            }
+      if (WiFi.status() == WL_CONNECTED) {
+        isWifiConnected = true;
+        Serial.println("WLAN verbunden!");
+        Serial.print("IP-Adresse: ");
+        Serial.println(WiFi.localIP());
+      } else {
+        connectionAttempts++;
+      }
 
-            lastConnectAttempt = millis();
-        }
+      lastConnectAttempt = millis();
     }
+  }
 
-    if (!isWifiConnected) {
-        Serial.println("Verbindung zu allen WLAN-Netzwerken fehlgeschlagen.");
-    }
+  if (!isWifiConnected) {
+    Serial.println("Verbindung zu allen WLAN-Netzwerken fehlgeschlagen.");
+  }
 }
-
 // Funktion zum Verbinden mit MQTT
 void connectToMqtt() {
-    isMqttConnected = false;
+  isMqttConnected = false;
 
-    if (isWifiConnected) {
-        Serial.print("Verbinde mit MQTT Broker: ");
-        Serial.println(broker);
+  if (isWifiConnected) {
+    Serial.print("Verbinde mit MQTT Broker: ");
+    Serial.println(broker);
 
-        // Client-ID festlegen (vor dem Verbinden!)
-        mqttClient.setId("RasenmaeherRoboter_12345");
+    // Client-ID festlegen (vor dem Verbinden!)
+    mqttClient.setId("RasenmaeherRoboter_12345"); 
 
-        mqttClient.setUsernamePassword(user, password);
+    mqttClient.setUsernamePassword(user, password);
 
-        while (!mqttClient.connect(broker, port)) {
-            Serial.print(".");
-            delay(500);
-        }
-
-        if (mqttClient.connected()) {
-            isMqttConnected = true;
-            Serial.println("MQTT verbunden!");
-
-            // Abonnieren der Steuerungs-Topics
-            mqttClient.subscribe(topicControl);
-            Serial.print("Abonniert: ");
-            Serial.println(topicControl);
-        } else {
-            Serial.println("MQTT-Verbindung fehlgeschlagen.");
-        }
+    while (!mqttClient.connect(broker, port)) {
+      Serial.print(".");
+      delay(500);
     }
+
+    if (mqttClient.connected()) {
+      isMqttConnected = true;
+      Serial.println("MQTT verbunden!");
+
+      // Abonnieren der Steuerungs-Topics
+      mqttClient.subscribe(topicControl);
+      Serial.print("Abonniert: ");
+      Serial.println(topicControl);
+    } else {
+      Serial.println("MQTT-Verbindung fehlgeschlagen.");
+    }
+  }
 }
+
 // Funktion zum Generieren zufälliger GPS-Daten innerhalb der Grundstücksgrenzen
 void generateFakeGPSData(float &latitude, float &longitude) {
+  randomSeed(millis()); // Zufallszahlengenerator neu setzen
   latitude = random(latBounds[0] * 1000000, latBounds[1] * 1000000) / 1000000.0;
   longitude = random(lonBounds[0] * 1000000, lonBounds[1] * 1000000) / 1000000.0;
 }
-
 // Funktion zum Abrufen von GPS-Daten (entweder echt oder simuliert)
 void getGPSData(float &latitude, float &longitude, int &satellites, bool &isValid) {
   if (isFakeGPS) {
@@ -144,33 +146,26 @@ void getGPSData(float &latitude, float &longitude, int &satellites, bool &isVali
 }
 // Funktion zum Versenden von MQTT-Nachrichten
 void sendMqttMessage(const String& topic, const String& payload) {
-    if (mqttClient.connected()) {
-        mqttClient.beginMessage(topic);
-        mqttClient.print(payload);
-        mqttClient.endMessage();
-        if (isVerbose) {
-            Serial.print("MQTT-Nachricht gesendet an ");
-            Serial.print(topic);
-            Serial.print(": ");
-            Serial.println(payload);
-        }
-    } else {
-        if (isVerbose) {
-            Serial.println("MQTT nicht verbunden. Nachricht nicht gesendet.");
-        }
+  if (mqttClient.connected()) {
+    mqttClient.beginMessage(topic);
+    mqttClient.print(payload);
+    mqttClient.endMessage();
+    if (isVerbose) {
+      Serial.print("MQTT-Nachricht gesendet an ");
+      Serial.print(topic);
+      Serial.print(": ");
+      Serial.println(payload);
     }
+  } else {
+    if (isVerbose) {
+      Serial.println("MQTT nicht verbunden. Nachricht nicht gesendet.");
+    }
+  }
 }
-
-// Funktion zum Leeren des GPS-Datenspeichers
-void clearGPSData() {
-  gpsDataArray.clear();
-}
-
 // Funktion zur Überprüfung, ob Koordinaten innerhalb der Grundstücksgrenzen liegen
 bool isInsideBoundaries(float lat, float lon) {
   return (lat >= latBounds[0] && lat <= latBounds[1] && lon >= lonBounds[0] && lon <= lonBounds[1]);
 }
-
 // Funktion zur Fehlerbehandlung
 void handleError(const String& message, const String& topic, const String& errorCode) {
   if (isVerbose) {
@@ -178,13 +173,19 @@ void handleError(const String& message, const String& topic, const String& error
   }
   sendMqttMessage(topic, errorCode);
 }
-
 void setup() {
   Serial.begin(9600);
   SerialGPS.begin(9600);
   if (isVerbose) {
     Serial.println("Serielle Kommunikation und GPS initialisiert");
   }
+  // SD-Karte initialisieren
+  Serial.print("Initialisiere SD-Karte...");
+  if (!SD.begin(chipSelect)) {
+    Serial.println("Fehler bei der Initialisierung der SD-Karte!");
+    while (true); // Endlosschleife bei Fehler
+  }
+  Serial.println("SD-Karte initialisiert.");
 
   connectToWiFi();
   connectToMqtt();
@@ -208,33 +209,35 @@ void loop() {
     unsigned long timestamp = millis();
 
     if (isRecording) {
-      // GPS-Daten als JSON-Objekt formatieren (ohne Verschachtelung)
-      JsonObject obj = gpsDoc.createNestedObject();
-      obj["lat"] = latitude;
-      obj["lon"] = longitude;
-      obj["timestamp"] = timestamp;
+      // GPS-Daten als CSV speichern
+      dataFile = SD.open("gps_data.csv", FILE_WRITE);
+      if (dataFile) {
+        Serial.print("Speichere GPS-Daten: "); // Debugging-Ausgabe
+        Serial.print(latitude, 6);
+        Serial.print(", ");
+        Serial.print(longitude, 6);
+        Serial.print(", ");
+        Serial.println(timestamp);
 
-      // JSON-Objekt zum gpsDataArray-Array hinzufügen
-      gpsDataArray.add(obj);
-
-      // Überprüfen, ob der Speicher fast voll ist
-      if (gpsDoc.memoryUsage() > 0.8 * gpsDoc.capacity()) {
-        handleError("Speicher fast voll!", topicStatus, "error_memory_full");
-        isRecording = false; // Stoppe die Aufzeichnung, wenn der Speicher voll ist
+        dataFile.print(latitude, 6); // 6 Nachkommastellen für Genauigkeit
+        dataFile.print(",");
+        dataFile.print(longitude, 6);
+        dataFile.print(",");
+        dataFile.println(timestamp);
+        dataFile.flush(); // Puffer leeren nach jedem Schreibvorgang
+        dataFile.close();
+      } else {
+        handleError("Fehler beim Öffnen der Datei auf der SD-Karte!", topicStatus, "error_sd_file");
       }
     }
 
-    // Statusmeldung als JSON-Objekt mit Zeitstempel senden
-    DynamicJsonDocument statusDoc(256);
-    statusDoc["lat"] = latitude;
-    statusDoc["lon"] = longitude;
-    statusDoc["timestamp"] = timestamp;
-    statusDoc["satellites"] = satellites;
-    statusDoc["isValid"] = isValid;
-
-    String statusMessage;
-    serializeJson(statusDoc, statusMessage);
-    sendMqttMessage(topicStatus, statusMessage); // Sende Status an topicStatus
+    // Statusmeldung als CSV senden
+    String statusMessage = String(latitude, 6) + "," + 
+                          String(longitude, 6) + "," + 
+                          String(millis()) + "," + 
+                          String(satellites) + "," + 
+                          String(isValid);
+    sendMqttMessage(topicStatus, statusMessage);
 
     lastDataTime = millis();
   }
@@ -254,17 +257,42 @@ void loop() {
       if (topic == topicControl) {
         if (payload == "start") {
           isRecording = true;
-          clearGPSData(); // Leere den Speicher am Anfang der Aufzeichnung
+          // Leere die Datei am Anfang der Aufzeichnung, um alte Daten zu entfernen
+          dataFile = SD.open("gps_data.csv", FILE_WRITE);
+          dataFile.close(); 
           Serial.println("Aufzeichnung gestartet.");
         } else if (payload == "stop") {
           isRecording = false;
-          Serial.println("Aufzeichnung gestoppt.");
-          // Sende alle gesammelten Daten auf einmal
-          if (gpsDataArray.size() > 0) {
-            String output;
-            serializeJson(gpsDataArray, output);
-            sendMqttMessage(topicGPS, output); // Sende GPS-Daten an topicGPS
-            clearGPSData();
+
+          // Datei schließen (Schreiben) und Puffer leeren
+          dataFile.flush();
+          dataFile.close();
+          delay(100); // Verzögerung nach dem Schließen
+
+          // Daten von der SD-Karte lesen und in einem String speichern
+          File dataFileRead = SD.open("gps_data.csv", FILE_READ); // Neue Datei-Instanz zum Lesen
+
+          if (dataFileRead) {
+            Serial.println("Datei geöffnet zum Lesen."); // Debugging-Ausgabe
+
+            String csvData = "";
+            while (dataFileRead.available()) {
+              csvData += (char)dataFileRead.read();
+            }
+            dataFileRead.close(); // Schließe die Lesedatei
+
+            // Gesamte CSV-Datei in einer Nachricht senden
+            Serial.print("Sende Daten: "); // Debugging-Ausgabe
+            Serial.println(csvData);
+
+            sendMqttMessage(topicGPS, csvData);
+            Serial.println("GPS-Daten gesendet.");
+
+            // Datei löschen nach dem Senden
+            SD.remove("gps_data.csv");
+            Serial.println("Datei gelöscht.");
+          } else {
+            handleError("Fehler beim Öffnen der Datei auf der SD-Karte!", topicStatus, "error_sd_file");
           }
         } else if (payload == "problem") {
           handleProblemCommand();
@@ -290,7 +318,9 @@ void loop() {
 
     if (command == "start") {
       isRecording = true;
-      clearGPSData();
+      // Leere die Datei am Anfang der Aufzeichnung, um alte Daten zu entfernen
+      dataFile = SD.open("gps_data.csv", FILE_WRITE);
+      dataFile.close(); 
       if (isVerbose) {
         Serial.println("Aufzeichnung (seriell) gestartet.");
       }
@@ -299,12 +329,32 @@ void loop() {
       if (isVerbose) {
         Serial.println("Aufzeichnung (seriell) gestoppt.");
       }
-      // Sende alle gesammelten Daten auf einmal
-      if (gpsDataArray.size() > 0) {
-        String output;
-        serializeJson(gpsDataArray, output);
-        sendMqttMessage(topicGPS, output); // Sende GPS-Daten an topicGPS
-        clearGPSData();
+
+      // Datei schließen und erneut öffnen (Lesen)
+      dataFile.close(); 
+      dataFile = SD.open("gps_data.csv", FILE_READ);
+
+      // Daten von der SD-Karte lesen und in einem String speichern
+      if (dataFile) {
+        dataFile.seek(0); 
+        String csvData = "";
+        while (dataFile.available()) {
+          csvData += (char)dataFile.read();
+        }
+        dataFile.close(); 
+
+        // Gesamte CSV-Datei in einer Nachricht senden
+        Serial.print("Sende Daten: "); 
+        Serial.println(csvData);
+
+        sendMqttMessage(topicGPS, csvData);
+        Serial.println("GPS-Daten gesendet.");
+
+        // Datei löschen nach dem Senden
+        SD.remove("gps_data.csv"); 
+        Serial.println("Datei gelöscht.");
+      } else {
+        handleError("Fehler beim Öffnen der Datei auf der SD-Karte!", topicStatus, "error_sd_file");
       }
     } else if (command == "problem") {
       handleProblemCommand();
@@ -345,40 +395,50 @@ void loop() {
   }
   delay(1000); // Kleine Verzögerung, um die Ausgabe lesbarer zu machen
 }
-// Funktion für die Problembehandlung
 void handleProblemCommand() {
-    float latitude = 0.0;
-    float longitude = 0.0;
-    int satellites = 0; // Variablen für Satelliten und Gültigkeit hinzufügen
-    bool isValid = false;
-    getGPSData(latitude, longitude, satellites, isValid); // Alle Parameter übergeben
+  float latitude = 0.0;
+  float longitude = 0.0;
+  int satellites = 0;
+  bool isValid = false;
+  getGPSData(latitude, longitude, satellites, isValid);
 
-    if (problemPositionCount < maxProblemPositions) {
-        problemLatitudes[problemPositionCount] = latitude;
-        problemLongitudes[problemPositionCount] = longitude;
-        problemPositionCount++;
-    } else {
-        handleError("Maximale Anzahl Problempositionen erreicht!", topicStatus, "error_max_problems");
-    }
+  if (problemPositionCount < maxProblemPositions) {
+    problemLatitudes[problemPositionCount] = latitude;
+    problemLongitudes[problemPositionCount] = longitude;
+    problemPositionCount++;
+  } else {
+    handleError("Maximale Anzahl Problempositionen erreicht!", topicStatus, "error_max_problems");
+  }
 
-    String problemData = "["; 
+  // Problemzonen als CSV speichern (O_WRITE | O_CREAT | O_APPEND verwenden)
+  File problemDataFile = SD.open("problem_zones.csv", O_WRITE | O_CREAT | O_APPEND);
+  if (problemDataFile) {
     for (int i = 0; i < problemPositionCount; i++) {
-        // GPS-Daten als JSON-Objekt formatieren (ohne Verschachtelung)
-        DynamicJsonDocument doc(128); 
-        doc["lat"] = problemLatitudes[i];
-        doc["lon"] = problemLongitudes[i];
-
-        // JSON-Objekt zum problemData-Array hinzufügen
-        serializeJson(doc, problemData);
-        problemData += ",";
+      problemDataFile.print(problemLatitudes[i], 6);
+      problemDataFile.print(",");
+      problemDataFile.println(problemLongitudes[i], 6);
     }
-    
-    // Entferne das letzte Komma und füge die schließende Klammer hinzu
-    problemData.remove(problemData.length() - 1); 
-    problemData += "]";
+    problemDataFile.flush();
+    problemDataFile.close();
+    Serial.println("Problemzonen in Datei gespeichert."); // Debugging-Ausgabe
+  } else {
+    Serial.print("Fehler beim Öffnen der Problemzonen-Datei: ");
+    Serial.println(problemDataFile.getWriteError()); // Detaillierte Fehlermeldung (getWriteError statt getError)
+    handleError("Fehler beim Öffnen der Problemzonen-Datei auf der SD-Karte!", topicStatus, "error_sd_file_problem");
+  }
 
-    sendMqttMessage(topicStatus, problemData);
-    if (isVerbose) {
-        Serial.println("Problemmeldung gesendet.");
-    }
+  // Problemmeldung als CSV senden
+  String problemData = String(latitude, 6) + "," +
+                      String(longitude, 6) + "," +
+                      String(satellites) + "," +
+                      String(isValid);
+  sendMqttMessage(topicStatus, problemData);
+  if (isVerbose) {
+    Serial.println("Problemmeldung gesendet.");
+  }
 }
+
+
+
+
+
