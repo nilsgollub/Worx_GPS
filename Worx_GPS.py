@@ -96,33 +96,32 @@ def on_message(client, userdata, msg):
     if msg.topic == topic_gps:
         csv_data = msg.payload.decode()
         if csv_data != "-1":  # Ende-Marker ignorieren
-            current_mow_data = read_gps_data_from_csv_string(csv_data)
-            maehvorgang_data.append(current_mow_data)
-            alle_maehvorgang_data.extend(current_mow_data)
+            # CSV-Daten in Liste von Dictionaries umwandeln
+            gps_data = read_gps_data_from_csv_string(csv_data)
 
-            # Heatmaps erstellen
-            create_heatmap_with_time(current_mow_data, heatmap_filename)
-            create_heatmap_with_time(list(maehvorgang_data), heatmap_10_maehvorgang_filename)
-            create_heatmap_with_time([alle_maehvorgang_data], heatmap_kumuliert_filename)
+            maehvorgang_data.append(gps_data)
+            alle_maehvorgang_data.extend(gps_data)
+            save_gps_data(gps_data, f"maehvorgang_{len(maehvorgang_data)}.json")
+            create_heatmap([gps_data], heatmap_filename, True)  # Übergib die Daten als Liste
+            create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
+            create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
 
     elif msg.topic == topic_status:
         # Problemzonen-Daten empfangen
         csv_data = msg.payload.decode()
-        print("Empfangene Status- oder Problemzonen-Daten:", csv_data)
+        print("Empfangene Problemzonen-Daten:", csv_data)
 
         if csv_data != "-1":  # Ende-Marker ignorieren
-            if "problem" in csv_data: # Überprüfen, ob es sich um eine Problemmeldung handelt
-                # CSV-Daten in Dictionary umwandeln (nur lat und lon)
-                lat, lon, *_ = csv_data.split(",")
-                problem_data = {"lat": float(lat), "lon": float(lon)}
-                problemzonen_data.append(problem_data)
+            # CSV-Daten in Liste von Dictionaries umwandeln
+            problem_data_list = read_gps_data_from_csv_string(csv_data)
+
+            # Nur den letzten Datenpunkt verwenden (da es immer nur eine aktuelle Problemzone gibt)
+            if problem_data_list:
+                problem_data = problem_data_list[-1]
+                # Sicherstellen, dass nur lat und lon in problemzonen_data gespeichert werden
+                problemzonen_data.append({"lat": problem_data["lat"], "lon": problem_data["lon"]})
                 save_problemzonen_data(problemzonen_data)
-                create_heatmap(problemzonen_data, problemzonen_heatmap_filename, False)
-            else:
-                # Wenn keine Problemmeldung, einfach die Statusmeldung ausgeben
-                print(f"Statusmeldung empfangen: {csv_data}")
-
-
+                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False) # Übergib die Daten als Liste
 # MQTT-Client erstellen und konfigurieren
 client = mqtt.Client(client_id="", userdata=None, protocol=mqtt.MQTTv5)
 client.username_pw_set(user, password)
