@@ -80,40 +80,48 @@ def on_connect(client, userdata, flags, rc, properties=None):
         client.subscribe(topic_gps)
     if topic_status:
         client.subscribe(topic_status)
+def read_gps_data_from_csv_string(csv_string):
+    data = []
+    for line in csv_string.splitlines():
+        if line and line != "-1":  # Leere Zeilen und Ende-Marker ignorieren
+            parts = line.split(",")
+            data.append({
+                "lat": float(parts[0]),
+                "lon": float(parts[1]),
+                "timestamp": int(parts[2])
+            })
+    return data
 
 def on_message(client, userdata, msg):
-    try:
-        payload = msg.payload.decode()
+    if msg.topic == topic_gps:
+        csv_data = msg.payload.decode()
+        if csv_data != "-1":  # Ende-Marker ignorieren
+            current_mow_data = read_gps_data_from_csv_string(csv_data)
+            maehvorgang_data.append(current_mow_data)
+            alle_maehvorgang_data.extend(current_mow_data)
 
-        if msg.topic == topic_gps:
-            # Teile die Nachricht in einzelne GPS-Datenpunkte auf, entferne eckige Klammern und teile anhand von Semikolons
-            gps_data_points = payload[1:-1].split(';')
-            for gps_data_point in gps_data_points:
-                if gps_data_point: # Ignoriere leere Datenpunkte (können am Ende auftreten)
-                    lat, lon, timestamp = gps_data_point.split(',')
-                    # Konvertiere die GPS-Daten in ein Dictionary
-                    payload = {"lat": float(lat), "lon": float(lon), "timestamp": int(timestamp)}
-                    maehvorgang_data.append(payload)
-                    alle_maehvorgang_data.append(payload)
-                    save_gps_data(payload, f"maehvorgang_{len(maehvorgang_data)}.json")
-                    create_heatmap([payload], heatmap_filename, True)
-                    create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
-                    create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
-        elif msg.topic == topic_status:
-            # Überprüfen, ob die Nachricht im erwarteten Format für Problemzonen ist
-            try:
-                payload = json.loads(payload)
-                if payload.get("command") == "problem":
-                    problemzonen_data.append(payload)
-                    save_problemzonen_data(problemzonen_data)
-                    create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)
-            except json.JSONDecodeError:
-                # Wenn nicht, einfach die Statusmeldung ausgeben
-                print(f"Statusmeldung empfangen: {payload}")
+            # Heatmaps erstellen
+            create_heatmap_with_time(current_mow_data, heatmap_filename)
+            create_heatmap_with_time(list(maehvorgang_data), heatmap_10_maehvorgang_filename)
+            create_heatmap_with_time([alle_maehvorgang_data], heatmap_kumuliert_filename)
 
-    except json.JSONDecodeError as e:
-        print(f"Fehler beim Decodieren der JSON-Nachricht: {e}")
-        print(f"Empfangene Nachricht: {payload}")
+    elif msg.topic == topic_status:
+        # Problemzonen-Daten empfangen
+        csv_data = msg.payload.decode()
+        print("Empfangene Status- oder Problemzonen-Daten:", csv_data)
+
+        if csv_data != "-1":  # Ende-Marker ignorieren
+            if "problem" in csv_data: # Überprüfen, ob es sich um eine Problemmeldung handelt
+                # CSV-Daten in Dictionary umwandeln (nur lat und lon)
+                lat, lon, *_ = csv_data.split(",")
+                problem_data = {"lat": float(lat), "lon": float(lon)}
+                problemzonen_data.append(problem_data)
+                save_problemzonen_data(problemzonen_data)
+                create_heatmap(problemzonen_data, problemzonen_heatmap_filename, False)
+            else:
+                # Wenn keine Problemmeldung, einfach die Statusmeldung ausgeben
+                print(f"Statusmeldung empfangen: {csv_data}")
+
 
 # MQTT-Client erstellen und konfigurieren
 client = mqtt.Client(client_id="", userdata=None, protocol=mqtt.MQTTv5)
