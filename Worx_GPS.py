@@ -83,24 +83,37 @@ def on_connect(client, userdata, flags, rc, properties=None):
 
 def on_message(client, userdata, msg):
     try:
-        payload = json.loads(msg.payload.decode())
+        payload = msg.payload.decode()
 
         if msg.topic == topic_gps:
-            maehvorgang_data.append(payload)
-            alle_maehvorgang_data.extend(payload)  # Zur kumulierten Liste hinzufügen
-            save_gps_data(payload, f"maehvorgang_{len(maehvorgang_data)}.json")
-            create_heatmap([payload], heatmap_filename, True)
-            create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
-            create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)  # Kumulierte Heatmap
+            # Teile die Nachricht in einzelne GPS-Datenpunkte auf, entferne eckige Klammern und teile anhand von Semikolons
+            gps_data_points = payload[1:-1].split(';')
+            for gps_data_point in gps_data_points:
+                if gps_data_point: # Ignoriere leere Datenpunkte (können am Ende auftreten)
+                    lat, lon, timestamp = gps_data_point.split(',')
+                    # Konvertiere die GPS-Daten in ein Dictionary
+                    payload = {"lat": float(lat), "lon": float(lon), "timestamp": int(timestamp)}
+                    maehvorgang_data.append(payload)
+                    alle_maehvorgang_data.append(payload)
+                    save_gps_data(payload, f"maehvorgang_{len(maehvorgang_data)}.json")
+                    create_heatmap([payload], heatmap_filename, True)
+                    create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
+                    create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
         elif msg.topic == topic_status:
-            if payload.get("command") == "problem":
-                problemzonen_data.append(payload)
-                save_problemzonen_data(problemzonen_data)
-                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)
+            # Überprüfen, ob die Nachricht im erwarteten Format für Problemzonen ist
+            try:
+                payload = json.loads(payload)
+                if payload.get("command") == "problem":
+                    problemzonen_data.append(payload)
+                    save_problemzonen_data(problemzonen_data)
+                    create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)
+            except json.JSONDecodeError:
+                # Wenn nicht, einfach die Statusmeldung ausgeben
+                print(f"Statusmeldung empfangen: {payload}")
 
     except json.JSONDecodeError as e:
         print(f"Fehler beim Decodieren der JSON-Nachricht: {e}")
-        print(f"Empfangene Nachricht: {msg.payload.decode()}")
+        print(f"Empfangene Nachricht: {payload}")
 
 # MQTT-Client erstellen und konfigurieren
 client = mqtt.Client(client_id="", userdata=None, protocol=mqtt.MQTTv5)
