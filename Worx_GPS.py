@@ -107,21 +107,25 @@ def on_message(client, userdata, msg):
             create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
 
     elif msg.topic == topic_status:
-        # Problemzonen-Daten empfangen
+        # Status- oder Problemzonen-Daten empfangen
         csv_data = msg.payload.decode()
-        print("Empfangene Problemzonen-Daten:", csv_data)
 
-        if csv_data != "-1":  # Ende-Marker ignorieren
-            # CSV-Daten in Liste von Dictionaries umwandeln
-            problem_data_list = read_gps_data_from_csv_string(csv_data)
+        # Überprüfen, ob es sich um eine Problemmeldung handelt
+        if len(csv_data.split(",")) == 2:  # Problemzonen-Daten haben nur 2 Werte (lat, lon)
+            print("Empfangene Problemzonen-Daten:", csv_data)
 
-            # Nur den letzten Datenpunkt verwenden (da es immer nur eine aktuelle Problemzone gibt)
-            if problem_data_list:
-                problem_data = problem_data_list[-1]
-                # Sicherstellen, dass nur lat und lon in problemzonen_data gespeichert werden
-                problemzonen_data.append({"lat": problem_data["lat"], "lon": problem_data["lon"]})
+            if csv_data != "-1":  # Ende-Marker ignorieren
+                # CSV-Daten in Dictionary umwandeln (nur lat und lon)
+                lat, lon = csv_data.split(",") # Ignoriere "problem" und den Rest
+                problem_data = {"lat": float(lat), "lon": float(lon)}
+
+                problemzonen_data.append(problem_data)
                 save_problemzonen_data(problemzonen_data)
-                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False) # Übergib die Daten als Liste
+                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)
+        else:
+            # Statusmeldung ausgeben
+            print("Empfangene Statusmeldung:", csv_data)
+
 # MQTT-Client erstellen und konfigurieren
 client = mqtt.Client(client_id="", userdata=None, protocol=mqtt.MQTTv5)
 client.username_pw_set(user, password)
