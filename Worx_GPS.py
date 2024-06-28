@@ -8,18 +8,13 @@ from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
-
 # MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
-port = int(os.getenv("MQTT_PORT", 1883))  # Fehlerbehandlung für fehlenden Port
-topic_gps = os.getenv("MQTT_TOPIC_GPS")
-topic_status = os.getenv("MQTT_TOPIC_STATUS")
+port = int(os.getenv("MQTT_PORT", 1883))
+topic_gps = str(os.getenv("MQTT_TOPIC_GPS")) if os.getenv("MQTT_TOPIC_GPS") else None
+topic_status = str(os.getenv("MQTT_TOPIC_STATUS")) if os.getenv("MQTT_TOPIC_STATUS") else None
 user = os.getenv("MQTT_USER")
 password = os.getenv("MQTT_PASSWORD")
-
-# Sicherstellen, dass Topics Strings sind und vorhanden
-topic_gps = str(topic_gps) if topic_gps else None
-topic_status = str(topic_status) if topic_status else None
 
 # Grundstücksgrenzen, Map-Center und Dateinamen
 lat_bounds = [46.811819, 46.812107]
@@ -47,13 +42,30 @@ def save_problemzonen_data(data):
     with open("problemzonen.json", "w") as f:
         json.dump(list(data), f)  # Konvertiere deque zu Liste für JSON
 
+# Funktion zum Lesen von GPS-Daten aus einem CSV-String
+def read_gps_data_from_csv_string(csv_string):
+    data = []
+    for line in csv_string.splitlines():
+        if line and line != "-1":  # Leere Zeilen und Ende-Marker ignorieren
+            parts = line.split(",")
+            data.append({
+                "lat": float(parts[0]),
+                "lon": float(parts[1]),
+                "timestamp": int(parts[2])
+            })
+    return data
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
-    m = folium.Map(location=map_center, zoom_start=20, control_scale=True, tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+    m = folium.Map(
+        location=map_center,
+        zoom_start=20,
+        control_scale=True,
+        tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
         attr='Google',
         name='Google Maps',
         max_zoom=20,
-        subdomains=['mt0', 'mt1', 'mt2', 'mt3'])  # Google Maps Satellitenansicht
+        subdomains=['mt0', 'mt1', 'mt2', 'mt3']
+    )  # Google Maps Satellitenansicht
 
     if data:
         # Heatmap-Layer hinzufügen
@@ -71,8 +83,8 @@ def create_heatmap(data, filename, show_path=False):
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
 
     m.save(filename)
-    if show_path:
-        webbrowser.open('file://' + os.path.realpath(filename))
+#    if show_path:
+#        webbrowser.open('file://' + os.path.realpath(filename))
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
@@ -80,17 +92,6 @@ def on_connect(client, userdata, flags, rc, properties=None):
         client.subscribe(topic_gps)
     if topic_status:
         client.subscribe(topic_status)
-def read_gps_data_from_csv_string(csv_string):
-    data = []
-    for line in csv_string.splitlines():
-        if line and line != "-1":  # Leere Zeilen und Ende-Marker ignorieren
-            parts = line.split(",")
-            data.append({
-                "lat": float(parts[0]),
-                "lon": float(parts[1]),
-                "timestamp": int(parts[2])
-            })
-    return data
 
 def on_message(client, userdata, msg):
     if msg.topic == topic_gps:
@@ -111,17 +112,18 @@ def on_message(client, userdata, msg):
         csv_data = msg.payload.decode()
 
         # Überprüfen, ob es sich um eine Problemmeldung handelt
-        if len(csv_data.split(",")) == 2:  # Problemzonen-Daten haben nur 2 Werte (lat, lon)
+        parts = csv_data.split(",")
+        if len(parts) >= 3 and parts[0] == "problem":  # Mindestens 3 Teile und beginnt mit "problem"
             print("Empfangene Problemzonen-Daten:", csv_data)
 
-            if csv_data != "-1":  # Ende-Marker ignorieren
+            if csv_data != "problem,-1,-1":  # Ende-Marker ignorieren
                 # CSV-Daten in Dictionary umwandeln (nur lat und lon)
-                lat, lon = csv_data.split(",") # Ignoriere "problem" und den Rest
+                _, lat, lon = parts  # Ignoriere "problem"
                 problem_data = {"lat": float(lat), "lon": float(lon)}
 
                 problemzonen_data.append(problem_data)
                 save_problemzonen_data(problemzonen_data)
-                create_heatmap([problemzonen_data], problemzonen_heatmap_filename, False)
+                create_heatmap([list(problemzonen_data)], problemzonen_heatmap_filename, False)
         else:
             # Statusmeldung ausgeben
             print("Empfangene Statusmeldung:", csv_data)
@@ -137,7 +139,6 @@ if not topic_gps:
     print("Fehler: MQTT_TOPIC_GPS ist nicht in der secrets.env-Datei definiert.")
 if not topic_status:
     print("Fehler: MQTT_TOPIC_STATUS ist nicht in der secrets.env-Datei definiert.")
-
 try:
     # Verbindung zum Broker herstellen
     client.connect(broker, port)
