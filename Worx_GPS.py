@@ -46,13 +46,18 @@ def save_problemzonen_data(data):
 def read_gps_data_from_csv_string(csv_string):
     data = []
     for line in csv_string.splitlines():
-        if line and line != "-1":  # Leere Zeilen und Ende-Marker ignorieren
+        if line and line != "-1":
             parts = line.split(",")
-            data.append({
-                "lat": float(parts[0]),
-                "lon": float(parts[1]),
-                "timestamp": int(parts[2])
-            })
+            if len(parts) == 5:  # Nur Zeilen mit 5 Werten verarbeiten
+                lat, lon, timestamp, satellites, isValid = parts
+                if isValid == "True":
+                    data.append({
+                        "lat": float(lat),
+                        "lon": float(lon),
+                        "timestamp": int(timestamp)
+                    })
+            else:
+                print(f"Ungültige GPS-Daten: {line}")  # Optionale Log-Ausgabe
     return data
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
