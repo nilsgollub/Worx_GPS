@@ -2,3 +2,5 @@
 /.env
 /credentials.h
 /worx_gps_tracker/.env
+*.json
+*.html
