@@ -41,24 +41,18 @@ def save_gps_data(data, filename):
 def save_problemzonen_data(data):
     with open("problemzonen.json", "w") as f:
         json.dump(list(data), f)  # Konvertiere deque zu Liste für JSON
-
-# Funktion zum Lesen von GPS-Daten aus einem CSV-String
 def read_gps_data_from_csv_string(csv_string):
     data = []
     for line in csv_string.splitlines():
-        if line and line != "-1":
+        if line and line != "-1":  # Leere Zeilen und Ende-Marker ignorieren
             parts = line.split(",")
-            if len(parts) == 5:  # Nur Zeilen mit 5 Werten verarbeiten
-                lat, lon, timestamp, satellites, isValid = parts
-                if isValid == "True":
-                    data.append({
-                        "lat": float(lat),
-                        "lon": float(lon),
-                        "timestamp": int(timestamp)
-                    })
-            else:
-                print(f"Ungültige GPS-Daten: {line}")  # Optionale Log-Ausgabe
+            data.append({
+                "lat": float(parts[0]),
+                "lon": float(parts[1]),
+                "timestamp": int(parts[2])
+            })
     return data
+
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
     m = folium.Map(
