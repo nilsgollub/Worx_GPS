@@ -271,7 +271,7 @@ void loop() {
           dataFile = SD.open("gps_data.csv", FILE_WRITE);
           dataFile.close();
           Serial.println("Aufzeichnung gestartet.");
-        } else if (payload == "stop") {
+        } else if (payload == "stop" && isRecording) {
           isRecording = false;
           Serial.println("Aufzeichnung gestoppt.");
 
@@ -437,8 +437,6 @@ void loop() {
 
   delay(1000); // Kleine Verzögerung, um die Ausgabe lesbarer zu machen
 }
-
-
 
 void handleProblemCommand() {
   int satellites = 0;
