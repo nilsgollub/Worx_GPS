@@ -48,6 +48,8 @@ float lastLatitude = 0.0;
 float lastLongitude = 0.0;
 unsigned long lastMovementTime = 0;
 
+const int maxDataPointsPerMessage = 100; // Maximale Anzahl GPS-Punkte pro Nachricht
+
 // Variablen für die aktuelle Problemposition
 float problemLatitude = 0.0;
 float problemLongitude = 0.0;
@@ -178,6 +180,17 @@ void handleError(const String& message, const String& topic, const String& error
   }
   sendMqttMessage(topic, errorCode);
 }
+
+void handleProblemCommand() {
+
+    int satellites = 0;
+      bool isValid = false;
+
+        getGPSData(problemLatitude, problemLongitude, satellites, isValid);
+          problemDataAvailable = true; // Markiere, dass Problemdaten vorhanden sind
+          
+}
+
 void setup() {
   Serial.begin(9600);
   SerialGPS.begin(9600);
@@ -196,14 +209,26 @@ void setup() {
   connectToMqtt();
 }
 
+
 void loop() {
   // WLAN- und MQTT-Verbindung prüfen und ggf. wiederherstellen
   if (!isWifiConnected) {
     connectToWiFi();
+    if (!isWifiConnected) {
+      Serial.println("WLAN-Verbindung fehlgeschlagen, versuche es erneut in 5 Sekunden...");
+      delay(5000);
+      return;
+    }
   }
-  if (isWifiConnected && !isMqttConnected) {
+  if (!isMqttConnected) {
     connectToMqtt();
+    if (!isMqttConnected) {
+      Serial.println("MQTT-Verbindung fehlgeschlagen, versuche es erneut in 5 Sekunden...");
+      delay(5000);
+      return;
+    }
   }
+
   // GPS-Daten abrufen (entweder echt oder simuliert)
   if (millis() - lastDataTime >= gpsInterval) {
     float latitude = 0.0;
@@ -252,7 +277,7 @@ void loop() {
     lastDataTime = millis();
   }
 
-    // MQTT-Nachrichten verarbeiten
+  // MQTT-Nachrichten verarbeiten
   if (isMqttConnected) {
     mqttClient.poll();
     if (mqttClient.available()) {
@@ -283,17 +308,21 @@ void loop() {
           if (dataFile) {
             dataFile.seek(0); // Setze den Dateizeiger auf den Anfang
             String csvData = "";
+            int dataPointCount = 0;
             while (dataFile.available()) {
               csvData += (char)dataFile.read();
+              dataPointCount++;
+              if (dataPointCount >= maxDataPointsPerMessage || !dataFile.available()) {
+                sendMqttMessage(topicGPS, csvData);
+                csvData = "";
+                dataPointCount = 0;
+              }
             }
-            dataFile.close(); // Datei schließen nach dem Lesen
+            // Senden des Ende-Markers
+            sendMqttMessage(topicGPS, "-1");
+            Serial.println("Ende-Marker gesendet.");
 
-            // Gesamte CSV-Datei in einer Nachricht senden
-            Serial.print("Sende Daten: "); // Debugging-Ausgabe
-            Serial.println(csvData);
-            sendMqttMessage(topicGPS, csvData);
-            Serial.println("GPS-Daten gesendet.");
-
+            dataFile.close();
             // Datei löschen nach dem Senden
             SD.remove("gps_data.csv");
             Serial.println("Datei gelöscht.");
@@ -318,72 +347,6 @@ void loop() {
           }
         }
       }
-    }
-  }
-
-  // Serielle Befehle verarbeiten (ähnlich wie MQTT-Verarbeitung)
-  if (Serial.available()) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    if (command == "start") {
-      isRecording = true;
-      // Leere die Datei am Anfang der Aufzeichnung, um alte Daten zu entfernen
-      dataFile = SD.open("gps_data.csv", FILE_WRITE);
-      dataFile.close();
-      if (isVerbose) {
-        Serial.println("Aufzeichnung (seriell) gestartet.");
-      }
-    } else if (command == "stop") {
-      isRecording = false;
-      if (isVerbose) {
-        Serial.println("Aufzeichnung (seriell) gestoppt.");
-      }
-
-      // Datei schließen und erneut öffnen (Lesen)
-      dataFile.close(); // Sicherstellen, dass die Datei geschlossen ist
-      dataFile = SD.open("gps_data.csv", FILE_READ);
-
-      // Daten von der SD-Karte lesen und in einem String speichern
-      if (dataFile) {
-        dataFile.seek(0); // Setze den Dateizeiger auf den Anfang
-        String csvData = "";
-        while (dataFile.available()) {
-          csvData += (char)dataFile.read();
-        }
-        dataFile.close(); // Datei schließen nach dem Lesen
-
-        // Gesamte CSV-Datei in einer Nachricht senden
-        Serial.print("Sende Daten: "); // Debugging-Ausgabe
-        Serial.println(csvData);
-        sendMqttMessage(topicGPS, csvData);
-        Serial.println("GPS-Daten gesendet.");
-
-        // Datei löschen nach dem Senden
-        SD.remove("gps_data.csv");
-        Serial.println("Datei gelöscht.");
-      } else {
-        handleError("Fehler beim Öffnen der Datei auf der SD-Karte!", topicStatus, "error_sd_file");
-      }
-    } else if (command == "problem") {
-      handleProblemCommand();
-    } else if (command == "verbose") {
-      isVerbose = !isVerbose; // verbose Modus umschalten
-      Serial.print("Ausführliche Ausgabe ");
-      Serial.println(isVerbose ? "aktiviert" : "deaktiviert");
-    } else if (command == "fakegps_on") {
-      isFakeGPS = true;
-      Serial.println("Fake GPS Modus aktiviert.");
-    } else if (command == "fakegps_off") {
-      isFakeGPS = false;
-      Serial.println("Fake GPS Modus deaktiviert.");
-    } else {
-      if (isVerbose) {
-        Serial.println("Unbekannter Befehl empfangen.");
-      }
-    }
-    // Seriellen Eingabepuffer leeren
-    while (Serial.available() > 0) {
-      Serial.read();
     }
   }
 
@@ -438,13 +401,9 @@ void loop() {
   delay(1000); // Kleine Verzögerung, um die Ausgabe lesbarer zu machen
 }
 
-void handleProblemCommand() {
-  int satellites = 0;
-  bool isValid = false;
 
-  getGPSData(problemLatitude, problemLongitude, satellites, isValid);
-  problemDataAvailable = true; // Markiere, dass Problemdaten vorhanden sind
-}
+
+
 
 
 

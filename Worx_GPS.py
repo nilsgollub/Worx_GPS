@@ -29,7 +29,8 @@ problemzonen_heatmap_filename = "heatmap_problemzonen.html"
 MAX_PROBLEMZONEN = 20
 
 # Speicher für Heatmap-Daten
-maehvorgang_data = deque(maxlen=10)
+gps_data_buffer = ""  # Puffer für gesammelte GPS-Daten
+maehvorgang_data = []
 alle_maehvorgang_data = []
 problemzonen_data = deque(maxlen=MAX_PROBLEMZONEN)
 # Funktion zum Speichern von GPS-Daten
@@ -71,12 +72,13 @@ def create_heatmap(data, filename, show_path=False):
         heatmap_data = [[[point["lat"], point["lon"], point.get("timestamp", 0)] for point in mow_data] for mow_data in data]
         HeatMapWithTime(heatmap_data, radius=10, auto_play=True, max_opacity=0.8).add_to(m)
 
-        # Pfad anzeigen (optional)
+        # Pfad für jeden Mähvorgang anzeigen (optional)
         if show_path:
-            locations = [(point["lat"], point["lon"]) for point in data[0]]
-            folium.PolyLine(locations, color="green", weight=2.5, opacity=1).add_to(m)
-            for i in range(len(locations) - 1):
-                folium.RegularPolygonMarker(location=locations[i], fill_color='green', number_of_sides=3, radius=5, rotation=90).add_to(m)
+            for mow_data in data:
+                locations = [(point["lat"], point["lon"]) for point in mow_data]
+                folium.PolyLine(locations, color="green", weight=2.5, opacity=1).add_to(m)
+                for i in range(len(locations) - 1):
+                    folium.RegularPolygonMarker(location=locations[i], fill_color='green', number_of_sides=3, radius=5, rotation=90).add_to(m)
 
     # Grundstücksgrenzen als Rechteck hinzufügen
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
@@ -93,18 +95,22 @@ def on_connect(client, userdata, flags, rc, properties=None):
         client.subscribe(topic_status)
 
 def on_message(client, userdata, msg):
+    global gps_data_buffer  # Zugriff auf den globalen Puffer
     if msg.topic == topic_gps:
         csv_data = msg.payload.decode()
-        if csv_data != "-1":  # Ende-Marker ignorieren
-            # CSV-Daten in Liste von Dictionaries umwandeln
-            gps_data = read_gps_data_from_csv_string(csv_data)
-
-            maehvorgang_data.append(gps_data)
-            alle_maehvorgang_data.extend(gps_data)
-            save_gps_data(gps_data, f"maehvorgang_{len(maehvorgang_data)}.json")
-            create_heatmap([gps_data], heatmap_filename, True)  # Übergib die Daten als Liste
-            create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
-            create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
+        if csv_data != "-1":  # Ende-Marker noch nicht erreicht
+            gps_data_buffer += csv_data  # Daten zum Puffer hinzufügen
+        else:
+            # Ende-Marker erreicht, Daten verarbeiten
+            gps_data = read_gps_data_from_csv_string(gps_data_buffer)
+            if gps_data:
+                maehvorgang_data.append(gps_data)
+                alle_maehvorgang_data.extend(gps_data)
+                save_gps_data(gps_data, f"maehvorgang_{len(maehvorgang_data)}.json")
+                create_heatmap([gps_data], heatmap_filename, True)  # Übergib die Daten als Liste
+                create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
+                create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
+            gps_data_buffer = ""  # Puffer leeren
 
     elif msg.topic == topic_status:
         # Status- oder Problemzonen-Daten empfangen
