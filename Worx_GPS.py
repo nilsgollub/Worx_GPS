@@ -70,15 +70,15 @@ def create_heatmap(data, filename, show_path=False):
     if data:
         # Heatmap-Layer hinzufügen
         heatmap_data = [[[point["lat"], point["lon"], point.get("timestamp", 0)] for point in mow_data] for mow_data in data]
-        HeatMapWithTime(heatmap_data, radius=1, auto_play=True, max_opacity=0.8).add_to(m)
+        HeatMapWithTime(heatmap_data, radius=5, auto_play=True, max_opacity=0.5).add_to(m)
 
         # Pfad für jeden Mähvorgang anzeigen (optional)
         if show_path:
             for mow_data in data:
                 locations = [(point["lat"], point["lon"]) for point in mow_data]
-                folium.PolyLine(locations, color="green", weight=2.5, opacity=1).add_to(m)
+                folium.PolyLine(locations, color="green", weight=1.5, opacity=0.8).add_to(m)
                 for i in range(len(locations) - 1):
-                    folium.RegularPolygonMarker(location=locations[i], fill_color='green', number_of_sides=3, radius=5, rotation=90).add_to(m)
+                    folium.RegularPolygonMarker(location=locations[i], fill_color='green', number_of_sides=3, radius=1, rotation=90).add_to(m)
 
     # Grundstücksgrenzen als Rechteck hinzufügen
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
