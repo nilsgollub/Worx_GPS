@@ -3,10 +3,11 @@ import folium
 import json
 import webbrowser
 import os
+import subprocess
 from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
-
+subprocess.run(["python", "MQTT_Client.py"])  # Startet anderes_skript.py
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 # MQTT-Einstellungen
 broker = os.getenv("MQTT_HOST")
