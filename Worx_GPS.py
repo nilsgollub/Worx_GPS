@@ -70,7 +70,7 @@ def create_heatmap(data, filename, show_path=False):
     if data:
         # Heatmap-Layer hinzufügen
         heatmap_data = [[[point["lat"], point["lon"], point.get("timestamp", 0)] for point in mow_data] for mow_data in data]
-        HeatMapWithTime(heatmap_data, radius=10, auto_play=True, max_opacity=0.8).add_to(m)
+        HeatMapWithTime(heatmap_data, radius=1, auto_play=True, max_opacity=0.8).add_to(m)
 
         # Pfad für jeden Mähvorgang anzeigen (optional)
         if show_path:
