@@ -24,6 +24,9 @@ heatmap_filename = "heatmap_aktuell.html"
 heatmap_10_maehvorgang_filename = "heatmap_10_maehvorgang.html"
 heatmap_kumuliert_filename = "heatmap_kumuliert.html"
 problemzonen_heatmap_filename = "heatmap_problemzonen.html"
+heatmap_png_filename = "heatmap_aktuell.png"
+heatmap_kumuliert_png_filename = "heatmap_kumuliert.png"
+problemzonen_heatmap_png_filename = "heatmap_problemzonen.png"
 
 # Anzahl der zu speichernden Problemzonen (einfach anpassbar)
 MAX_PROBLEMZONEN = 20
@@ -110,6 +113,8 @@ def on_message(client, userdata, msg):
                 create_heatmap([gps_data], heatmap_filename, True)  # Übergib die Daten als Liste
                 create_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
                 create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_filename, False)
+                create_heatmap([gps_data], heatmap_png_filename, True)  # Übergib die Daten alscreate_heatmap(list(maehvorgang_data), heatmap_10_maehvorgang_filename, False)
+                create_heatmap([alle_maehvorgang_data], heatmap_kumuliert_png_filename, False)
             gps_data_buffer = ""  # Puffer leeren
 
     elif msg.topic == topic_status:
@@ -129,6 +134,7 @@ def on_message(client, userdata, msg):
                 problemzonen_data.append(problem_data)
                 save_problemzonen_data(problemzonen_data)
                 create_heatmap([list(problemzonen_data)], problemzonen_heatmap_filename, False)
+                create_heatmap([list(problemzonen_data)], problemzonen_heatmap_png_filename, False)
         else:
             # Statusmeldung ausgeben
             print("Empfangene Statusmeldung:", csv_data)

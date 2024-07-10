@@ -197,16 +197,22 @@ void setup() {
   if (isVerbose) {
     Serial.println("Serielle Kommunikation und GPS initialisiert");
   }
-  // SD-Karte initialisieren
-  Serial.print("Initialisiere SD-Karte...");
-  if (!SD.begin(chipSelect)) {
-    Serial.println("Fehler bei der Initialisierung der SD-Karte!");
-    while (true); // Endlosschleife bei Fehler
-  }
-  Serial.println("SD-Karte initialisiert.");
+  
 
   connectToWiFi();
   connectToMqtt();
+// SD-Karte initialisieren
+  Serial.print("Initialisiere SD-Karte...");
+  if (
+    !SD.begin(chipSelect)) {
+    Serial.println("Fehler bei der Initialisierung der SD-Karte!");
+    sendMqttMessage(topicStatus, "Fehler bei der Initialisierung der SD-Karte!");
+    // while (true); // Endlosschleife bei Fehler
+  }
+  Serial.println("SD-Karte initialisiert.");
+
+
+  sendMqttMessage(topicStatus, "started");
 }
 
 
@@ -270,6 +276,9 @@ void loop() {
                             String(satellites) + "," +
                             String(isValid);
       sendMqttMessage(topicStatus, statusMessage);
+      if (isFakeGPS) {
+        sendMqttMessage(topicStatus, "Fakemodus");
+      }
     } else {
       Serial.println("Ungültige GPS-Daten verworfen.");  // Optionale Log-Ausgabe
     }
@@ -292,12 +301,14 @@ void loop() {
       if (topic == topicControl) {
         if (payload == "start") {
           isRecording = true;
+          sendMqttMessage(topicStatus, "recording started");
           // Leere die Datei am Anfang der Aufzeichnung, um alte Daten zu entfernen
           dataFile = SD.open("gps_data.csv", FILE_WRITE);
           dataFile.close();
           Serial.println("Aufzeichnung gestartet.");
         } else if (payload == "stop" && isRecording) {
           isRecording = false;
+          sendMqttMessage(topicStatus, "recording stoped");
           Serial.println("Aufzeichnung gestoppt.");
 
           // Datei schließen und erneut öffnen (Lesen)
@@ -321,7 +332,7 @@ void loop() {
             // Senden des Ende-Markers
             sendMqttMessage(topicGPS, "-1");
             Serial.println("Ende-Marker gesendet.");
-
+            sendMqttMessage(topicStatus, "Data sent");
             dataFile.close();
             // Datei löschen nach dem Senden
             SD.remove("gps_data.csv");
@@ -333,6 +344,7 @@ void loop() {
           handleProblemCommand();
         } else if (payload == "restart") { // Neustart-Befehl
           Serial.println("Neustart-Befehl empfangen. Starte neu...");
+          sendMqttMessage(topicStatus, "reboot...");
           delay(1000); // Kurze Verzögerung, um die Nachricht auszugeben
           NVIC_SystemReset(); // Neustart des Arduino
         } else if (payload == "fakegps_on") {
