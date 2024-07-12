@@ -7,6 +7,11 @@ import os
 from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
+from PIL import Image  # Import the Image module from Pillow
+import io # Import io for BytesIO
+
+from folium import plugins
+
 #subprocess.run(["python", "MQTT_Client.py"])  # Startet anderes_skript.py
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 # MQTT-Einstellungen
@@ -84,11 +89,33 @@ def create_heatmap(data, filename, show_path=False):
                 for i in range(len(locations) - 1):
                     folium.RegularPolygonMarker(location=locations[i], fill_color='green', number_of_sides=3, radius=1, rotation=90).add_to(m)
 
-    # Grundstücksgrenzen als Rechteck hinzufügen
+    # Grundstücksgrenzen als Rechteck hinzufügen und Kartenausschnitt anpassen
     folium.Rectangle(bounds=[(lat_bounds[0], lon_bounds[0]), (lat_bounds[1], lon_bounds[1])], color="blue", fill=False).add_to(m)
+    m.fit_bounds([
+        (lat_bounds[0], lon_bounds[0]),  # Südwestlicher Eckpunkt
+        (lat_bounds[1], lon_bounds[1])   # Nordöstlicher Eckpunkt
+    ])
 
-    m.save(filename)
-#    if show_path:
+    # HTML-Datei speichern
+    html_filename = filename
+    m.save(html_filename)
+
+    # PNG-Datei speichern
+    png_filename = filename.replace(".html", ".png")
+    img_data = m._to_png(5)
+    img = Image.open(io.BytesIO(img_data))
+
+    # Bild zuschneiden (Anpassen der Koordinaten!)
+    left = 562  # Beispielwert, anpassen!
+    top = 230  # Beispielwert, anpassen!
+    right = 805  # Beispielwert, anpassen!
+    bottom = 534  # Beispielwert, anpassen!
+
+    cropped_img = img.crop((left, top, right, bottom))
+    cropped_img.save(png_filename)
+#    img.save(png_filename)
+
+
 #        webbrowser.open('file://' + os.path.realpath(filename))
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
