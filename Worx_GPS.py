@@ -3,12 +3,14 @@ import folium
 import json
 import webbrowser
 import os
-# import subprocess
 from collections import deque
 from folium.plugins import HeatMapWithTime
 from dotenv import load_dotenv
 from PIL import Image  # Import the Image module from Pillow
-import io # Import io for BytesIO
+import platform
+import subprocess
+from PIL import Image
+import io
 
 from folium import plugins
 
@@ -102,22 +104,27 @@ def create_heatmap(data, filename, show_path=False):
 
     # PNG-Datei speichern
     png_filename = filename.replace(".html", ".png")
-    img_data = m._to_png(5)
-    img = Image.open(io.BytesIO(img_data))
 
-    # Bild zuschneiden (Anpassen der Koordinaten!)
-    left = 562  # Beispielwert, anpassen!
-    top = 230  # Beispielwert, anpassen!
-    right = 805  # Beispielwert, anpassen!
-    bottom = 534  # Beispielwert, anpassen!
+    # Betriebssystem erkennen
+    if platform.system() == "Linux" and os.uname().machine == "armv7l":
+        # Raspberry Pi (oder anderes ARM-basiertes Linux-System)
+        subprocess.run(["convert", html_filename, png_filename])  # ImageMagick verwenden
+        print("PNG-Datei mit ImageMagick gespeichert:", png_filename)
+    else:
+        # Andere Systeme (z.B. Windows, macOS)
+        img_data = m._to_png(5)
+        img = Image.open(io.BytesIO(img_data))
 
-    cropped_img = img.crop((left, top, right, bottom))
-    cropped_img.save(png_filename)
-#    img.save(png_filename)
+        # Bild zuschneiden (Anpassen der Koordinaten!)
+        left = 562
+        top = 230
+        right = 805
+        bottom = 534
 
-    # Bild im Standard-Webbrowser öffnen
-    if filename.endswith("heatmap_aktuell.html"):
-        webbrowser.open('file://' + os.path.realpath(png_filename))#        webbrowser.open('file://' + os.path.realpath(filename))
+        cropped_img = img.crop((left, top, right, bottom))
+        cropped_img.save(png_filename)
+        print("PNG-Datei mit Pillow gespeichert:", png_filename)
+
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
