@@ -105,7 +105,7 @@ def create_heatmap(data, filename, show_path=False):
     # PNG-Datei speichern
     png_filename = filename.replace(".html", ".png")
 
-    # Betriebssystem erkennen
+    # Betriebssystem erkennen und entsprechende Methode wählen
     if platform.system() == "Linux" and os.uname().machine == "armv7l":
         # Raspberry Pi (oder anderes ARM-basiertes Linux-System)
         subprocess.run(["convert", html_filename, png_filename])  # ImageMagick verwenden
@@ -123,7 +123,7 @@ def create_heatmap(data, filename, show_path=False):
 
         cropped_img = img.crop((left, top, right, bottom))
         cropped_img.save(png_filename)
-        print("PNG-Datei mit Pillow gespeichert:", png_filename)
+        print("PNG-Datei mit Pillow gespeichert und zugeschnitten:", png_filename)
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
