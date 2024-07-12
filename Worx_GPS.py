@@ -115,8 +115,9 @@ def create_heatmap(data, filename, show_path=False):
     cropped_img.save(png_filename)
 #    img.save(png_filename)
 
-
-#        webbrowser.open('file://' + os.path.realpath(filename))
+    # Bild im Standard-Webbrowser öffnen
+    if filename.endswith("heatmap_aktuell.html"):
+        webbrowser.open('file://' + os.path.realpath(png_filename))#        webbrowser.open('file://' + os.path.realpath(filename))
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Verbunden mit MQTT Broker, return code:", rc)
