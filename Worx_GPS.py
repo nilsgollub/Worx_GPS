@@ -102,20 +102,18 @@ def create_heatmap(data, filename, show_path=False):
     html_filename = filename
     m.save(html_filename)
 
-    # PNG-Datei speichern
+    # Save PNG file
     png_filename = filename.replace(".html", ".png")
-
-    # Betriebssystem erkennen und entsprechende Methode wählen
     if platform.system() == "Linux" and os.uname().machine == "armv7l":
-        # Raspberry Pi (oder anderes ARM-basiertes Linux-System)
-        subprocess.run(["convert", html_filename, png_filename])  # ImageMagick verwenden
+        # Raspberry Pi
+        subprocess.run(["convert", html_filename, png_filename])  # Use ImageMagick
         print("PNG-Datei mit ImageMagick gespeichert:", png_filename)
     else:
-        # Andere Systeme (z.B. Windows, macOS)
+        # Other systems
         img_data = m._to_png(5)
         img = Image.open(io.BytesIO(img_data))
 
-        # Bild zuschneiden (Anpassen der Koordinaten!)
+        # Crop image (adjust coordinates as needed)
         left = 562
         top = 230
         right = 805
