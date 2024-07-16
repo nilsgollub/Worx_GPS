@@ -1,11 +1,21 @@
 import tkinter as tk
 import paho.mqtt.client as mqtt
+import os
+from dotenv import load_dotenv
 
 # MQTT-Broker-Details
-broker_address = "homeassistant.local"
-broker_port = 1883
-username = "nilsgollub"
-password = "JhiswenP3003!"
+#broker_address = "homeassistant.local"
+#broker_port = 1883
+#username = "nilsgollub"
+#password = "JhiswenP3003!"
+#topics = ["worx/control", "worx/gps", "worx/status"]
+#subprocess.run(["python", "MQTT_Client.py"])  # Startet anderes_skript.py
+load_dotenv(".env")  # Laden der Umgebungsvariablen
+# MQTT-Einstellungen
+broker_address = os.getenv("MQTT_HOST")
+broker_port = int(os.getenv("MQTT_PORT", 1883))
+username = os.getenv("MQTT_USER")
+password = os.getenv("MQTT_PASSWORD")
 topics = ["worx/control", "worx/gps", "worx/status"]
 
 def on_connect(client, userdata, flags, rc):

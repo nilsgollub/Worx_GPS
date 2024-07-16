@@ -56,15 +56,14 @@ def save_problemzonen_data(data):
 def read_gps_data_from_csv_string(csv_string):
     data = []
     for line in csv_string.splitlines():
-        if line and line != "-1":  # Leere Zeilen und Ende-Marker ignorieren
+        if line and line != "-1":
             parts = line.split(",")
             data.append({
                 "lat": float(parts[0]),
                 "lon": float(parts[1]),
-                "timestamp": int(parts[2])
+                "timestamp": float(parts[2])  # Timestamp als Float speichern
             })
     return data
-
 # Funktion zum Erstellen der Heatmap
 def create_heatmap(data, filename, show_path=False):
     m = folium.Map(

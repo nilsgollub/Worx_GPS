@@ -65,9 +65,7 @@ def send_mqtt_message(topic, payload):
     else:
         print("MQTT nicht verbunden. Nachricht nicht gesendet.")
 
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
+
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
     if platform.system() == "Linux":  # Linux (Raspberry Pi)
