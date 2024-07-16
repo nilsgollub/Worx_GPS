@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import subprocess
 import platform
 import requests
+import random  # Import des random-Moduls
 from datetime import datetime, timedelta
 
 # Plattform-spezifische Imports
@@ -67,8 +68,18 @@ def send_mqtt_message(topic, payload):
 
 
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
+# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
-    if platform.system() == "Linux":  # Linux (Raspberry Pi)
+    global is_fake_gps
+    if is_fake_gps:  # Fake-GPS-Modus
+        latitude = random.uniform(lat_bounds[0], lat_bounds[1])
+        longitude = random.uniform(lon_bounds[0], lon_bounds[1])
+        timestamp = time.time()
+        satellites = random.randint(4, 12)  # Zufällige Anzahl Satelliten
+        mode = 3  # 3D-Fix im Fake-GPS-Modus
+        return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
+
+    elif platform.system() == "Linux":  # Linux (Raspberry Pi)
         try:
             packet = gpsd.get_current()
             if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
@@ -103,8 +114,6 @@ def get_gps_data():
             print(f"Fehler beim Abrufen der GPS-Daten (Windows): {e}")
             # send_mqtt_message(topic_status, "error_gps")
             return None
-
-
 
 # Funktion zum Überprüfen, ob Koordinaten innerhalb der Grundstücksgrenzen liegen
 def is_inside_boundaries(lat, lon):
