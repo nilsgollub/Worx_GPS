@@ -37,6 +37,11 @@ password_local = os.getenv("MQTT_PASSWORD_LOCAL", None)
 assist_now_token = os.getenv("ASSIST_NOW_TOKEN")
 assist_now_offline_url = "https://offline-live1.services.u-blox.com/GetOfflineData.ashx" # Korrigierte URL
 assist_now_enabled = os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true"
+# UBX-Protokoll aktivieren
+msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0001, baudRate=115200, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000)
+with serial.Serial("/dev/ttyACM0", 9600, timeout=1) as ser:  # Port und Baudrate anpassen
+    ser.write(msg_cfg_prt.serialize())
+    time.sleep(0.1)  # Kurze Verzögerung
 
 # Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
 lat_bounds = [46.811819, 46.812107]
