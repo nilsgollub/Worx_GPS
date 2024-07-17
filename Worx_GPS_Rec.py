@@ -145,15 +145,16 @@ def download_assist_now_data():
         return None  # Rückgabewert None bei Fehler
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
-def send_assist_now_data(data):
+ddef send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
-            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
-                f.write(data)  # UBX-Daten direkt senden
+            with serial.Serial("/dev/ttyACM0", 38400, timeout=1) as ser:  # Pfad und Baudrate anpassen
+                ser.write(data)
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:
+
         try:
             ser.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
