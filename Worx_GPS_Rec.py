@@ -54,8 +54,8 @@ is_mqtt_connected = False
 # GPS-Einstellungen
 if platform.system() == "Linux":
     gpsd.connect()  # Verbindung zum GPSD-Daemon herstellen (Raspberry Pi)
-else:
-    serial_port = os.getenv("SERIAL_PORT", 'COM3')
+serial_port = os.getenv("SERIAL_PORT", 'COM3')
+if platform.system() == "Windows":
     ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
 gpsd_stream = None  # Globale Variable für den gpsd-Stream
 
@@ -146,6 +146,7 @@ def download_assist_now_data():
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
+    global gpsd_stream
     if platform.system() == "Linux":
         try:
             # Daten über gpsd senden
