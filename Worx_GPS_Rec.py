@@ -52,12 +52,17 @@ is_wifi_connected = True  # Auf dem Raspberry Pi immer verbunden
 is_mqtt_connected = False
 
 # GPS-Einstellungen
+serial_port = os.getenv("SERIAL_PORT", '/dev/ttyACM0')
+baudrate = 38400
+
+gpsd_process = None  # Variable für den gpsd-Prozess
+
 if platform.system() == "Linux":
-    gpsd.connect()  # Verbindung zum GPSD-Daemon herstellen (Raspberry Pi)
-serial_port = os.getenv("SERIAL_PORT", 'COM3')
-if platform.system() == "Windows":
-    ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
-gpsd_stream = None  # Globale Variable für den gpsd-Stream
+    # gpsd als Subprozess starten
+    gpsd_process = subprocess.Popen(["gpsd", serial_port, "-F", "/var/run/gpsd.sock"])
+    time.sleep(2)  # Wartezeit für den Start von gpsd
+else:
+    ser = serial.Serial(port=serial_port, baudrate=baudrate)
 
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
@@ -143,28 +148,27 @@ def download_assist_now_data():
             print(f"Header: {e.response.headers}")       # Header ausgeben
         return None  # Rückgabewert None bei Fehler
 
-# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
-# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    global gpsd_stream
+    global gpsd_process
     if platform.system() == "Linux":
         try:
-            # Daten über gpsd senden
-            if not gpsd_stream:
-                gpsd_stream = gpsd.connect()
+            # gpsd stoppen
+            if gpsd_process:
+                gpsd_process.terminate()
+                gpsd_process.wait()
 
-            with open(serial_port, "wb") as f:  # Gerätepfad festlegen (z.B. '/dev/ttyACM0')
-                f.write(data)
+            # Daten senden
+            with serial.Serial(port=serial_port, baudrate=baudrate, timeout=1) as ser:
+                ser.write(data)
             print("AssistNow Offline-Daten erfolgreich gesendet.")
 
-        except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:  # Windows
-        try:
-            ser.write(data)  # UBX-Daten direkt senden
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
+            # gpsd neu starten
+            gpsd_process = subprocess.Popen(["gpsd", serial_port, "-F", "/var/run/gpsd.sock"])
+            time.sleep(2)  # Wartezeit für den Start von gpsd
+
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
