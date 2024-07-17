@@ -33,7 +33,6 @@ user_local = os.getenv("MQTT_USER_LOCAL", None)
 password_local = os.getenv("MQTT_PASSWORD_LOCAL", None)
 
 # AssistNow Offline Einstellungen
-# AssistNow Offline Einstellungen
 assist_now_token = os.getenv("ASSIST_NOW_TOKEN")
 assist_now_offline_url = "https://offline-live1.services.u-blox.com/GetOfflineData.ashx" # Korrigierte URL
 assist_now_enabled = os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true"
@@ -69,8 +68,6 @@ def send_mqtt_message(topic, payload):
     else:
         print("MQTT nicht verbunden. Nachricht nicht gesendet.")
 
-
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
     global is_fake_gps
@@ -148,18 +145,23 @@ def download_assist_now_data():
 def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
-            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
-                f.write(data)  # UBX-Daten direkt senden
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-        except Exception as e:
+            # Daten über gpsd senden
+            with gpsd.connect() as session:  # Neue Verbindung zu gpsd herstellen
+                device = session.device  # Aktuelles GPS-Gerät abrufen
+                if device:
+                    with open(device.path, "wb") as f:  # Seriellen Port des GPS-Geräts öffnen
+                        f.write(data)
+                    print("AssistNow Offline-Daten erfolgreich gesendet.")
+                else:
+                    raise ConnectionError("Kein GPS-Gerät gefunden.")
+        except (gpsd.GPSDSocketError, ConnectionError) as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:
+    else:  # Windows
         try:
             ser.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-
 
 
 # MQTT-Callback-Funktionen
@@ -207,7 +209,6 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         print(f"Fehler bei der Verarbeitung der MQTT-Nachricht: {e}")
-
 
 # MQTT-Client erstellen und konfigurieren
 mqtt_client = mqtt.Client()
