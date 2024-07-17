@@ -148,26 +148,28 @@ def download_assist_now_data():
             print(f"Header: {e.response.headers}")       # Header ausgeben
         return None  # Rückgabewert None bei Fehler
 
+# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
     global gpsd_process
     if platform.system() == "Linux":
         try:
-            # Daten über gpsd senden
-            if gpsd_process is None or gpsd_process.poll() is not None:  # Prozess überprüfen
-                print("gpsd-Daemon wird gestartet oder neu gestartet...")
-                gpsd_process = subprocess.Popen(["gpsd", serial_port, "-F", "/var/run/gpsd.sock"])
-                time.sleep(5)  # Wartezeit für den Start von gpsd
-            with gpsd.connect(sockfile="/var/run/gpsd.sock") as session: # Verbindung zum Socket
-                device = session.device
-                if device:
-                    with open(device["path"], "wb") as f:
-                        f.write(data)
-                    print("AssistNow Offline-Daten erfolgreich gesendet.")
-                else:
-                    raise ConnectionError("Kein GPS-Gerät gefunden.")
-        except (ConnectionError, OSError) as e:
+            # gpsd stoppen
+            if gpsd_process:
+                gpsd_process.terminate()
+                gpsd_process.wait()  # Auf Beendigung warten
+
+            # Daten senden
+            with serial.Serial(port=serial_port, baudrate=baudrate, timeout=1) as ser:
+                ser.write(data)
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
+
+            # gpsd neu starten
+            gpsd_process = subprocess.Popen(["gpsd", serial_port, "-F", "/var/run/gpsd.sock"])
+            time.sleep(2)  # Wartezeit für den Start von gpsd
+
+        except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:
+    else:  # Windows
         try:
             ser.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
