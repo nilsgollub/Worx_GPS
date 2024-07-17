@@ -144,20 +144,18 @@ def download_assist_now_data():
         return None  # Rückgabewert None bei Fehler
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
-# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
+    global gpsd_stream
     if platform.system() == "Linux":
         try:
             # Daten über gpsd senden
-            with gpsd.connect() as session:
-                device = session.device
-                if device:
-                    device_path = device.path  # Gerätepfad ermitteln
-                    with open(device_path, "wb") as f:  # Gerätepfad verwenden
-                        f.write(data)
-                    print("AssistNow Offline-Daten erfolgreich gesendet.")
-                else:
-                    raise ConnectionError("Kein GPS-Gerät gefunden.")
+            gpsd_stream = gpsd.get_stream()  # Gpsd-Stream aktualisieren
+            if gpsd_stream:
+                with open(gpsd_stream.device["path"], "wb") as f:  # Gerätepfad über gpsd ermitteln
+                    f.write(data)
+                print("AssistNow Offline-Daten erfolgreich gesendet.")
+            else:
+                raise ConnectionError("Kein GPS-Gerät gefunden.")
         except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:  # Windows
@@ -166,7 +164,6 @@ def send_assist_now_data(data):
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
