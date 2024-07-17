@@ -148,20 +148,19 @@ def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
             # Daten über gpsd senden
-            gpsd_stream = gpsd.connect()  # Stream erstellen und Verbindung herstellen
-            device = gpsd_stream.device
-            if device:
-                with open(device.path, "wb") as f:
-                    f.write(data)
-                print("AssistNow Offline-Daten erfolgreich gesendet.")
-            else:
-                raise ConnectionError("Kein GPS-Gerät gefunden.")
+            with gpsd.connect() as session:
+                device = session.device
+                if device:
+                    with open(device.path, "wb") as f:
+                        f.write(data)
+                    print("AssistNow Offline-Daten erfolgreich gesendet.")
+                else:
+                    raise ConnectionError("Kein GPS-Gerät gefunden.")
         except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:  # Windows
         try:
-            with serial.Serial(port=serial_port, baudrate=38400, timeout=1) as ser:  # Serielle Verbindung für Windows öffnen
-                ser.write(data)  # UBX-Daten direkt senden
+            ser.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
