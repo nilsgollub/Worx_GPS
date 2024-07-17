@@ -37,11 +37,7 @@ password_local = os.getenv("MQTT_PASSWORD_LOCAL", None)
 assist_now_token = os.getenv("ASSIST_NOW_TOKEN")
 assist_now_offline_url = "https://offline-live1.services.u-blox.com/GetOfflineData.ashx" # Korrigierte URL
 assist_now_enabled = os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true"
-# UBX-Protokoll aktivieren
-msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0001, baudRate=115200, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000)
-with serial.Serial("/dev/ttyACM0", 9600, timeout=1) as ser:  # Port und Baudrate anpassen
-    ser.write(msg_cfg_prt.serialize())
-    time.sleep(0.1)  # Kurze Verzögerung
+
 
 # Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
 lat_bounds = [46.811819, 46.812107]
@@ -128,26 +124,36 @@ def is_inside_boundaries(lat, lon):
     return (lat >= lat_bounds[0] and lat <= lat_bounds[1] and lon >= lon_bounds[0] and lon <= lon_bounds[1])
 
 # Funktion zum Herunterladen von AssistNow Offline-Daten
-def download_assist_now_data():
-    try:
-        headers = {"useragent": "Thingstream Client"}
-        params = {
-            "token": assist_now_token,
-            "gnss": "gps",
-            "alm": "gps",
-            "days": 7,
-            "resolution": 1
-        }
-        response = requests.get(assist_now_offline_url, headers=headers, params=params)
-        response.raise_for_status()  # Fehler auslösen, wenn der Download fehlschlägt
-        return response.content
-    except requests.exceptions.RequestException as e:
-        print(f"Fehler beim Herunterladen der AssistNow Offline-Daten: {e}")
-        if e.response is not None:
-            print(f"Statuscode: {e.response.status_code}")  # Statuscode ausgeben
-            print(f"Antworttext: {e.response.text}")      # Antworttext ausgeben
-            print(f"Header: {e.response.headers}")       # Header ausgeben
-        return None  # Rückgabewert None bei Fehler
+# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
+def send_assist_now_data(data):
+    if platform.system() == "Linux":
+        try:
+            # Port umleiten
+            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x08D0, baudRate=38400, inProtoMask=0x0007, outProtoMask=0x0007, flags=0x0000, msgmode=0)
+            with serial.Serial(port="/dev/ttyACM0", baudrate=9600, timeout=1) as ser:  # Port und Baudrate anpassen
+                ser.write(msg_cfg_prt.serialize())
+            time.sleep(0.1)  # Kurze Verzögerung
+
+            # Daten senden
+            with serial.Serial(port="/dev/ttyS0", baudrate=38400, timeout=1) as ser:  # Neuer Port (z.B. /dev/ttyS0)
+                ser.write(data)
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
+
+            # Port wiederherstellen
+            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0800, baudRate=9600, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000, msgmode=0)
+            with serial.Serial(port="/dev/ttyACM0", baudrate=38400, timeout=1) as ser:  # Port und Baudrate anpassen
+                ser.write(msg_cfg_prt.serialize())
+            time.sleep(0.1)  # Kurze Verzögerung
+
+        except Exception as e:
+            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+    else:
+        try:
+            ser.write(data)  # UBX-Daten direkt senden (ser ist jetzt im globalen Scope)
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
+        except Exception as e:
+            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
