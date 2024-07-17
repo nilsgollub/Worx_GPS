@@ -54,11 +54,12 @@ is_wifi_connected = True  # Auf dem Raspberry Pi immer verbunden
 is_mqtt_connected = False
 
 # GPS-Einstellungen
+serial_port = os.getenv("SERIAL_PORT", '/dev/ttyACM0')  # Linux: /dev/ttyACM0 oder /dev/ttyUSB0
+baudrate = 38400
+
 if platform.system() == "Linux":
     gpsd.connect()  # Verbindung zum GPSD-Daemon herstellen (Raspberry Pi)
-else:
-    serial_port = os.getenv("SERIAL_PORT", 'COM3')
-    ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
+ser = serial.Serial(port=serial_port, baudrate=baudrate)  # serielle Verbindung für Linux und Windows
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
     if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
@@ -124,52 +125,55 @@ def is_inside_boundaries(lat, lon):
     return (lat >= lat_bounds[0] and lat <= lat_bounds[1] and lon >= lon_bounds[0] and lon <= lon_bounds[1])
 
 # Funktion zum Herunterladen von AssistNow Offline-Daten
+def download_assist_now_data():
+    try:
+        headers = {"useragent": "Thingstream Client"}
+        params = {
+            "token": assist_now_token,
+            "gnss": "gps",
+            "alm": "gps",
+            "days": 7,
+            "resolution": 1
+        }
+        response = requests.get(assist_now_offline_url, headers=headers, params=params)
+        response.raise_for_status()  # Fehler auslösen, wenn der Download fehlschlägt
+        return response.content
+    except requests.exceptions.RequestException as e:
+        print(f"Fehler beim Herunterladen der AssistNow Offline-Daten: {e}")
+        if e.response is not None:
+            print(f"Statuscode: {e.response.status_code}")  # Statuscode ausgeben
+            print(f"Antworttext: {e.response.text}")      # Antworttext ausgeben
+            print(f"Header: {e.response.headers}")       # Header ausgeben
+        return None  # Rückgabewert None bei Fehler
+
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
             # Port umleiten
             msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x08D0, baudRate=38400, inProtoMask=0x0007, outProtoMask=0x0007, flags=0x0000, msgmode=0)
-            with serial.Serial(port="/dev/ttyACM0", baudrate=9600, timeout=1) as ser:  # Port und Baudrate anpassen
-                ser.write(msg_cfg_prt.serialize())
+            ser.write(msg_cfg_prt.serialize())
             time.sleep(0.1)  # Kurze Verzögerung
 
             # Daten senden
-            with serial.Serial(port="/dev/ttyS0", baudrate=38400, timeout=1) as ser:  # Neuer Port (z.B. /dev/ttyS0)
-                ser.write(data)
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
+            with serial.Serial(port="/dev/ttyS0", baudrate=38400, timeout=1) as ser_tmp:  # Neuer Port (z.B. /dev/ttyS0)
+                ser_tmp.write(data)
 
             # Port wiederherstellen
             msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0800, baudRate=9600, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000, msgmode=0)
-            with serial.Serial(port="/dev/ttyACM0", baudrate=38400, timeout=1) as ser:  # Port und Baudrate anpassen
-                ser.write(msg_cfg_prt.serialize())
+            ser.write(msg_cfg_prt.serialize())
             time.sleep(0.1)  # Kurze Verzögerung
 
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:
+    else:  # Windows
         try:
-            ser.write(data)  # UBX-Daten direkt senden (ser ist jetzt im globalen Scope)
+            ser.write(data)  # UBX-Daten direkt senden (Windows)
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
 
-# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
-def send_assist_now_data(data):
-    if platform.system() == "Linux":
-        try:
-            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
-                f.write(data)  # UBX-Daten direkt senden
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-        except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:
-        try:
-            ser.write(data)  # UBX-Daten direkt senden (ser ist jetzt im globalen Scope)
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-        except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
