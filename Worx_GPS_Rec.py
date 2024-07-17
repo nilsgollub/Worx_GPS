@@ -7,6 +7,7 @@ import subprocess
 import platform
 import requests
 import random  # Import des random-Moduls
+import serial
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
 
@@ -14,8 +15,7 @@ from pyubx2 import UBXMessage
 # Plattform-spezifische Imports
 if platform.system() == "Linux":
     import gpsd
-else:
-    import serial
+
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
@@ -145,23 +145,20 @@ def download_assist_now_data():
         return None  # Rückgabewert None bei Fehler
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
-ddef send_assist_now_data(data):
+def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
-            with serial.Serial("/dev/ttyACM0", 38400, timeout=1) as ser:  # Pfad und Baudrate anpassen
-                ser.write(data)
+            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
+                f.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:
-
         try:
-            ser.write(data)  # UBX-Daten direkt senden
+            ser.write(data)  # UBX-Daten direkt senden (ser ist jetzt im globalen Scope)
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-
-
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
