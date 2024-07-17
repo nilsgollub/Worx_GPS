@@ -146,15 +146,15 @@ def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
             # Daten über gpsd senden
-            with gpsd.connect() as session:  # Neue Verbindung zu gpsd herstellen
-                device = session.device  # Aktuelles GPS-Gerät abrufen
+            with gpsd.connect() as session:
+                device = session.device
                 if device:
-                    with open(device.path, "wb") as f:  # Seriellen Port des GPS-Geräts öffnen
+                    with open(device.path, "wb") as f:
                         f.write(data)
                     print("AssistNow Offline-Daten erfolgreich gesendet.")
                 else:
                     raise ConnectionError("Kein GPS-Gerät gefunden.")
-        except (gpsd.GPSDSocketError, ConnectionError) as e:
+        except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:  # Windows
         try:
