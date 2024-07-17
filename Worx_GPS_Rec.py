@@ -125,8 +125,10 @@ def download_assist_now_data():
         headers = {"useragent": "Thingstream Client"}
         params = {
             "token": assist_now_token,
-            "gnss": "gps,glo",  # GPS und GLONASS Daten anfordern
-            "format": "mga"     # UBX-Format anfordern
+            "gnss": "gps",
+            "alm": "gps",
+            "days": 7,
+            "resolution": 1
         }
         response = requests.get(assist_now_offline_url, headers=headers, params=params)
         response.raise_for_status()  # Fehler auslösen, wenn der Download fehlschlägt
