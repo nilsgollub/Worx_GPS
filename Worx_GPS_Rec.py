@@ -57,6 +57,8 @@ if platform.system() == "Linux":
 else:
     serial_port = os.getenv("SERIAL_PORT", 'COM3')
     ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
+gpsd_stream = None  # Globale Variable für den gpsd-Stream
+
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
     if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
@@ -143,18 +145,25 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
+    global gpsd_stream
     if platform.system() == "Linux":
         try:
-            # Daten über gpsd senden
-            with gpsd.connect() as session:
-                device = session.device
-                if device:
-                    with open(device.path, "wb") as f:
-                        f.write(data)
-                    print("AssistNow Offline-Daten erfolgreich gesendet.")
-                else:
-                    raise ConnectionError("Kein GPS-Gerät gefunden.")
-        except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
+            # Port umleiten
+            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x08D0, baudRate=38400, inProtoMask=0x0007, outProtoMask=0x0007, flags=0x0000, msgmode=0)
+            ser.write(msg_cfg_prt.serialize())
+            time.sleep(0.1)  # Kurze Verzögerung
+
+            # Daten senden
+            with open(gpsd_stream.device["path"], "wb") as f:  # Gerätepfad über gpsd ermitteln
+                f.write(data)
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
+
+            # Port wiederherstellen
+            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0800, baudRate=9600, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000, msgmode=0)
+            ser.write(msg_cfg_prt.serialize())
+            time.sleep(0.1)  # Kurze Verzögerung
+
+        except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:  # Windows
         try:
@@ -163,16 +172,18 @@ def send_assist_now_data(data):
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
-
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
-    global is_mqtt_connected
+    global is_mqtt_connected, gpsd_stream
     if rc == 0:
         is_mqtt_connected = True
         print(f"Verbunden mit MQTT Broker: {'lokal' if test_mode else 'Heimnetz'}")
         client.subscribe(topic_control)
+        if platform.system() == "Linux":
+            gpsd_stream = gpsd.get_stream()  # Stream initialisieren
     else:
         print(f"MQTT-Verbindung fehlgeschlagen (Code: {rc})")
+
 
 def on_message(client, userdata, msg):
     global is_recording, is_fake_gps, gps_data_buffer
