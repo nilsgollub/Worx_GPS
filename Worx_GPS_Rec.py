@@ -145,30 +145,20 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    ubx_messages = []
-    for line in data.splitlines():
-        if line.startswith(b"\xb5b"):  # UBX-Nachrichten beginnen mit 0xB5 0x62
-            try:
-                msg = UBXMessage.from_bytes(line)
-                ubx_messages.append(msg)
-            except Exception as e:
-                print(f"Fehler beim Parsen der UBX-Nachricht: {e}")
-
     if platform.system() == "Linux":
         try:
             with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
-                for msg in ubx_messages:
-                    f.write(msg.serialize())
+                f.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:
         try:
-            for msg in ubx_messages:
-                ser.write(msg.serialize())
+            ser.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+
 
 
 # MQTT-Callback-Funktionen
