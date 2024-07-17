@@ -148,19 +148,30 @@ def send_assist_now_data(data):
     global gpsd_stream
     if platform.system() == "Linux":
         try:
-            # Daten über gpsd senden
-            gpsd_stream = gpsd.get_stream()  # Gpsd-Stream aktualisieren
-            if gpsd_stream:
-                with open(gpsd_stream.device["path"], "wb") as f:  # Gerätepfad über gpsd ermitteln
-                    f.write(data)
-                print("AssistNow Offline-Daten erfolgreich gesendet.")
-            else:
-                raise ConnectionError("Kein GPS-Gerät gefunden.")
-        except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
+            # Verbindung zu gpsd herstellen
+            gpsd_stream = gpsd.connect()  # Stream erstellen und Verbindung herstellen
+
+            # Port umleiten
+            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x08D0, baudRate=38400, inProtoMask=0x0007, outProtoMask=0x0007, flags=0x0000, msgmode=0)
+            ser.write(msg_cfg_prt.serialize())
+            time.sleep(0.1)  # Kurze Verzögerung
+
+            # Daten senden
+            with open(gpsd_stream.device["path"], "wb") as f:
+                f.write(data)
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
+
+            # Port wiederherstellen
+            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0800, baudRate=9600, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000, msgmode=0)
+            ser.write(msg_cfg_prt.serialize())
+            time.sleep(0.1)  # Kurze Verzögerung
+
+        except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:  # Windows
+    else:
+        # Windows
         try:
-            ser.write(data)  # UBX-Daten direkt senden
+            ser.write(data)
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
