@@ -143,22 +143,23 @@ def download_assist_now_data():
             print(f"Header: {e.response.headers}")       # Header ausgeben
         return None  # Rückgabewert None bei Fehler
 
+# Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    global gpsd_stream, ser
-    if platform.system() == "Linux":  # Linux
+    global gpsd_stream
+    if platform.system() == "Linux":
         try:
             # Daten über gpsd senden
-            if not gpsd_stream:  # Verbindung herstellen, falls noch nicht verbunden
-                gpsd.connect()
-                gpsd_stream = gpsd.get_current()
+            if not gpsd_stream:
+                gpsd_stream = gpsd.connect()
 
-            if gpsd_stream.mode < 2:
-                raise ConnectionError("GPS hat keinen Fix")
-            with open(gpsd_stream.device["path"], "wb") as f:  # Gerätepfad über gpsd ermitteln
-                f.write(data)
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-
-        except (ConnectionError, OSError) as e:  # OSError für mögliche serielle Fehler
+            device = gpsd_stream.devices[0]  # Erstes verfügbares Gerät verwenden
+            if device:
+                with open(device["path"], "wb") as f:  # Gerätepfad über gpsd ermitteln
+                    f.write(data)
+                print("AssistNow Offline-Daten erfolgreich gesendet.")
+            else:
+                raise ConnectionError("Kein GPS-Gerät gefunden.")
+        except (ConnectionError, OSError) as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:  # Windows
         try:
