@@ -33,8 +33,9 @@ user_local = os.getenv("MQTT_USER_LOCAL", None)
 password_local = os.getenv("MQTT_PASSWORD_LOCAL", None)
 
 # AssistNow Offline Einstellungen
+# AssistNow Offline Einstellungen
 assist_now_token = os.getenv("ASSIST_NOW_TOKEN")
-assist_now_offline_url = "https://online-live1.services.u-blox.com/GetOfflineData.ashx"
+assist_now_offline_url = "https://offline-live1.services.u-blox.com/GetOfflineData.ashx" # Korrigierte URL
 assist_now_enabled = os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true"
 
 # Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
