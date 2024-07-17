@@ -7,7 +7,6 @@ import subprocess
 import platform
 import requests
 import random  # Import des random-Moduls
-import serial
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
 
@@ -15,7 +14,8 @@ from pyubx2 import UBXMessage
 # Plattform-spezifische Imports
 if platform.system() == "Linux":
     import gpsd
-
+else:
+    import serial
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
@@ -38,7 +38,6 @@ assist_now_token = os.getenv("ASSIST_NOW_TOKEN")
 assist_now_offline_url = "https://offline-live1.services.u-blox.com/GetOfflineData.ashx" # Korrigierte URL
 assist_now_enabled = os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true"
 
-
 # Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
 lat_bounds = [46.811819, 46.812107]
 lon_bounds = [7.132838, 7.133173]
@@ -54,12 +53,11 @@ is_wifi_connected = True  # Auf dem Raspberry Pi immer verbunden
 is_mqtt_connected = False
 
 # GPS-Einstellungen
-serial_port = os.getenv("SERIAL_PORT", '/dev/ttyACM0')  # Linux: /dev/ttyACM0 oder /dev/ttyUSB0
-baudrate = 38400
-
-if platform.system() != "Linux": # Nur für Windows
-    ser = serial.Serial(port=serial_port, baudrate=baudrate)  # Windows: COM-Port anpassen (ggf. anpassen!)
-
+if platform.system() == "Linux":
+    gpsd.connect()  # Verbindung zum GPSD-Daemon herstellen (Raspberry Pi)
+else:
+    serial_port = os.getenv("SERIAL_PORT", 'COM3')
+    ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
     if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
@@ -148,33 +146,21 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    global ser
     if platform.system() == "Linux":
         try:
-            # Port umleiten
-            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x08D0, baudRate=38400, inProtoMask=0x0007, outProtoMask=0x0007, flags=0x0000, msgmode=0)
-            with serial.Serial(port=serial_port, baudrate=baudrate, timeout=1) as ser:  # Serielle Verbindung für Linux öffnen
-                ser.write(msg_cfg_prt.serialize())
-            time.sleep(0.1)  # Kurze Verzögerung
-
-            # Daten senden
-            with open("/dev/ttyS0", "wb") as f:  # Neuer Port (z.B. /dev/ttyS0)
-                f.write(data)
-
-            # Port wiederherstellen
-            msg_cfg_prt = UBXMessage('CFG', 'CFG-PRT', portID=1, txReady=0, mode=0x0800, baudRate=9600, inProtoMask=0x0001, outProtoMask=0x0001, flags=0x0000, msgmode=0)
-            with serial.Serial(port=serial_port, baudrate=baudrate, timeout=1) as ser:  # Serielle Verbindung für Linux öffnen
-                ser.write(msg_cfg_prt.serialize())
-            time.sleep(0.1)  # Kurze Verzögerung
-
+            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
+                f.write(data)  # UBX-Daten direkt senden
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:  # Windows
+    else:
         try:
             ser.write(data)  # UBX-Daten direkt senden
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+
+
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
