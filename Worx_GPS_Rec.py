@@ -71,7 +71,6 @@ def send_mqtt_message(topic, payload):
 
 
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
     global is_fake_gps
     if is_fake_gps:  # Fake-GPS-Modus
@@ -149,27 +148,24 @@ def send_assist_now_data(data):
     # ... (Code zum Herunterladen der AssistNow-Daten wie zuvor)
 
     if platform.system() == "Linux":
+        while True:
+            try:
+                # Überprüfen, ob die serielle Schnittstelle frei ist
+                with open("/dev/ttyACM0", "wb"):
+                    pass
+                break  # Schleife verlassen, wenn die Schnittstelle frei ist
+            except PermissionError:
+                print("Serielle Schnittstelle belegt. Warte 1 Sekunde...")
+                time.sleep(1)
+
         try:
             # GPSD-Ausgabe deaktivieren
             subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0", "-x", "?WATCH={\"enable\":false}"], check=True)
-            time.sleep(0.5)  # Kurze Pause
-
-            with open("/dev/ttyACM0", "wb") as f:
-                f.write(data)
-
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-
-            # GPSD-Ausgabe wieder aktivieren
-            subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0", "-x", "?WATCH={\"enable\":true}"], check=True)
             time.sleep(0.5)
+
+            # ... (Rest des Codes zum Senden der Daten wie zuvor)
         except subprocess.CalledProcessError as e:
             print(f"Fehler beim Steuern von GPSD: {e}")
-        except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:
-        try:
-            ser.write(data)  # UBX-Daten direkt senden
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
