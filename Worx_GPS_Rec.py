@@ -151,7 +151,7 @@ def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
             # GPSD-Ausgabe deaktivieren
-            subprocess.run(["sudo", "gpsctl", "-x", "?WATCH={\"enable\":false}"], check=True)
+            subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0", "-x", "?WATCH={\"enable\":false}"], check=True)
             time.sleep(0.5)  # Kurze Pause
 
             with open("/dev/ttyACM0", "wb") as f:
@@ -160,7 +160,7 @@ def send_assist_now_data(data):
             print("AssistNow Offline-Daten erfolgreich gesendet.")
 
             # GPSD-Ausgabe wieder aktivieren
-            subprocess.run(["sudo", "gpsctl", "-x", "?WATCH={\"enable\":true}"], check=True)
+            subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0", "-x", "?WATCH={\"enable\":true}"], check=True)
             time.sleep(0.5)
         except subprocess.CalledProcessError as e:
             print(f"Fehler beim Steuern von GPSD: {e}")
