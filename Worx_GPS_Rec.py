@@ -146,11 +146,22 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
+    # ... (Code zum Herunterladen der AssistNow-Daten wie zuvor)
+
     if platform.system() == "Linux":
         try:
-            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
+            # GPSD kurzzeitig stoppen
+            subprocess.run(["sudo", "gpsctl", "-F", "/dev/ttyACM0"])
+            time.sleep(0.5)  # Kurze Pause, um sicherzustellen, dass GPSD gestoppt ist
+
+            with open("/dev/ttyACM0", "wb") as f:
                 f.write(data)  # UBX-Daten direkt senden
+
             print("AssistNow Offline-Daten erfolgreich gesendet.")
+
+            # GPSD wieder starten
+            subprocess.run(["sudo", "gpsctl", "-D", "9", "/dev/ttyACM0"])
+            time.sleep(0.5)  # Kurze Pause, um sicherzustellen, dass GPSD wieder läuft
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
     else:
@@ -159,8 +170,6 @@ def send_assist_now_data(data):
             print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-
-
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -208,7 +217,6 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print(f"Fehler bei der Verarbeitung der MQTT-Nachricht: {e}")
 
-
 # MQTT-Client erstellen und konfigurieren
 mqtt_client = mqtt.Client()
 mqtt_client.username_pw_set(user, password)
@@ -254,13 +262,15 @@ while True:
 
     # AssistNow Offline-Daten aktualisieren (einmal täglich)
     if assist_now_enabled and datetime.now() - last_assist_now_update >= timedelta(days=1):
-        data = download_assist_now_data()
-        if data is not None:
-            send_assist_now_data(data)
-            last_assist_now_update = datetime.now()
-        else:
-            print("AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in 2 Sekunden.")
-            time.sleep(2) # Warte 2 Sekunden bis zum nächsten Versuch
-            continue # Springe zum nächsten Schleifendurchlauf
+        try:
+            data = download_assist_now_data()
+            if data is not None:
+                send_assist_now_data(data)  # Angepasste Funktion verwenden
+                last_assist_now_update = datetime.now()
+            else:
+                print("AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in 24 Stunden.")
+        except Exception as e:
+            print(f"Fehler beim Aktualisieren der AssistNow-Daten: {e}")
+            print("Die GPS-Erfassung wird fortgesetzt.")
 
     time.sleep(2)  # Speicherintervall von 2 Sekunden
