@@ -138,7 +138,6 @@ def get_gps_data():
         except (serial.SerialException, ValueError) as e:
             print(f"Fehler beim Abrufen der GPS-Daten (Windows): {e}")
             return None
-
 # Funktion zum Überprüfen, ob Koordinaten innerhalb der Grundstücksgrenzen liegen
 def is_inside_boundaries(lat, lon):
     return (lat >= lat_bounds[0] and lat <= lat_bounds[1] and lon >= lon_bounds[0] and lon <= lon_bounds[1])
