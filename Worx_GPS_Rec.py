@@ -145,29 +145,30 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    # ... (Code zum Herunterladen der AssistNow-Daten wie zuvor)
-
     if platform.system() == "Linux":
-        while True:
-            try:
-                # Überprüfen, ob die serielle Schnittstelle frei ist
-                with open("/dev/ttyACM0", "wb"):
-                    pass
-                break  # Schleife verlassen, wenn die Schnittstelle frei ist
-            except PermissionError:
-                print("Serielle Schnittstelle belegt. Warte 1 Sekunde...")
-                time.sleep(1)
-
         try:
-            # GPSD-Ausgabe deaktivieren
-            subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0", "-x", "?WATCH={\"enable\":false}"], check=True)
-            time.sleep(0.5)
+            # GPSD stoppen (falls es läuft)
+            subprocess.run(["sudo", "killall", "gpsd"])
 
-            # ... (Rest des Codes zum Senden der Daten wie zuvor)
-        except subprocess.CalledProcessError as e:
-            print(f"Fehler beim Steuern von GPSD: {e}")
+            # GPSD mit exklusivem Zugriff starten
+            subprocess.Popen(["sudo", "gpsd", "-n", "-G", "/dev/ttyACM0"])
+            time.sleep(2)  # Wartezeit, damit GPSD starten kann
+
+            # AssistNow-Daten senden
+            with open("/dev/ttyACM0", "wb") as f:
+                f.write(data)
+
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+            print(f"Fehler beim Senden der AssistNow Offline-Daten (Linux): {e}")
+    else:  # Windows
+        try:
+            serial_port = os.getenv("SERIAL_PORT", 'COM3')  # COM-Port anpassen
+            with serial.Serial(serial_port, 38400) as ser:  # Windows: COM-Port anpassen (ggf. anpassen!)
+                ser.write(data)  # UBX-Daten direkt senden
+            print("AssistNow Offline-Daten erfolgreich gesendet (Windows).")
+        except Exception as e:
+            print(f"Fehler beim Senden der AssistNow Offline-Daten (Windows): {e}")
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
