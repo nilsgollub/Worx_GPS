@@ -9,15 +9,14 @@ import requests
 import random
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
-
+import serial
 # Plattform-spezifische Imports
 if platform.system() == "Linux":
     try:
         import gpsd
     except ImportError:
         gpsd = None
-else:
-    import serial
+
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
