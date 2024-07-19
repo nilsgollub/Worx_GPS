@@ -75,6 +75,7 @@ def send_mqtt_message(topic, payload):
         print("MQTT nicht verbunden. Nachricht nicht gesendet.")
 
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
+# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
     global is_fake_gps
     if is_fake_gps:  # Fake-GPS-Modus
@@ -85,22 +86,21 @@ def get_gps_data():
         mode = 3  # 3D-Fix im Fake-GPS-Modus
         return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
 
-    elif platform.system() == "Linux":
-        if gpsd is not None:  # GPSD verwenden, falls verfügbar
-            try:
-                packet = gpsd.get_current()
-                if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
-                    latitude = packet.lat
-                    longitude = packet.lon
-                    timestamp = packet.time
-                    satellites = packet.sats
-                    return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": packet.mode}
-                else:
-                    raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
-            except (gpsd.NoFixError, ValueError, AttributeError) as e:  # AttributeError für Verbindungsabbrüche
-                print(f"Fehler beim Abrufen der GPS-Daten (GPSD): {e}")
-                return None
-        else:  # Direkte Kommunikation mit dem GPS-Modul
+    elif platform.system() == "Linux":  # Linux (Raspberry Pi)
+        try:
+            # Versuch, Daten über GPSD abzurufen
+            packet = gpsd.get_current()
+            if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
+                latitude = packet.lat
+                longitude = packet.lon
+                timestamp = packet.time
+                satellites = packet.sats
+                return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": packet.mode}
+            else:
+                raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
+        except (gpsd.NoFixError, ValueError, AttributeError) as e:  # Fehler bei GPSD abfangen
+            print(f"Fehler beim Abrufen der GPS-Daten (GPSD): {e}")
+            # Direkte Kommunikation mit dem GPS-Modul
             try:
                 with serial.Serial("/dev/ttyACM0", 9600, timeout=1) as ser:
                     while True:
