@@ -176,6 +176,10 @@ def send_assist_now_data(data):
                 f.write(data)
 
             print("AssistNow Offline-Daten erfolgreich gesendet.")
+
+            # GPSD wieder mit der seriellen Schnittstelle verbinden
+            subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0"])
+            time.sleep(2)  # Wartezeit, damit GPSD sich verbinden kann
         except Exception as e:
             print(f"Fehler beim Senden der AssistNow Offline-Daten (Linux): {e}")
     else:  # Windows
