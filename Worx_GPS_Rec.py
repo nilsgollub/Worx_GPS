@@ -72,8 +72,7 @@ def send_mqtt_message(topic, payload):
     else:
         print("MQTT nicht verbunden. Nachricht nicht gesendet.")
 
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
+
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
     global is_fake_gps
@@ -101,27 +100,30 @@ def get_gps_data():
                 print(f"Fehler beim Abrufen der GPS-Daten (GPSD): {e}")
 
         # Direkte Kommunikation mit dem GPS-Modul, falls GPSD nicht verfügbar oder Fehler auftritt
-        try:
-            with Serial("/dev/ttyACM0", 9600, timeout=1) as ser:
-                while True:
-                    line = ser.readline().decode().strip()
-                    if line.startswith("$GPGGA"):
-                        parts = line.split(",")
-                        if parts[6] != '0' and int(parts[7]) >= 4:  # GPS-Fix-Qualität prüfen und mindestens 4 Satelliten
-                            latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
-                            longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
-                            if parts[5] == 'W':
-                                longitude = -longitude
-                            return {
-                                "lat": latitude,
-                                "lon": longitude,
-                                "timestamp": time.time(),
-                                "satellites": int(parts[7]),
-                                "mode": int(parts[6])
-                            }
-        except (SerialException, ValueError) as e:
-            print(f"Fehler beim Abrufen der GPS-Daten (seriell): {e}")
-            return None
+        if Serial is not None:  # Nur versuchen, serielle Kommunikation zu verwenden, wenn pyserial verfügbar ist
+            try:
+                with Serial("/dev/ttyACM0", 9600, timeout=1) as ser:
+                    while True:
+                        line = ser.readline().decode().strip()
+                        if line.startswith("$GPGGA"):
+                            parts = line.split(",")
+                            if parts[6] != '0' and int(parts[7]) >= 4:  # GPS-Fix-Qualität prüfen und mindestens 4 Satelliten
+                                latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
+                                longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
+                                if parts[5] == 'W':
+                                    longitude = -longitude
+                                return {
+                                    "lat": latitude,
+                                    "lon": longitude,
+                                    "timestamp": time.time(),
+                                    "satellites": int(parts[7]),
+                                    "mode": int(parts[6])
+                                }
+            except (SerialException, ValueError) as e:
+                print(f"Fehler beim Abrufen der GPS-Daten (seriell): {e}")
+        else:
+            print("Pyserial ist nicht verfügbar, serielle Kommunikation nicht möglich.")
+
     else:  # Windows
         try:
             with serial.Serial(serial_port, 38400) as ser:
