@@ -9,8 +9,7 @@ import requests
 import random
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
-from serial import Serial, SerialException  # <-- Korrigierter Import
-# Plattform-spezifische Imports
+import serial
 if platform.system() == "Linux":
     try:
         import gpsd
@@ -90,17 +89,15 @@ def get_gps_data():
         if gpsd is not None:  # GPSD verwenden, falls verfügbar
             try:
                 packet = gpsd.get_current()
-                if packet.mode >= 2 and packet.sats >= 4:
-                    return {
-                        "lat": packet.lat,
-                        "lon": packet.lon,
-                        "timestamp": packet.time,
-                        "satellites": packet.sats,
-                        "mode": packet.mode
-                    }
+                if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
+                    latitude = packet.lat
+                    longitude = packet.lon
+                    timestamp = packet.time
+                    satellites = packet.sats
+                    return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": packet.mode}
                 else:
                     raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
-            except (gpsd.NoFixError, ValueError, AttributeError) as e:
+            except (gpsd.NoFixError, ValueError, AttributeError) as e:  # Fehler bei GPSD abfangen
                 print(f"Fehler beim Abrufen der GPS-Daten (GPSD): {e}")
 
         # Direkte Kommunikation mit dem GPS-Modul, falls GPSD nicht verfügbar oder Fehler auftritt
@@ -110,7 +107,7 @@ def get_gps_data():
                     line = ser.readline().decode().strip()
                     if line.startswith("$GPGGA"):
                         parts = line.split(",")
-                        if parts[6] != '0' and int(parts[7]) >= 4:
+                        if parts[6] != '0' and int(parts[7]) >= 4:  # GPS-Fix-Qualität prüfen und mindestens 4 Satelliten
                             latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
                             longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
                             if parts[5] == 'W':
@@ -124,7 +121,7 @@ def get_gps_data():
                             }
         except (SerialException, ValueError) as e:
             print(f"Fehler beim Abrufen der GPS-Daten (seriell): {e}")
-
+            return None
     else:  # Windows
         try:
             with serial.Serial(serial_port, 38400) as ser:
