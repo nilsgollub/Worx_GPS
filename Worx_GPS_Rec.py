@@ -9,13 +9,12 @@ import requests
 import random
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
-import serial
-if platform.system() == "Linux":
-    try:
-        import gpsd
-    except ImportError:
-        gpsd = None
 
+# Plattform-spezifische Imports
+if platform.system() == "Linux":
+    import gpsd
+else:
+    import serial
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
@@ -36,7 +35,6 @@ password_local = os.getenv("MQTT_PASSWORD_LOCAL", None)
 assist_now_token = os.getenv("ASSIST_NOW_TOKEN")
 assist_now_offline_url = "https://offline-live1.services.u-blox.com/GetOfflineData.ashx"
 assist_now_enabled = os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true"
-assist_now_path = "/dev/ttyACM0"  # Pfad zur seriellen Schnittstelle
 
 # Grundstücksgrenzen (als Arrays für einfachere Überprüfung)
 lat_bounds = [46.811819, 46.812107]
@@ -54,13 +52,11 @@ is_mqtt_connected = False
 
 # GPS-Einstellungen
 if platform.system() == "Linux":
-    if gpsd is not None:  # Verbindung zum GPSD-Daemon herstellen, falls verfügbar
-        gpsd.connect()
+    gpsd.connect()  # Verbindung zum GPSD-Daemon herstellen (Raspberry Pi)
 else:
     serial_port = os.getenv("SERIAL_PORT", 'COM3')
     ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
 
-last_assist_now_update = datetime.now() - timedelta(days=1)  # Initialisierung für sofortigen Download
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
     if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
@@ -71,7 +67,6 @@ def send_mqtt_message(topic, payload):
             print(f"Fehler beim Senden der MQTT-Nachricht: {e}")
     else:
         print("MQTT nicht verbunden. Nachricht nicht gesendet.")
-
 
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
 def get_gps_data():
@@ -85,72 +80,45 @@ def get_gps_data():
         return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
 
     elif platform.system() == "Linux":  # Linux (Raspberry Pi)
-        if gpsd is not None:  # GPSD verwenden, falls verfügbar
-            try:
-                packet = gpsd.get_current()
-                if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
-                    latitude = packet.lat
-                    longitude = packet.lon
-                    timestamp = packet.time
-                    satellites = packet.sats
-                    return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": packet.mode}
-                else:
-                    raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
-            except (gpsd.NoFixError, ValueError, AttributeError) as e:  # Fehler bei GPSD abfangen
-                print(f"Fehler beim Abrufen der GPS-Daten (GPSD): {e}")
-
-        # Direkte Kommunikation mit dem GPS-Modul, falls GPSD nicht verfügbar oder Fehler auftritt
-        if Serial is not None:  # Nur versuchen, serielle Kommunikation zu verwenden, wenn pyserial verfügbar ist
-            try:
-                with Serial("/dev/ttyACM0", 9600, timeout=1) as ser:
-                    while True:
-                        line = ser.readline().decode().strip()
-                        if line.startswith("$GPGGA"):
-                            parts = line.split(",")
-                            if parts[6] != '0' and int(parts[7]) >= 4:  # GPS-Fix-Qualität prüfen und mindestens 4 Satelliten
-                                latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
-                                longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
-                                if parts[5] == 'W':
-                                    longitude = -longitude
-                                return {
-                                    "lat": latitude,
-                                    "lon": longitude,
-                                    "timestamp": time.time(),
-                                    "satellites": int(parts[7]),
-                                    "mode": int(parts[6])
-                                }
-            except (SerialException, ValueError) as e:
-                print(f"Fehler beim Abrufen der GPS-Daten (seriell): {e}")
-        else:
-            print("Pyserial ist nicht verfügbar, serielle Kommunikation nicht möglich.")
+        try:
+            packet = gpsd.get_current()
+            if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
+                latitude = packet.lat
+                longitude = packet.lon
+                timestamp = packet.time
+                satellites = packet.sats
+                return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": packet.mode}
+            else:
+                raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
+        except (gpsd.NoFixError, ValueError) as e:
+            print(f"Fehler beim Abrufen der GPS-Daten (Linux): {e}")
+            # send_mqtt_message(topic_status, "error_gps")  # Fehlermeldung über MQTT senden, falls erwünscht
+            return None
 
     else:  # Windows
         try:
-            with serial.Serial(serial_port, 38400) as ser:
-                while True:
-                    line = ser.readline().decode().strip()
-                    if line.startswith("$GPGGA"):
-                        parts = line.split(",")
-                        if parts[6] != '0' and int(parts[7]) >= 4:
-                            latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
-                            longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
-                            if parts[5] == 'W':
-                                longitude = -longitude
-                            return {
-                                "lat": latitude,
-                                "lon": longitude,
-                                "timestamp": time.time(),
-                                "satellites": int(parts[7]),
-                                "mode": int(parts[6])
-                            }
-        except (SerialException, ValueError) as e:
+            while True:  # Endlosschleife zum kontinuierlichen Lesen
+                line = ser.readline().decode().strip()
+                if line.startswith("$GPGGA"):
+                    parts = line.split(",")
+                    if parts[6] != '0' and int(parts[7]) >= 4:  # GPS-Fix-Qualität prüfen und mindestens 4 Satelliten
+                        latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
+                        longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
+                        if parts[5] == 'W':
+                            longitude = -longitude
+                        timestamp = time.time()
+                        satellites = int(parts[7])
+                        mode = int(parts[6])
+                        return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
+        except (serial.SerialException, ValueError) as e:
             print(f"Fehler beim Abrufen der GPS-Daten (Windows): {e}")
-
-    return None  # Keine gültigen GPS-Daten gefunden
+            # send_mqtt_message(topic_status, "error_gps")
+            return None
 
 # Funktion zum Überprüfen, ob Koordinaten innerhalb der Grundstücksgrenzen liegen
 def is_inside_boundaries(lat, lon):
     return (lat >= lat_bounds[0] and lat <= lat_bounds[1] and lon >= lon_bounds[0] and lon <= lon_bounds[1])
+
 # Funktion zum Herunterladen von AssistNow Offline-Daten
 def download_assist_now_data():
     try:
@@ -167,38 +135,27 @@ def download_assist_now_data():
         return response.content
     except requests.exceptions.RequestException as e:
         print(f"Fehler beim Herunterladen der AssistNow Offline-Daten: {e}")
+        if e.response is not None:
+            print(f"Statuscode: {e.response.status_code}")  # Statuscode ausgeben
+            print(f"Antworttext: {e.response.text}")        # Antworttext ausgeben
+            print(f"Header: {e.response.headers}")          # Header ausgeben
         return None  # Rückgabewert None bei Fehler
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
     if platform.system() == "Linux":
         try:
-            # GPSD stoppen (falls es läuft)
-            subprocess.run(["sudo", "killall", "gpsd"])
-
-            # GPSD mit exklusivem Zugriff starten
-            subprocess.Popen(["sudo", "gpsd", "-n", "-G", "/dev/ttyACM0"])
-            time.sleep(2)  # Wartezeit, damit GPSD starten kann
-
-            # AssistNow-Daten senden
-            with open("/dev/ttyACM0", "wb") as f:
-                f.write(data)
-
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-
-            # GPSD wieder mit der seriellen Schnittstelle verbinden
-            subprocess.run(["sudo", "gpsctl", "/dev/ttyACM0"])
-            time.sleep(2)  # Wartezeit, damit GPSD sich verbinden kann
+            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
+                f.write(data)  # UBX-Daten direkt senden
+                print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten (Linux): {e}")
-    else:  # Windows
+            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+    else:
         try:
-            serial_port = os.getenv("SERIAL_PORT", 'COM3')  # COM-Port anpassen
-            with serial.Serial(serial_port, 38400) as ser:  # Windows: COM-Port anpassen (ggf. anpassen!)
-                ser.write(data)  # UBX-Daten direkt senden
-            print("AssistNow Offline-Daten erfolgreich gesendet (Windows).")
+            ser.write(data)  # UBX-Daten direkt senden
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
         except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten (Windows): {e}")
+            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -245,6 +202,7 @@ def on_message(client, userdata, msg):
 
     except Exception as e:
         print(f"Fehler bei der Verarbeitung der MQTT-Nachricht: {e}")
+
 # MQTT-Client erstellen und konfigurieren
 mqtt_client = mqtt.Client()
 mqtt_client.username_pw_set(user, password)
@@ -267,6 +225,7 @@ except ConnectionRefusedError:
     print(f"Verbindung mit MQTT-Broker fehlgeschlagen ({broker}:{port}).")
 
 # Hauptschleife
+last_assist_now_update = datetime.now() - timedelta(days=1)  # Initialisierung für sofortigen Download
 while True:
     if is_recording:
         gps_data = get_gps_data()
@@ -289,15 +248,14 @@ while True:
 
     # AssistNow Offline-Daten aktualisieren (einmal täglich)
     if assist_now_enabled and datetime.now() - last_assist_now_update >= timedelta(days=1):
-        try:
-            data = download_assist_now_data()
-            if data is not None:
-                send_assist_now_data(data)
-                last_assist_now_update = datetime.now()
-            else:
-                print("AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in 24 Stunden.")
-        except Exception as e:
-            print(f"Fehler beim Aktualisieren der AssistNow-Daten: {e}")
-            print("Die GPS-Erfassung wird fortgesetzt.")
+        data = download_assist_now_data()
+        if data is not None:
+            send_assist_now_data(data)
+            last_assist_now_update = datetime.now()
+        else:
+            print("AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in 2 Sekunden.")
+            time.sleep(2) # Warte 2 Sekunden bis zum nächsten Versuch
+            continue # Springe zum nächsten Schleifendurchlauf
 
     time.sleep(2)  # Speicherintervall von 2 Sekunden
+
