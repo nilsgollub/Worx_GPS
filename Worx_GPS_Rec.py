@@ -8,30 +8,15 @@ import platform
 import requests
 import random
 from datetime import datetime, timedelta
-from pyubx2 import UBXMessage
-from pyubx2 import UBXReader, UBX_HDR
-from pyubx2.ubxhelpers import calc_checksum
-from pyubx2.ubxtypes_core import SET
+
 # Plattform-spezifischer Import für serielle Kommunikation
 import serial
 
+# Import für NMEA-Parsing
+import pynmea2
 
-def configure_gps_module():
-    # CFG-PRT-Nachricht erstellen, um den Port auf UBX-only zu setzen
-    payload = b'\x01'  # Port ID (UART1)
-    payload += b'\x00'  # Reserved
-    payload += b'\x00\x00\x00\x00'  # txReady
-    payload += b'\x00\x00\x00\x00'  # mode
-    payload += b'\x00\x00\x00\x00'  # baudRate
-    payload += b'\x00'  # inProtoMask (0x01 = UBX only)
-    payload += b'\x00'  # outProtoMask (0x01 = UBX only)
-    payload += b'\x00\x00'  # flags
-    payload += b'\x00\x00'  # reserved1
-
-    msg = UBXMessage('CFG', 'CFG-PRT', payload=payload, msgmode=SET)
-    ser_gps.write(msg.serialize())
-
-    print("GPS-Modul konfiguriert, um UBX-Nachrichten zu senden.")
+from pyubx2 import UBXMessage
+from pyubx2.ubxtypes_core import SET
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
@@ -71,23 +56,29 @@ is_mqtt_connected = False
 serial_port = os.getenv("SERIAL_PORT", '/dev/ttyACM0')  # Linux: Pfad anpassen, Windows: COM-Port anpassen
 baudrate = int(os.getenv("BAUDRATE", 9600))  # Baudrate anpassen, falls erforderlich
 ser_gps = serial.Serial(serial_port, baudrate, timeout=1)  # Timeout hinzufügen, um Endlosschleifen zu vermeiden
-configure_gps_module() # GPS-Modul konfigurieren
-# Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
-def send_mqtt_message(topic, payload):
-    if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
-        try:
-            mqtt_client.publish(topic, payload)
-            print(f"MQTT-Nachricht gesendet an {topic}: {payload}")
-        except Exception as e:
-            print(f"Fehler beim Senden der MQTT-Nachricht: {e}")
-    else:
-        print("MQTT nicht verbunden. Nachricht nicht gesendet.")
 
-# Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
-from pyubx2 import UBXReader
+# Funktion zum Konfigurieren des GPS-Moduls, um NMEA-Nachrichten zu senden (falls erforderlich)
+def configure_gps_module():
+    # Überprüfen, ob das Modul bereits NMEA-Nachrichten sendet (optional)
+    # ...
 
-# ... (restlicher Code) ...
+    # Wenn nicht, sende UBX-CFG-PRT-Nachricht, um NMEA-Ausgabe zu aktivieren
+    # ...
 
+    print("GPS-Modul konfiguriert, um NMEA-Nachrichten zu senden.")
+
+    # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
+    def send_mqtt_message(topic, payload):
+        if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
+            try:
+                mqtt_client.publish(topic, payload)
+                print(f"MQTT-Nachricht gesendet an {topic}: {payload}")
+            except Exception as e:
+                print(f"Fehler beim Senden der MQTT-Nachricht: {e}")
+        else:
+            print("MQTT nicht verbunden. Nachricht nicht gesendet.")
+
+# Funktion zum Abrufen von GPS-Daten (NMEA)
 def get_gps_data():
     global is_fake_gps
     if is_fake_gps:  # Fake-GPS-Modus
@@ -95,47 +86,25 @@ def get_gps_data():
         longitude = random.uniform(lon_bounds[0], lon_bounds[1])
         timestamp = time.time()
         satellites = random.randint(4, 12)  # Zufällige Anzahl Satelliten
-        mode = 3  # 3D-Fix im Fake-GPS-Modus
-        return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
+        return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites}
 
-    else:  # Linux oder Windows (direkte Kommunikation)
+    else:  # Linux oder Windows (NMEA-Kommunikation)
         try:
-            # UBX-NAV-PVT-Nachricht manuell erstellen
-            cls = b'\x01'  # NAV
-            id = b'\x07'   # NAV-PVT
-            payload = b''
-            length = len(payload).to_bytes(2, 'little')
-            ck_a, ck_b = calc_checksum(cls + id + length + payload)
-            nav_pvt_poll = UBX_HDR + cls + id + length + payload + ck_a.to_bytes(1, 'little') + ck_b.to_bytes(1, 'little')
-            ser_gps.write(nav_pvt_poll)
+            line = ser_gps.readline().decode().strip()
+            if line.startswith('$GPGGA'):  # GGA-Nachricht enthält Positionsdaten
+                msg = pynmea2.parse(line)
+                if msg.gps_qual > 0:  # GPS-Fix vorhanden
+                    latitude = msg.latitude
+                    longitude = msg.longitude
+                    timestamp = msg.timestamp
+                    satellites = msg.num_sats
+                    return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites}
+                else:
+                    raise ValueError("Keine gültigen GPS-Daten.")
+            else:
+                return None  # Andere NMEA-Nachrichten ignorieren
 
-            # Auf Antwort warten (Timeout von 1 Sekunde)
-            start_time = time.time()
-            ubxreader = UBXReader(ser_gps)  # UBXReader erstellen
-            while time.time() - start_time < 1:
-                if ser_gps.in_waiting > 0:
-                    # UBX-Nachrichten parsen
-                    (raw_data, parsed_data) = ubxreader.read()
-                    if parsed_data:
-                        msg = parsed_data
-                        if msg.name == 'NAV-PVT':
-                            if msg.identity == b'\x07':
-                                if msg.payload[20] >= 2 and msg.payload[23] >= 4:
-                                    latitude = msg.payload[24] / 10**7
-                                    longitude = msg.payload[28] / 10**7
-                                    timestamp = msg.payload[4] + msg.payload[5] * 256 + msg.payload[6] * 65536 + msg.payload[7] * 16777216
-                                    satellites = msg.payload[23]
-                                    mode = msg.payload[20]
-                                    return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
-                                else:
-                                    raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
-                        else:
-                            print("Unerwartete UBX-Nachricht empfangen:", msg.name)
-            # Timeout abgelaufen
-            print("Timeout beim Warten auf GPS-Daten.")
-            return None
-
-        except (serial.SerialException, ValueError) as e:
+        except (serial.SerialException, ValueError, pynmea2.ParseError) as e:
             print(f"Fehler beim Abrufen der GPS-Daten: {e}")
             # send_mqtt_message(topic_status, "error_gps")
             return None
@@ -168,19 +137,19 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    try:
-        # UBX-AID-INI, UBX-AID-HUI und UBX-AID-DATA Nachrichten erstellen und senden
-        aid_ini = UBXMessage('AID', 'AID-INI', data[:40], 40)
-        aid_hui = UBXMessage('AID', 'AID-HUI', data[40:48], 8)
-        aid_data = UBXMessage('AID', 'AID-DATA', data[48:], len(data) - 48)
-
-        ser_gps.write(aid_ini.serialize())
-        ser_gps.write(aid_hui.serialize())
-        ser_gps.write(aid_data.serialize())
-
-        print("AssistNow Offline-Daten erfolgreich gesendet.")
-    except Exception as e:
-        print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+    if platform.system() == "Linux":
+        try:
+            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
+                f.write(data)  # UBX-Daten direkt senden
+                print("AssistNow Offline-Daten erfolgreich gesendet.")
+        except Exception as e:
+            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+    else:
+        try:
+            ser.write(data)  # UBX-Daten direkt senden
+            print("AssistNow Offline-Daten erfolgreich gesendet.")
+        except Exception as e:
+            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -243,11 +212,12 @@ else:
     broker, port = broker_heimnetz, port_heimnetz
     mqtt_client.username_pw_set(user, password)  # Anmeldedaten für Heimnetz-Broker setzen
 
-try:
-    mqtt_client.connect(broker, port)
-    mqtt_client.loop_start()  # MQTT-Schleife in einem separaten Thread starten
-except ConnectionRefusedError:
-    print(f"Verbindung mit MQTT-Broker fehlgeschlagen ({broker}:{port}).")
+    try:
+        mqtt_client.connect(broker, port)
+        mqtt_client.loop_start()  # MQTT-Schleife in einem separaten Thread starten
+    except ConnectionRefusedError:
+        print(f"Verbindung mit MQTT-Broker fehlgeschlagen ({broker}:{port}).")
+
 
 # Hauptschleife
 last_assist_now_update = datetime.now() - timedelta(days=1)  # Initialisierung für sofortigen Download
@@ -263,7 +233,7 @@ while True:
     # Auch wenn keine Aufzeichnung läuft, Status-Updates senden
     gps_data = get_gps_data()
     if gps_data:
-        status_message = f"{gps_data['lat']},{gps_data['lon']},{gps_data['timestamp']},{gps_data['satellites']},{gps_data['mode']}"  # Statusmeldung erstellen
+        status_message = f"{gps_data['lat']},{gps_data['lon']},{gps_data['timestamp']},{gps_data['satellites']}"  # Statusmeldung erstellen (ohne mode)
         if is_mqtt_connected:  # Nur senden, wenn MQTT verbunden ist
             send_mqtt_message(topic_status, status_message)  # Statusmeldung senden
         else:
