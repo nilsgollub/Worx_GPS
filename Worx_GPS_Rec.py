@@ -77,7 +77,7 @@ def get_gps_data():
     else:  # Linux oder Windows (direkte Kommunikation)
         try:
             # UBX-NAV-PVT-Nachricht anfordern
-            nav_pvt_poll = UBXMessage('NAV', 'NAV-PVT')  # msgmode weglassen, Standardwert ist 0
+            nav_pvt_poll = UBXMessage('NAV', 'NAV-PVT', b'', 0)  # msgmode explizit auf 0 setzen
             ser_gps.write(nav_pvt_poll.serialize())
 
             # Auf Antwort warten (Timeout von 1 Sekunde)
