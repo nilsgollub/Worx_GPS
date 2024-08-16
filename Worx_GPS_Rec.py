@@ -11,8 +11,27 @@ from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
 from pyubx2 import UBXReader, UBX_HDR
 from pyubx2.ubxhelpers import calc_checksum
+from pyubx2.ubxtypes_core import SET
 # Plattform-spezifischer Import für serielle Kommunikation
 import serial
+
+
+def configure_gps_module():
+    # CFG-PRT-Nachricht erstellen, um den Port auf UBX-only zu setzen
+    payload = b'\x01'  # Port ID (UART1)
+    payload += b'\x00'  # Reserved
+    payload += b'\x00\x00\x00\x00'  # txReady
+    payload += b'\x00\x00\x00\x00'  # mode
+    payload += b'\x00\x00\x00\x00'  # baudRate
+    payload += b'\x00'  # inProtoMask (0x01 = UBX only)
+    payload += b'\x00'  # outProtoMask (0x01 = UBX only)
+    payload += b'\x00\x00'  # flags
+    payload += b'\x00\x00'  # reserved1
+
+    msg = UBXMessage('CFG', 'CFG-PRT', payload=payload, msgmode=SET)
+    ser_gps.write(msg.serialize())
+
+    print("GPS-Modul konfiguriert, um UBX-Nachrichten zu senden.")
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
@@ -52,7 +71,7 @@ is_mqtt_connected = False
 serial_port = os.getenv("SERIAL_PORT", '/dev/ttyACM0')  # Linux: Pfad anpassen, Windows: COM-Port anpassen
 baudrate = int(os.getenv("BAUDRATE", 9600))  # Baudrate anpassen, falls erforderlich
 ser_gps = serial.Serial(serial_port, baudrate, timeout=1)  # Timeout hinzufügen, um Endlosschleifen zu vermeiden
-
+configure_gps_module() # GPS-Modul konfigurieren
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
     if is_mqtt_connected:  # Überprüfen, ob der Client verbunden ist
