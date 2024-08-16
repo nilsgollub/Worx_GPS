@@ -90,7 +90,7 @@ def get_gps_data():
 
     else:  # Linux oder Windows (NMEA-Kommunikation)
         try:
-            line = ser_gps.readline().decode().strip()
+            line = ser_gps.readline().decode('latin-1').strip()
             if line.startswith('$GPGGA'):  # GGA-Nachricht enthält Positionsdaten
                 msg = pynmea2.parse(line)
                 if msg.gps_qual > 0:  # GPS-Fix vorhanden
