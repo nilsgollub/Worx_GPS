@@ -10,11 +10,8 @@ import random
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
 
-# Plattform-spezifische Imports
-if platform.system() == "Linux":
-    import gpsd
-else:
-    import serial
+# Plattform-spezifischer Import für serielle Kommunikation
+import serial
 
 load_dotenv(".env")  # Laden der Umgebungsvariablen
 
@@ -50,12 +47,10 @@ test_mode = os.getenv("TEST_MODE", "False").lower() == "true"
 is_wifi_connected = True  # Auf dem Raspberry Pi immer verbunden
 is_mqtt_connected = False
 
-# GPS-Einstellungen
-if platform.system() == "Linux":
-    gpsd.connect()  # Verbindung zum GPSD-Daemon herstellen (Raspberry Pi)
-else:
-    serial_port = os.getenv("SERIAL_PORT", 'COM3')
-    ser = serial.Serial(serial_port, 38400)  # Windows: COM-Port anpassen (ggf. anpassen!)
+# GPS-Einstellungen und Verbindung
+serial_port = os.getenv("SERIAL_PORT", '/dev/ttyACM0')  # Linux: Pfad anpassen, Windows: COM-Port anpassen
+baudrate = int(os.getenv("BAUDRATE", 9600))  # Baudrate anpassen, falls erforderlich
+ser_gps = serial.Serial(serial_port, baudrate, timeout=1)  # Timeout hinzufügen, um Endlosschleifen zu vermeiden
 
 # Funktion zum Senden von MQTT-Nachrichten mit Fehlerbehandlung
 def send_mqtt_message(topic, payload):
@@ -79,39 +74,36 @@ def get_gps_data():
         mode = 3  # 3D-Fix im Fake-GPS-Modus
         return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
 
-    elif platform.system() == "Linux":  # Linux (Raspberry Pi)
+    else:  # Linux oder Windows (direkte Kommunikation)
         try:
-            packet = gpsd.get_current()
-            if packet.mode >= 2 and packet.sats >= 4:  # Modus 2 oder höher und mindestens 4 Satelliten
-                latitude = packet.lat
-                longitude = packet.lon
-                timestamp = packet.time
-                satellites = packet.sats
-                return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": packet.mode}
-            else:
-                raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
-        except (gpsd.NoFixError, ValueError) as e:
-            print(f"Fehler beim Abrufen der GPS-Daten (Linux): {e}")
-            # send_mqtt_message(topic_status, "error_gps")  # Fehlermeldung über MQTT senden, falls erwünscht
+            # UBX-NAV-PVT-Nachricht anfordern
+            nav_pvt_poll = UBXMessage('NAV', 'NAV-PVT', b'\x00', 0)
+            ser_gps.write(nav_pvt_poll.serialize())
+
+            # Auf Antwort warten (Timeout von 1 Sekunde)
+            start_time = time.time()
+            while time.time() - start_time < 1:  # Timeout von 1 Sekunde
+                if ser_gps.in_waiting > 0:
+                    msg = UBXMessage.parse(ser_gps.read(ser_gps.in_waiting))
+                    if msg.name == 'NAV-PVT':
+                        if msg.identity == b'\x07':  # NAV-PVT message
+                            if msg.payload[20] >= 2 and msg.payload[23] >= 4:  # Fix-Typ und Satellitenanzahl prüfen
+                                latitude = msg.payload[24] / 10**7  # Skalierung beachten
+                                longitude = msg.payload[28] / 10**7
+                                timestamp = msg.payload[4] + msg.payload[5] * 256 + msg.payload[6] * 65536 + msg.payload[7] * 16777216  # GPS-Zeit in Sekunden seit 6. Januar 1980
+                                satellites = msg.payload[23]
+                                mode = msg.payload[20]
+                                return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
+                            else:
+                                raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
+                        else:
+                            print("Unerwartete UBX-Nachricht empfangen:", msg.name)
+            # Timeout abgelaufen, keine gültigen Daten erhalten
+            print("Timeout beim Warten auf GPS-Daten.")
             return None
 
-    else:  # Windows
-        try:
-            while True:  # Endlosschleife zum kontinuierlichen Lesen
-                line = ser.readline().decode().strip()
-                if line.startswith("$GPGGA"):
-                    parts = line.split(",")
-                    if parts[6] != '0' and int(parts[7]) >= 4:  # GPS-Fix-Qualität prüfen und mindestens 4 Satelliten
-                        latitude = float(parts[2][:2]) + float(parts[2][2:]) / 60
-                        longitude = float(parts[4][:3]) + float(parts[4][3:]) / 60
-                        if parts[5] == 'W':
-                            longitude = -longitude
-                        timestamp = time.time()
-                        satellites = int(parts[7])
-                        mode = int(parts[6])
-                        return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
         except (serial.SerialException, ValueError) as e:
-            print(f"Fehler beim Abrufen der GPS-Daten (Windows): {e}")
+            print(f"Fehler beim Abrufen der GPS-Daten: {e}")
             # send_mqtt_message(topic_status, "error_gps")
             return None
 
@@ -143,19 +135,19 @@ def download_assist_now_data():
 
 # Funktion zum Senden von AssistNow Offline-Daten an das GPS-Modul
 def send_assist_now_data(data):
-    if platform.system() == "Linux":
-        try:
-            with open("/dev/ttyACM0", "wb") as f:  # Pfad zur seriellen Schnittstelle anpassen
-                f.write(data)  # UBX-Daten direkt senden
-                print("AssistNow Offline-Daten erfolgreich gesendet.")
-        except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
-    else:
-        try:
-            ser.write(data)  # UBX-Daten direkt senden
-            print("AssistNow Offline-Daten erfolgreich gesendet.")
-        except Exception as e:
-            print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+    try:
+        # UBX-AID-INI, UBX-AID-HUI und UBX-AID-DATA Nachrichten erstellen und senden
+        aid_ini = UBXMessage('AID', 'AID-INI', data[:40], 40)
+        aid_hui = UBXMessage('AID', 'AID-HUI', data[40:48], 8)
+        aid_data = UBXMessage('AID', 'AID-DATA', data[48:], len(data) - 48)
+
+        ser_gps.write(aid_ini.serialize())
+        ser_gps.write(aid_hui.serialize())
+        ser_gps.write(aid_data.serialize())
+
+        print("AssistNow Offline-Daten erfolgreich gesendet.")
+    except Exception as e:
+        print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
 # MQTT-Callback-Funktionen
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -258,4 +250,3 @@ while True:
             continue # Springe zum nächsten Schleifendurchlauf
 
     time.sleep(2)  # Speicherintervall von 2 Sekunden
-
