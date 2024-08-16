@@ -9,7 +9,7 @@ import requests
 import random
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
-
+from pyubx2 import UBXReader
 # Plattform-spezifischer Import für serielle Kommunikation
 import serial
 
@@ -64,6 +64,10 @@ def send_mqtt_message(topic, payload):
         print("MQTT nicht verbunden. Nachricht nicht gesendet.")
 
 # Funktion zum Abrufen von GPS-Daten (plattformspezifisch)
+from pyubx2 import UBXReader
+
+# ... (restlicher Code) ...
+
 def get_gps_data():
     global is_fake_gps
     if is_fake_gps:  # Fake-GPS-Modus
@@ -77,27 +81,32 @@ def get_gps_data():
     else:  # Linux oder Windows (direkte Kommunikation)
         try:
             # UBX-NAV-PVT-Nachricht anfordern
-            nav_pvt_poll = UBXMessage('NAV', 'NAV-PVT', payload=b'', **{'msgmode': 0})
+            nav_pvt_poll = UBXMessage('NAV', 'NAV-PVT', b'', 0)
+            ser_gps.write(nav_pvt_poll.serialize())
 
             # Auf Antwort warten (Timeout von 1 Sekunde)
             start_time = time.time()
-            while time.time() - start_time < 1:  # Timeout von 1 Sekunde
+            ubxreader = UBXReader(ser_gps)  # UBXReader erstellen
+            while time.time() - start_time < 1:
                 if ser_gps.in_waiting > 0:
-                    msg = UBXMessage.parse(ser_gps.read(ser_gps.in_waiting))
-                    if msg.name == 'NAV-PVT':
-                        if msg.identity == b'\x07':  # NAV-PVT message
-                            if msg.payload[20] >= 2 and msg.payload[23] >= 4:  # Fix-Typ und Satellitenanzahl prüfen
-                                latitude = msg.payload[24] / 10**7  # Skalierung beachten
-                                longitude = msg.payload[28] / 10**7
-                                timestamp = msg.payload[4] + msg.payload[5] * 256 + msg.payload[6] * 65536 + msg.payload[7] * 16777216  # GPS-Zeit in Sekunden seit 6. Januar 1980
-                                satellites = msg.payload[23]
-                                mode = msg.payload[20]
-                                return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
-                            else:
-                                raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
+                    # UBX-Nachrichten parsen
+                    (raw_data, parsed_data) = ubxreader.read()
+                    if parsed_data:
+                        msg = parsed_data
+                        if msg.name == 'NAV-PVT':
+                            if msg.identity == b'\x07':
+                                if msg.payload[20] >= 2 and msg.payload[23] >= 4:
+                                    latitude = msg.payload[24] / 10**7
+                                    longitude = msg.payload[28] / 10**7
+                                    timestamp = msg.payload[4] + msg.payload[5] * 256 + msg.payload[6] * 65536 + msg.payload[7] * 16777216
+                                    satellites = msg.payload[23]
+                                    mode = msg.payload[20]
+                                    return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites, "mode": mode}
+                                else:
+                                    raise ValueError("Keine gültigen GPS-Daten oder zu wenige Satelliten.")
                         else:
                             print("Unerwartete UBX-Nachricht empfangen:", msg.name)
-            # Timeout abgelaufen, keine gültigen Daten erhalten
+            # Timeout abgelaufen
             print("Timeout beim Warten auf GPS-Daten.")
             return None
 
