@@ -9,7 +9,8 @@ import requests
 import random
 from datetime import datetime, timedelta
 from pyubx2 import UBXMessage
-from pyubx2 import UBXReader
+from pyubx2 import UBXReader, UBX_HDR
+from pyubx2.ubxhelpers import calc_checksum
 # Plattform-spezifischer Import für serielle Kommunikation
 import serial
 
@@ -80,9 +81,14 @@ def get_gps_data():
 
     else:  # Linux oder Windows (direkte Kommunikation)
         try:
-            # UBX-NAV-PVT-Nachricht anfordern
-            nav_pvt_poll = UBXMessage('NAV', 'NAV-PVT', b'', 0)
-            ser_gps.write(nav_pvt_poll.serialize())
+            # UBX-NAV-PVT-Nachricht manuell erstellen
+            cls = b'\x01'  # NAV
+            id = b'\x07'   # NAV-PVT
+            payload = b''
+            length = len(payload).to_bytes(2, 'little')
+            ck_a, ck_b = calc_checksum(cls + id + length + payload)
+            nav_pvt_poll = UBX_HDR + cls + id + length + payload + ck_a.to_bytes(1, 'little') + ck_b.to_bytes(1, 'little')
+            ser_gps.write(nav_pvt_poll)
 
             # Auf Antwort warten (Timeout von 1 Sekunde)
             start_time = time.time()
