@@ -10,6 +10,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service as ChromeService
+import csv
+import json
 
 
 class HeatmapGenerator:
@@ -18,83 +20,66 @@ class HeatmapGenerator:
         self.tile = HEATMAP_CONFIG["tile"]
         self.zoom_start = GEO_CONFIG["zoom_start"]
         self.crop_coordinates = GEO_CONFIG["crop_coordinates"]  # Koordinaten für das Zuschneiden
-        self.crop_enabled = GEO_CONFIG["crop_enabled"]  # Option zum Aktivieren/Deaktivieren des Croppens
+        self.crop_enabled = GEO_CONFIG["crop_enabled"]  # Option zum Aktivieren
 
-    def create_heatmap(self, data_list, filename_html, draw_path=False):
-        """Erstellt eine Heatmap aus einer Liste von GPS-Daten und speichert sie als HTML."""
-        # Erstelle eine neue Karte
-        map_obj = folium.Map(location=self.map_center, zoom_start=self.zoom_start)
-        attr = 'Google'  # Attribuierung hinzufügen
-        tile_layer = folium.TileLayer(tiles=self.tile, attr=attr)  # TileLayer erstellen
-        tile_layer.add_to(map_obj)  # TileLayer zur Karte hinzufügen
-        all_points = []  # Punkte für Heatmap und Polylinie
-        if draw_path:
-            path_points = []  # Liste für die Pfadpunkte
-            for data in data_list:
-                for point in data:
-                    path_points.append((point['lat'], point['lon']))
-                    all_points.append((point['lat'], point['lon']))
-            if path_points:
-                folium.PolyLine(path_points, color="blue", weight=2.5, opacity=1).add_to(map_obj)
-                # Pfeile hinzufügen
-                plugins.AntPath(path_points, color="red", weight=4, opacity=1, dash_array=[10, 15]).add_to(map_obj)
-        else:
-            for data in data_list:
-                for point in data:
-                    all_points.append((point['lat'], point['lon']))
-        # Heatmap hinzufügen
-        if all_points:
-            plugins.HeatMap(all_points, radius=25).add_to(map_obj)
-        # Karte speichern
-        map_obj.save(filename_html)
-        # Karte als PNG speichern
-        self.save_html_as_png(filename_html, filename_html.replace(".html", ".png"))
+    def create_heatmap(self, data, html_file, draw_path):
+        # Erstelle eine Karte.
+        map_obj = folium.Map(location=self.map_center, zoom_start=self.zoom_start,
+                             tiles="OpenStreetMap")  # Korrektur: Korrekte Einstellung
+        path_points = []
+        all_points = []
+
+        # Füge die Heatmap und die Punkte hinzu.
+        for point in data:
+            try:
+                # Die Werte müssen als Float vorliegen.
+                latitude = float(point['latitude'])
+                longitude = float(point['longitude'])
+
+                all_points.append([latitude, longitude])
+                path_points.append([latitude, longitude])
+
+            except (ValueError, KeyError) as e:
+                print(f"Fehler: Ungültige Werte in Zeile: {point}")
+                print(f"Fehler: {e}")
+                continue
+        plugins.HeatMap(all_points).add_to(map_obj)
+
+        # Zeichne Pfad, falls aktiviert.
+        if draw_path and len(path_points) > 1:
+            folium.PolyLine(path_points, color="blue", weight=2.5, opacity=1).add_to(map_obj)
+
+        # Speichere Karte.
+        map_obj.save(html_file)
+        print(f"Heatmap erstellt: {html_file}")
+
+    def generate_heatmap_from_csv(self, csv_file, html_file, draw_path=False):
+        data = self.read_csv(csv_file)
+        self.create_heatmap(data, html_file, draw_path)
+
+    def read_csv(self, csv_file):
+        data = []
+        try:
+            with open(csv_file, 'r', newline='') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    data.append(row)
+        except Exception as e:
+            print(f"Fehler beim lesen der CSV Datei {e}")
+        return data
 
     def save_html_as_png(self, html_file, png_file):
-        """Konvertiert eine HTML-Datei in eine PNG-Datei mit Selenium."""
-        temp_html_file = os.path.join(os.path.dirname(html_file), "temp.html")
+        # Teste ob ein Browser verfügbar ist.
         try:
-            # HTML Datei erstellen.
-            with open(html_file, "r", encoding="utf-8") as file:
-                html_content = file.read()
-            html_content = html_content.replace("tiles: '",
-                                                "tiles: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',")
-
-            with open(temp_html_file, "w", encoding="utf-8") as temp_file:
-                temp_file.write(html_content)
-            # Browser Einstellungen erstellen.
-            chrome_options = ChromeOptions()
-            chrome_options.add_argument("--headless")  # Headless Modus
-            chrome_options.add_argument("--window-size=1920x1080")  # Fenstergrösse
-            # Treiber für Chrom holen.
             service = ChromeService(executable_path=ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
-            try:
-                # HTML Datei im Browser öffnen.
-                driver.get(f"file://{os.path.abspath(temp_html_file)}")
-                # Screenshot machen.
-                screenshot = driver.get_screenshot_as_png()
-
-                # Screenshot in PIL Image umwandeln.
-                img = Image.open(io.BytesIO(screenshot))
-                # PNG zuschneiden
-                if self.crop_enabled and self.crop_coordinates:
-                    img = self.crop_image(img, self.crop_coordinates)
-                img.save(png_file, "PNG")
-
-                print(f"Successfully saved {png_file}")
-            except Exception as e:
-                print(f"Error converting HTML to PNG: {e}")
-            finally:
-                driver.quit()  # Browser schliessen
-
+            options = ChromeOptions()
+            options.add_argument("--headless")
+            options.add_argument("--disable-gpu")
+            driver = webdriver.Chrome(service=service, options=options)
+            driver.set_window_size(1200, 1000)
+            driver.get(f"file:///{os.path.abspath(html_file)}")
+            driver.save_screenshot(png_file)
+            driver.quit()
+            print(f"Successfully saved {png_file}")
         except Exception as e:
-            print(f"Error creating temporary HTML file: {e}")
-        finally:
-            if os.path.exists(temp_html_file):
-                os.remove(temp_html_file)
-
-    def crop_image(self, img, crop_coordinates):
-        """Schneidet ein Bild basierend auf gegebenen Koordinaten zu."""
-        left, upper, right, lower = crop_coordinates
-        return img.crop((left, upper, right, lower))
+            print(f"Fehler beim Erstellen der PNG Datei: {e}")

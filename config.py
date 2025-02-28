@@ -1,54 +1,55 @@
-# config.py
 import os
 from dotenv import load_dotenv
 
-load_dotenv(".env")  # Laden der Umgebungsvariablen
+load_dotenv()
 
+# MQTT
 MQTT_CONFIG = {
-    "broker": os.getenv("MQTT_HOST"),
-    "port": int(os.getenv("MQTT_PORT", 1883)),
-    "topic_gps": os.getenv("MQTT_TOPIC_GPS"),
-    "topic_status": os.getenv("MQTT_TOPIC_STATUS"),
-    "topic_control": os.getenv("MQTT_TOPIC_CONTROL"),
+    "host": os.getenv("MQTT_HOST"),
+    "port": int(os.getenv("MQTT_PORT")),
     "user": os.getenv("MQTT_USER"),
     "password": os.getenv("MQTT_PASSWORD"),
-    "broker_lokal": os.getenv("MQTT_HOST_LOCAL"),
-    "port_lokal": int(os.getenv("MQTT_PORT_LOCAL", 1883)),
+    "host_lokal": os.getenv("MQTT_HOST_LOKAL"),  # Korrektur: Key angepasst.
+    "port_lokal": int(os.getenv("MQTT_PORT_LOKAL")) if os.getenv("MQTT_PORT_LOKAL") else 1883,
+    # Korrektur: Key angepasst.
     "user_local": os.getenv("MQTT_USER_LOCAL"),
     "password_local": os.getenv("MQTT_PASSWORD_LOCAL"),
 }
-HEATMAP_CONFIG = {
-    "heatmap_aktuell": "heatmap_aktuell.html",
-    "heatmap_10_maehvorgang": "heatmap_10_maehvorgang.html",
-    "heatmap_kumuliert": "heatmap_kumuliert.html",
-    "problemzonen_heatmap": "heatmap_problemzonen.html",
-    "heatmap_aktuell_png": "heatmap_aktuell.png",
-    "heatmap_kumuliert_png": "heatmap_kumuliert.png",
-    "problemzonen_heatmap_png": "problemzonen_heatmap.png",
-    "tile": "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-}
+
+# GPS
 GEO_CONFIG = {
-    "lat_bounds": [46.811819, 46.812107],
-    "lon_bounds": [7.132838, 7.133173],
-    "map_center": [(46.811819 + 46.812107) / 2, (7.132838 + 7.133173) / 2],
-    "zoom_start": 24,
-    "crop_enabled": False, # Option zum Aktivieren/Deaktivieren des Croppens
-    "crop_coordinates": (500, 300, 1400, 800)  # Beispielkoordinaten für das Zuschneiden
-}
-PROBLEM_CONFIG = {
-    "max_problemzonen": 20,
-    "problem_json": "problemzonen.json"
+    "is_fake": False,
+    "fake_gps_range": ((46.811819, 46.811919), (7.132838, 7.132938)),  # (lat, lon)
+    "lat_bounds": (46.810819, 46.812919),  # (min, max)
+    "lon_bounds": (7.131838, 7.133938),  # (min, max)
+    "map_center": (46.811819, 7.132838),
+    "zoom_start": 15,
+    "crop_coordinates": ((46.8115, 7.1325), (46.8120, 7.1330)),  # (left-top, right-bottom)
+    "crop_enabled": False,
+    "save_interval": 5,
 }
 
-ASSIST_NOW_CONFIG = {
-    "assist_now_token": os.getenv("ASSIST_NOW_TOKEN"),
-    "assist_now_offline_url": "https://offline-live1.services.u-blox.com/GetOfflineData.ashx",
-    "assist_now_enabled": os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true",
+# Heatmap
+HEATMAP_CONFIG = {
+    "tile": 'OpenStreetMap',
 }
+
+# Recorder
 REC_CONFIG = {
-    "serial_port": os.getenv("SERIAL_PORT", '/dev/ttyACM0'),
-    "baudrate": int(os.getenv("BAUDRATE", 9600)),
-    "test_mode": os.getenv("TEST_MODE", "False").lower() == "true",
-    "gps_message_count": 100,  # Anzhal der GPS Zeilen pro Paket
-    "storage_interval": 2
+    "serial_port": os.getenv("GPS_SERIAL_PORT"),
+    "baudrate": int(os.getenv("GPS_BAUDRATE")),
+    "test_mode": os.getenv("TEST_MODE") == "True",  # Korrektur: Optionale Variable erstellt.
+}
+
+# Problemzonen
+PROBLEM_CONFIG = {
+    "problem_json": "problemzonen.json",
+    "max_problemzonen": 100  # Korrektur: Key hinzugefügt.
+}
+# Assist now
+ASSIST_NOW_CONFIG = {
+    "assist_now_enabled": os.getenv("ASSIST_NOW_ENABLED") == "True",  # Korrektur: Key hinzugefügt.
+    "assist_now_offline_url": "https://offline-live1.services.u-blox.com/GetOfflineData.ashx",
+    # Korrektur: Key angepasst.
+    "assist_now_token": os.getenv("ASSIST_NOW_TOKEN")  # Korrektur: Key hinzugefügt.
 }
