@@ -9,6 +9,7 @@ from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service as ChromeService
+from config import GEO_CONFIG
 
 
 class TestHeatmapGenerator(unittest.TestCase):
@@ -27,13 +28,14 @@ class TestHeatmapGenerator(unittest.TestCase):
 
     def setUp(self):
         self.heatmap_generator = HeatmapGenerator()
+        GEO_CONFIG["crop_enabled"] = False
 
     def tearDown(self):
         # Aufräumen nach den Tests
         if os.path.exists("test_heatmap.html"):
             os.remove("test_heatmap.html")
-        if os.path.exists("test_heatmap.png"):
-            os.remove("test_heatmap.png")
+        # if os.path.exists("test_heatmap.png"):
+        #     os.remove("test_heatmap.png")
 
     def test_create_heatmap(self):
         # Testdaten

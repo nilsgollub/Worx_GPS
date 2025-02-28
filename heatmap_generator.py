@@ -16,11 +16,14 @@ class HeatmapGenerator:
     def __init__(self):
         self.map_center = GEO_CONFIG["map_center"]
         self.tile = HEATMAP_CONFIG["tile"]
+        self.zoom_start = GEO_CONFIG["zoom_start"]
+        self.crop_coordinates = GEO_CONFIG["crop_coordinates"]  # Koordinaten für das Zuschneiden
+        self.crop_enabled = GEO_CONFIG["crop_enabled"]  # Option zum Aktivieren/Deaktivieren des Croppens
 
     def create_heatmap(self, data_list, filename_html, draw_path=False):
         """Erstellt eine Heatmap aus einer Liste von GPS-Daten und speichert sie als HTML."""
         # Erstelle eine neue Karte
-        map_obj = folium.Map(location=self.map_center, zoom_start=18)
+        map_obj = folium.Map(location=self.map_center, zoom_start=self.zoom_start)
         attr = 'Google'  # Attribuierung hinzufügen
         tile_layer = folium.TileLayer(tiles=self.tile, attr=attr)  # TileLayer erstellen
         tile_layer.add_to(map_obj)  # TileLayer zur Karte hinzufügen
@@ -74,6 +77,9 @@ class HeatmapGenerator:
 
                 # Screenshot in PIL Image umwandeln.
                 img = Image.open(io.BytesIO(screenshot))
+                # PNG zuschneiden
+                if self.crop_enabled and self.crop_coordinates:
+                    img = self.crop_image(img, self.crop_coordinates)
                 img.save(png_file, "PNG")
 
                 print(f"Successfully saved {png_file}")
@@ -87,3 +93,8 @@ class HeatmapGenerator:
         finally:
             if os.path.exists(temp_html_file):
                 os.remove(temp_html_file)
+
+    def crop_image(self, img, crop_coordinates):
+        """Schneidet ein Bild basierend auf gegebenen Koordinaten zu."""
+        left, upper, right, lower = crop_coordinates
+        return img.crop((left, upper, right, lower))

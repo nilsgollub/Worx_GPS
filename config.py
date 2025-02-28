@@ -25,12 +25,15 @@ HEATMAP_CONFIG = {
     "heatmap_aktuell_png": "heatmap_aktuell.png",
     "heatmap_kumuliert_png": "heatmap_kumuliert.png",
     "problemzonen_heatmap_png": "problemzonen_heatmap.png",
-    "tile": 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
+    "tile": "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
 }
 GEO_CONFIG = {
     "lat_bounds": [46.811819, 46.812107],
     "lon_bounds": [7.132838, 7.133173],
     "map_center": [(46.811819 + 46.812107) / 2, (7.132838 + 7.133173) / 2],
+    "zoom_start": 24,
+    "crop_enabled": False, # Option zum Aktivieren/Deaktivieren des Croppens
+    "crop_coordinates": (500, 300, 1400, 800)  # Beispielkoordinaten für das Zuschneiden
 }
 PROBLEM_CONFIG = {
     "max_problemzonen": 20,
