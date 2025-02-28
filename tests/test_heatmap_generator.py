@@ -3,9 +3,28 @@ from unittest.mock import patch, MagicMock
 from heatmap_generator import HeatmapGenerator
 import os
 import platform
+import io
+from PIL import Image
+from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service as ChromeService
 
 
 class TestHeatmapGenerator(unittest.TestCase):
+    browser_available = False  # Klassenvariable
+
+    @classmethod
+    def setUpClass(cls):
+        # Testen ob ein Browser verfügbar ist
+        try:
+            service = ChromeService(executable_path=ChromeDriverManager().install())
+            webdriver.Chrome(service=service)
+            cls.browser_available = True
+        except WebDriverException as e:
+            print(f"Browser konnte nicht gestartet werden: {e}")
+            cls.browser_available = False
+
     def setUp(self):
         self.heatmap_generator = HeatmapGenerator()
 
@@ -15,8 +34,6 @@ class TestHeatmapGenerator(unittest.TestCase):
             os.remove("test_heatmap.html")
         if os.path.exists("test_heatmap.png"):
             os.remove("test_heatmap.png")
-        if os.path.exists("temp.html"):
-            os.remove("temp.html")
 
     def test_create_heatmap(self):
         # Testdaten
@@ -35,17 +52,12 @@ class TestHeatmapGenerator(unittest.TestCase):
         # Überprüfen ob die Datei vorhanden ist
         self.assertTrue(os.path.exists("test_heatmap.html"))
 
-    @unittest.skipIf(platform.system() == "Linux", "PNG erstellen nicht auf Linux möglich")
-    @patch('heatmap_generator.Image.open')
-    def test_save_html_as_png(self, mock_open):
+    @unittest.skipIf(not browser_available, "kein Browser verfügbar")
+    def test_save_html_as_png(self):
         # Erstellen einer temporären HTML-Datei
         with open("test_heatmap.html", "w") as f:
             f.write("<html></html>")
-        mock_img = MagicMock()
-        mock_open.return_value = mock_img
         # Aufrufen der Funktion
         self.heatmap_generator.save_html_as_png("test_heatmap.html", "test_heatmap.png")
-        # Überprüfen ob die Funktion aufgerufen wurde
-        mock_open.assert_called_once_with("temp.html")
         # Überprüfen ob die Datei vorhanden ist
         self.assertTrue(os.path.exists("test_heatmap.png"))

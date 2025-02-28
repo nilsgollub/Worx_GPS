@@ -10,7 +10,7 @@ class DataRecorder:
 
     def add_gps_data(self, gps_data):
         """Fügt GPS-Daten zum Puffer hinzu."""
-        self.gps_data_buffer += f"{gps_data['lat']},{gps_data['lon']},{gps_data['timestamp']},{gps_data['satellites']}\n"
+        self.gps_data_buffer += f"{gps_data['lat']},{gps_data['lon']},{round(gps_data['timestamp'], 1)},{gps_data['satellites']}\n"
 
     def send_buffer_data(self):
         """Sendet die im Puffer gespeicherten GPS-Daten in Paketen und leert den Puffer."""

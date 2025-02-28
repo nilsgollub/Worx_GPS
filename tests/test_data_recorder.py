@@ -11,11 +11,11 @@ class TestDataRecorder(unittest.TestCase):
 
     def test_add_gps_data(self):
         # Testdaten
-        gps_data = {"lat": 46.811819, "lon": 7.132838, "timestamp": 1672531200, "satellites": 10}
+        gps_data = {"lat": 46.811819, "lon": 7.132838, "timestamp": 1672531200.0, "satellites": 10}
         # Funktion aufrufen
         self.data_recorder.add_gps_data(gps_data)
         # Überprüfen ob die Daten korrekt gespeichert wurden
-        expected_data = "46.811819,7.132838,1672531200.0,10\n"
+        expected_data = f"46.811819,7.132838,1672531200.0,10\n"
         self.assertEqual(self.data_recorder.gps_data_buffer, expected_data)
 
     def test_send_buffer_data(self):

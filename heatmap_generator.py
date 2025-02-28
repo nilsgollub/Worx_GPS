@@ -4,7 +4,12 @@ from folium import plugins
 from PIL import Image
 from config import HEATMAP_CONFIG, GEO_CONFIG
 import os
-import platform
+import io
+import tempfile
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service as ChromeService
 
 
 class HeatmapGenerator:
@@ -15,7 +20,10 @@ class HeatmapGenerator:
     def create_heatmap(self, data_list, filename_html, draw_path=False):
         """Erstellt eine Heatmap aus einer Liste von GPS-Daten und speichert sie als HTML."""
         # Erstelle eine neue Karte
-        map_obj = folium.Map(location=self.map_center, zoom_start=18, tiles=self.tile)
+        map_obj = folium.Map(location=self.map_center, zoom_start=18)
+        attr = 'Google'  # Attribuierung hinzufügen
+        tile_layer = folium.TileLayer(tiles=self.tile, attr=attr)  # TileLayer erstellen
+        tile_layer.add_to(map_obj)  # TileLayer zur Karte hinzufügen
         all_points = []  # Punkte für Heatmap und Polylinie
         if draw_path:
             path_points = []  # Liste für die Pfadpunkte
@@ -37,27 +45,45 @@ class HeatmapGenerator:
         # Karte speichern
         map_obj.save(filename_html)
         # Karte als PNG speichern
-        if platform.system() != "Linux":
-            self.save_html_as_png(filename_html, filename_html.replace(".html", ".png"))
-        else:
-            print("PNG erstellen nur auf Windows/Mac möglich")
+        self.save_html_as_png(filename_html, filename_html.replace(".html", ".png"))
 
     def save_html_as_png(self, html_file, png_file):
-        """Konvertiert eine HTML-Datei in eine PNG-Datei."""
+        """Konvertiert eine HTML-Datei in eine PNG-Datei mit Selenium."""
+        temp_html_file = os.path.join(os.path.dirname(html_file), "temp.html")
         try:
-            # Temporäre Datei
-            temp_html_file = "temp.html"
-            with open(temp_html_file, "w", encoding="utf-8") as temp_file:
-                with open(html_file, "r", encoding="utf-8") as file:
-                    for line in file:
-                        if 'tileLayer' in line:
-                            line = line.replace("tiles: '",
+            # HTML Datei erstellen.
+            with open(html_file, "r", encoding="utf-8") as file:
+                html_content = file.read()
+            html_content = html_content.replace("tiles: '",
                                                 "tiles: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',")
-                        temp_file.write(line)
-            # Open the HTML file using Pillow
-            img = Image.open(temp_html_file)
-            img.save(png_file)
-            os.remove(temp_html_file)
-            print(f"Successfully saved {png_file}")
+
+            with open(temp_html_file, "w", encoding="utf-8") as temp_file:
+                temp_file.write(html_content)
+            # Browser Einstellungen erstellen.
+            chrome_options = ChromeOptions()
+            chrome_options.add_argument("--headless")  # Headless Modus
+            chrome_options.add_argument("--window-size=1920x1080")  # Fenstergrösse
+            # Treiber für Chrom holen.
+            service = ChromeService(executable_path=ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            try:
+                # HTML Datei im Browser öffnen.
+                driver.get(f"file://{os.path.abspath(temp_html_file)}")
+                # Screenshot machen.
+                screenshot = driver.get_screenshot_as_png()
+
+                # Screenshot in PIL Image umwandeln.
+                img = Image.open(io.BytesIO(screenshot))
+                img.save(png_file, "PNG")
+
+                print(f"Successfully saved {png_file}")
+            except Exception as e:
+                print(f"Error converting HTML to PNG: {e}")
+            finally:
+                driver.quit()  # Browser schliessen
+
         except Exception as e:
-            print(f"Error converting HTML to PNG: {e}")
+            print(f"Error creating temporary HTML file: {e}")
+        finally:
+            if os.path.exists(temp_html_file):
+                os.remove(temp_html_file)
