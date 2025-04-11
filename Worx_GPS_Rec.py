@@ -25,7 +25,8 @@ class WorxGpsRec:
         self.test_mode = REC_CONFIG["test_mode"]
         self.mqtt_handler = MqttHandler(self.test_mode)
         self.gps_handler = GpsHandler()
-        self.data_recorder = DataRecorder(self.mqtt_handler)
+        self.data_recorder = DataRecorder(mqtt_handler=self.mqtt_handler,baud_rate=REC_CONFIG["baudrate"],mqtt_broker=self.mqtt_handler.broker, # Broker vom Handler holenmqtt_port=self.mqtt_handler.port      # Port vom Handler holen
+        )
         self.problem_detector = ProblemDetector(self.mqtt_handler)
         self.is_recording = False
         self.mqtt_handler.set_message_callback(self.on_mqtt_message)
