@@ -192,7 +192,7 @@ class DataRecorder:
         self.is_recording = False
         self.is_fake = False
         self.gps_coordinates = None
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.V2)  # Korrektur: Callback API Version 2
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)  # Korrektur: Callback API Version 2
         self.current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.data_file = f"gps_data_{self.current_datetime}.csv"
         self.data_sender = DataSender(self.mqtt_broker, self.mqtt_port)

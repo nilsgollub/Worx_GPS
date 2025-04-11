@@ -8,7 +8,7 @@ class DataSender:
     def __init__(self, mqtt_broker, mqtt_port):
         self.mqtt_broker = mqtt_broker
         self.mqtt_port = mqtt_port
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.V2)  # Korrektur: Callback API Version 2
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)  # Korrektur: Callback API Version 2
         self.mqtt_client.connect(self.mqtt_broker, self.mqtt_port, 60)
         self.mqtt_client.loop_start()
         self.mqtt_topic_gps = "worx/gps"
@@ -61,7 +61,7 @@ class DataSender:
     def __init__(self, mqtt_broker, mqtt_port):
         self.mqtt_broker = mqtt_broker
         self.mqtt_port = mqtt_port
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.V2)  # Korrektur: Callback API Version 2
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)  # Korrektur: Callback API Version 2
         self.mqtt_client.connect(self.mqtt_broker, self.mqtt_port, 60)
         self.mqtt_client.loop_start()
         self.mqtt_topic_gps = "worx/gps"
