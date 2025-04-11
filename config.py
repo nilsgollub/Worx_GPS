@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+
 # MQTT
 MQTT_CONFIG = {
     "host": os.getenv("MQTT_HOST"),
@@ -21,7 +23,7 @@ MQTT_CONFIG = {
 
 # GPS
 GEO_CONFIG = {
-    "is_fake": False,
+    "is_fake": True,
     "fake_gps_range": ((46.811819, 46.811919), (7.132838, 7.132938)),  # (lat, lon)
     "lat_bounds": (46.810819, 46.812919),  # (min, max)
     "lon_bounds": (7.131838, 7.133938),  # (min, max)
@@ -39,10 +41,11 @@ HEATMAP_CONFIG = {
 
 # Recorder
 REC_CONFIG = {
+
     "serial_port": os.getenv("GPS_SERIAL_PORT"),
     # Standardwert 9600 hinzugefügt, falls nicht in .env
     "baudrate": int(os.getenv("GPS_BAUDRATE", "9600")),
-    "test_mode": os.getenv("TEST_MODE") == "True",
+    "test_mode": os.getenv("TEST_MODE", "False").upper() == "TRUE",
     # --- Fehlenden Schlüssel hinzufügen ---
     "storage_interval": 2  # Oder einen anderen Wert, falls gewünscht
     # --- Ende der Korrektur ---
