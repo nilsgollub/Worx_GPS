@@ -40,10 +40,13 @@ HEATMAP_CONFIG = {
 # Recorder
 REC_CONFIG = {
     "serial_port": os.getenv("GPS_SERIAL_PORT"),
-    "baudrate": int(os.getenv("GPS_BAUDRATE")),
-    "test_mode": os.getenv("TEST_MODE") == "True",  # Korrektur: Optionale Variable erstellt.
+    # Standardwert 9600 hinzugefügt, falls nicht in .env
+    "baudrate": int(os.getenv("GPS_BAUDRATE", "9600")),
+    "test_mode": os.getenv("TEST_MODE") == "True",
+    # --- Fehlenden Schlüssel hinzufügen ---
+    "storage_interval": 2  # Oder einen anderen Wert, falls gewünscht
+    # --- Ende der Korrektur ---
 }
-
 # Problemzonen
 PROBLEM_CONFIG = {
     "problem_json": "problemzonen.json",
