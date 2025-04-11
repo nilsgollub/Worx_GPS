@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (GPS_Heatmap)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (Worx_GPS) (2)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (Worx_GPS)" project-jdk-type="Python SDK" />
 </project>
