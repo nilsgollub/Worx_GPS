@@ -32,6 +32,8 @@ class WorxGpsRec:
         self.mqtt_handler.connect()
 
     def on_mqtt_message(self, msg):
+        print(f"DEBUG: Nachricht empfangen - Topic: '{msg.topic}', Payload: '{msg.payload.decode()}'")  # <-- Hinzufügen
+
         if msg.topic == self.mqtt_handler.topic_control:
             payload = msg.payload.decode()
             if payload == "start":
