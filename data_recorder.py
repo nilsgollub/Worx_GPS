@@ -1,338 +1,173 @@
-import serial
-import time
-import pynmea2
-import random
-from config import GEO_CONFIG, REC_CONFIG, MQTT_CONFIG
-import os
-from pathlib import Path
-import datetime
-import threading
-import csv
-import sys
-import paho.mqtt.client as mqtt
-from data_sender import DataSender
+# data_recorder.py (Korrigierte Version)
+# Diese Klasse ist dafür verantwortlich, GPS-Datenpunkte während einer Aufnahmesitzung
+# zu puffern und die gesammelten Daten auf Anfrage über MQTT zu senden.
+
+import logging
+import io  # Benötigt für das effiziente Erstellen von Strings im Speicher
+
+# Logging konfigurieren (optional, aber empfohlen für die Fehlersuche)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class DataRecorder:
-    def __init__(self, serial_port, baud_rate, mqtt_broker, mqtt_port):
-        self.serial_port = serial_port
-        self.baud_rate = baud_rate
-        self.mqtt_broker = mqtt_broker
-        self.mqtt_port = mqtt_port
-        self.gps_data = []
-        self.is_recording = False
-        self.is_fake = False
-        self.gps_coordinates = None
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)  # Korrektur: Callback API Version 2
-        self.current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.data_file = f"gps_data_{self.current_datetime}.csv"
-        self.data_sender = DataSender(self.mqtt_broker, self.mqtt_port)
+    """
+    Puffert GPS-Datenpunkte und sendet sie via MQTT.
+    """
 
-    def start_recording(self):
-        self.is_recording = True
-        if self.is_fake:
-            self.generate_fake_data()
-        else:
-            self.read_gps_data()
+    def __init__(self, mqtt_handler):
+        """
+        Initialisiert den DataRecorder.
 
-    def stop_recording(self):
-        self.is_recording = False
+        Args:
+            mqtt_handler: Eine Instanz von MqttHandler, die zum Veröffentlichen
+                          von Nachrichten verwendet wird.
+        """
+        if mqtt_handler is None:
+            # Sicherstellen, dass ein gültiger Handler übergeben wird
+            raise ValueError("MqttHandler instance is required.")
+        self.mqtt_handler = mqtt_handler
+        self.gps_data_buffer = []  # Initialisiert eine leere Liste als Puffer
+        logging.info("DataRecorder initialisiert.")
 
-    def read_gps_data(self):
-        try:
-            with serial.Serial(self.serial_port, self.baud_rate, timeout=1) as ser:
-                print(f"Verbindung mit GPS Modul auf {self.serial_port} hergestellt.")
-                while self.is_recording:
-                    line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    if line.startswith('$'):
-                        try:
-                            msg = pynmea2.parse(line)
-                            if isinstance(msg, pynmea2.GGA):
-                                if msg.gps_qual != 0:
-                                    self.gps_coordinates = {
-                                        'lat': msg.latitude,
-                                        'lon': msg.longitude,
-                                        'timestamp': time.time(),
-                                        'satellites': msg.num_sats
-                                    }
-                                    self.process_gps_data("moving")
-                        except pynmea2.ParseError as e:
-                            print(f"Fehler beim Parsen: {e}")
-        except serial.SerialException as e:
-            print(f"Fehler bei der seriellen Verbindung: {e}")
+    def add_gps_data(self, gps_data):
+        """
+        Fügt einen einzelnen GPS-Datenpunkt (Dictionary) zum internen Puffer hinzu.
 
-    def generate_fake_data(self):
-        print("Generiere Fake Daten")
-        while self.is_recording:
-            if GEO_CONFIG["fake_gps_range"]:
-                lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
-                self.gps_coordinates = {
-                    'lat': random.uniform(*lat_range),
-                    'lon': random.uniform(*lon_range),
-                    'timestamp': time.time(),
-                    'satellites': random.randint(4, 12)
-                }
-                self.process_gps_data("moving")
-            time.sleep(2)
+        Args:
+            gps_data (dict): Ein Dictionary, das einen GPS-Punkt repräsentiert
+                             (z.B. {'lat': ..., 'lon': ..., 'timestamp': ..., 'satellites': ...}).
+                             Kann None sein, wird dann ignoriert.
+        """
+        if gps_data and isinstance(gps_data, dict):  # Nur gültige Dictionaries hinzufügen
+            self.gps_data_buffer.append(gps_data)
+            # Optional: Puffergrösse periodisch loggen für Debugging
+            # if len(self.gps_data_buffer) % 100 == 0:
+            #    logging.debug(f"DataRecorder Puffergrösse: {len(self.gps_data_buffer)}")
+        elif gps_data is not None:
+            logging.warning(f"DataRecorder: Ignoriere ungültige GPS-Daten: {gps_data}")
 
-    def process_gps_data(self, state):
-        if self.gps_coordinates:
+    def clear_buffer(self):
+        """
+        Leert den internen GPS-Datenpuffer.
+        """
+        self.gps_data_buffer = []
+        logging.info("DataRecorder Puffer geleert.")
+
+    def send_buffer_data(self):
+        """
+        Formatiert die gepufferten GPS-Daten als CSV-String und sendet sie via MQTT.
+        Sendet danach einen End-Marker ("-1").
+        """
+        # Sicherstellen, dass der MQTT-Handler und das Topic verfügbar sind
+        if not hasattr(self.mqtt_handler, 'topic_gps') or not self.mqtt_handler.topic_gps:
+            logging.error("DataRecorder: MQTT handler hat kein 'topic_gps' Attribut oder es ist leer.")
+            return
+
+        topic = self.mqtt_handler.topic_gps
+
+        if not self.gps_data_buffer:
+            logging.warning("DataRecorder: Kein Daten im Puffer zum Senden.")
+            # Sende End-Marker auch bei leerem Puffer, damit der Empfänger das Ende erkennt
             try:
-                self.gps_data.append({"latitude": self.gps_coordinates['lat'],
-                                      "longitude": self.gps_coordinates['lon'],
-                                      "timestamp": self.gps_coordinates['timestamp'],
-                                      "satellites": self.gps_coordinates['satellites'],
-                                      "state": state})
+                self.mqtt_handler.publish_message(topic, "-1")
+                logging.info(f"DataRecorder: End-Marker (-1) für leeren Puffer an {topic} gesendet.")
             except Exception as e:
-                print(f"Fehler beim verarbeiten der Daten {e}")
-            if len(self.gps_data) >= GEO_CONFIG["save_interval"]:
-                self.save_data_to_csv()
+                logging.error(f"DataRecorder: Fehler beim Senden des End-Markers für leeren Puffer: {e}")
+            return
 
-    def save_data_to_csv(self):
-        try:
-            with open(self.data_file, 'a', newline='') as csvfile:
-                fieldnames = ['latitude', 'longitude', 'timestamp', 'satellites', "state"]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                if csvfile.tell() == 0:
-                    writer.writeheader()
-                for data in self.gps_data:
-                    if type(data["timestamp"]) == float or type(
-                            data["timestamp"]) == int:  # Korrektur: Nur Float und Int Werte schreiben.
-                        writer.writerow(data)
-                    else:
-                        print(f"Fehler: Ungültige Werte in Zeile: {data}")
-                print("GPS Daten geschrieben")
-            self.gps_data = []
-        except Exception as e:
-            print(f"Fehler beim schreiben der Daten: {e}")
+        logging.info(f"DataRecorder: Bereite das Senden von {len(self.gps_data_buffer)} Datenpunkten vor.")
 
-    def on_connect(self, client, userdata, flags, rc):
-        print(f"Verbunden mit MQTT Broker mit Result Code {rc}")
-        self.mqtt_client.subscribe("worx/start")
-        self.mqtt_client.subscribe("worx/stop")
+        # Nutze io.StringIO, um den CSV-String effizient im Speicher zu bauen
+        # Dies ist performanter als häufige String-Konkatenation
+        csv_output = io.StringIO()
 
-    def on_message(self, client, userdata, msg):
-        print(f"MQTT Nachricht empfangen: {msg.topic} {str(msg.payload.decode())}")
-        if msg.topic == "worx/start":
-            self.start_recording()
-        elif msg.topic == "worx/stop":
-            self.stop_recording()
-            self.send_data_mqtt()
-            self.clear_data()
-
-    def send_data_mqtt(self):
-        self.save_data_to_csv()
-        self.data_sender.send_data(self.data_file)
-
-    def clear_data(self):
-        if os.path.exists(self.data_file):
-            os.remove(self.data_file)
-
-    def run(self):
-        self.mqtt_client.on_connect = self.on_connect
-        self.mqtt_client.on_message = self.on_message
-        self.mqtt_client.connect(self.mqtt_broker, self.mqtt_port, 60)
-        self.mqtt_client.loop_start()
-
-        # Hier wird entschieden ob Fake Daten verwendet werden sollen.
-        if GEO_CONFIG["is_fake"]:
-            self.is_fake = True
-        else:
-            self.is_fake = False
-        try:
-            if self.is_fake:
-                print("Starte Fake Datenerfassung")
-                self.start_recording()
-                while self.is_recording:  # Korrektur: Endlosschleife anpassen
-                    time.sleep(1)
-            else:
-                print("Starte GPS Datenerfassung")
-                self.start_recording()
-                while self.is_recording:  # Korrektur: Endlosschleife anpassen
-                    time.sleep(1)
-        except KeyboardInterrupt:
-            print("Programm beendet.")
-        finally:
-            self.mqtt_client.disconnect()
-            self.data_sender.close()
-
-
-if __name__ == "__main__":
-    from config import MQTT_CONFIG, REC_CONFIG
-
-    serial_port = REC_CONFIG["serial_port"]
-    baud_rate = REC_CONFIG["baudrate"]
-    mqtt_broker = MQTT_CONFIG["host"]
-    mqtt_port = MQTT_CONFIG["port"]
-    # Erstelle ein DataRecorder Objekt.
-    recorder = DataRecorder(serial_port, baud_rate, mqtt_broker, mqtt_port)
-    recorder.run()
-    import serial
-import time
-import pynmea2
-import random
-from config import GEO_CONFIG, REC_CONFIG, MQTT_CONFIG
-import os
-from pathlib import Path
-import datetime
-import threading
-import csv
-import sys
-import paho.mqtt.client as mqtt
-from data_sender import DataSender
-
-
-class DataRecorder:
-    def __init__(self, serial_port, baud_rate, mqtt_broker, mqtt_port):
-        self.serial_port = serial_port
-        self.baud_rate = baud_rate
-        self.mqtt_broker = mqtt_broker
-        self.mqtt_port = mqtt_port
-        self.gps_data = []
-        self.is_recording = False
-        self.is_fake = False
-        self.gps_coordinates = None
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)  # Korrektur: Callback API Version 2
-        self.current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.data_file = f"gps_data_{self.current_datetime}.csv"
-        self.data_sender = DataSender(self.mqtt_broker, self.mqtt_port)
-
-    def start_recording(self):
-        self.is_recording = True
-        if self.is_fake:
-            self.generate_fake_data()
-        else:
-            self.read_gps_data()
-
-    def stop_recording(self):
-        self.is_recording = False
-
-    def read_gps_data(self):
-        try:
-            with serial.Serial(self.serial_port, self.baud_rate, timeout=1) as ser:
-                print(f"Verbindung mit GPS Modul auf {self.serial_port} hergestellt.")
-                while self.is_recording:
-                    line = ser.readline().decode('utf-8', errors='ignore').strip()
-                    if line.startswith('$'):
-                        try:
-                            msg = pynmea2.parse(line)
-                            if isinstance(msg, pynmea2.GGA):
-                                if msg.gps_qual != 0:
-                                    self.gps_coordinates = {
-                                        'lat': msg.latitude,
-                                        'lon': msg.longitude,
-                                        'timestamp': time.time(),
-                                        'satellites': msg.num_sats
-                                    }
-                                    self.process_gps_data("moving")
-                        except pynmea2.ParseError as e:
-                            print(f"Fehler beim Parsen: {e}")
-        except serial.SerialException as e:
-            print(f"Fehler bei der seriellen Verbindung: {e}")
-
-    def generate_fake_data(self):
-        print("Generiere Fake Daten")
-        while self.is_recording:
-            if GEO_CONFIG["fake_gps_range"]:
-                lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
-                self.gps_coordinates = {
-                    'lat': random.uniform(*lat_range),
-                    'lon': random.uniform(*lon_range),
-                    'timestamp': time.time(),
-                    'satellites': random.randint(4, 12)
-                }
-                self.process_gps_data("moving")
-            time.sleep(2)
-
-    def process_gps_data(self, state):
-        if self.gps_coordinates:
+        # Schreibe die Datenpunkte als CSV-Zeilen
+        # Annahme: Der Empfänger (Worx_GPS.py) erwartet keine Kopfzeile,
+        # da er DictReader mit festen Feldnamen verwendet.
+        for data_point in self.gps_data_buffer:
             try:
-                self.gps_data.append({"latitude": self.gps_coordinates['lat'],
-                                      "longitude": self.gps_coordinates['lon'],
-                                      "timestamp": self.gps_coordinates['timestamp'],
-                                      "satellites": self.gps_coordinates['satellites'],
-                                      "state": state})
+                # Hole Werte sicherheitshalber mit .get(), falls Keys fehlen könnten
+                lat = data_point.get('lat', '')
+                lon = data_point.get('lon', '')
+                timestamp = data_point.get('timestamp', '')
+                satellites = data_point.get('satellites', '')
+                # Schreibe die Zeile als einfachen CSV-String
+                csv_output.write(f"{lat},{lon},{timestamp},{satellites}\n")
             except Exception as e:
-                print(f"Fehler beim verarbeiten der Daten {e}")
-            if len(self.gps_data) >= GEO_CONFIG["save_interval"]:
-                self.save_data_to_csv()
+                # Logge Fehler bei der Formatierung einzelner Punkte, fahre aber fort
+                logging.error(
+                    f"DataRecorder: Fehler beim Formatieren des Datenpunkts {data_point}: {e}. Überspringe Zeile.")
 
-    def save_data_to_csv(self):
+        # Hole den kompletten CSV-String aus dem StringIO Puffer
+        csv_string = csv_output.getvalue()
+        csv_output.close()  # Schliesse den StringIO Puffer
+
+        # Sende die formatierten CSV-Daten via MQTT
         try:
-            with open(self.data_file, 'a', newline='') as csvfile:
-                fieldnames = ['latitude', 'longitude', 'timestamp', 'satellites', "state"]
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                if csvfile.tell() == 0:
-                    writer.writeheader()
-                for data in self.gps_data:
-                    if type(data["timestamp"]) == float or type(
-                            data["timestamp"]) == int:  # Korrektur: Nur Float und Int Werte schreiben.
-                        writer.writerow(data)
-                    else:
-                        print(f"Fehler: Ungültige Werte in Zeile: {data}")
-                print("GPS Daten geschrieben")
-            self.gps_data = []
-        except Exception as e:
-            print(f"Fehler beim schreiben der Daten: {e}")
-
-    def on_connect(self, client, userdata, flags, rc):
-        print(f"Verbunden mit MQTT Broker mit Result Code {rc}")
-        self.mqtt_client.subscribe("worx/start")
-        self.mqtt_client.subscribe("worx/stop")
-
-    def on_message(self, client, userdata, msg):
-        print(f"MQTT Nachricht empfangen: {msg.topic} {str(msg.payload.decode())}")
-        if msg.topic == "worx/start":
-            self.start_recording()
-        elif msg.topic == "worx/stop":
-            self.stop_recording()
-            self.send_data_mqtt()
-            self.clear_data()
-
-    def send_data_mqtt(self):
-        self.save_data_to_csv()
-        self.data_sender.send_data(self.data_file)
-
-    def clear_data(self):
-        if os.path.exists(self.data_file):
-            os.remove(self.data_file)
-
-    def run(self):
-        self.mqtt_client.on_connect = self.on_connect
-        self.mqtt_client.on_message = self.on_message
-        self.mqtt_client.connect(self.mqtt_broker, self.mqtt_port, 60)
-        self.mqtt_client.loop_start()
-
-        # Hier wird entschieden ob Fake Daten verwendet werden sollen.
-        if GEO_CONFIG["is_fake"]:
-            self.is_fake = True
-        else:
-            self.is_fake = False
-        try:
-            if self.is_fake:
-                print("Starte Fake Datenerfassung")
-                self.start_recording()
-                while self.is_recording:  # Korrektur: Endlosschleife anpassen
-                    time.sleep(1)
+            if csv_string:  # Sende nur, wenn der String nicht leer ist
+                self.mqtt_handler.publish_message(topic, csv_string)
+                logging.info(f"DataRecorder: {len(self.gps_data_buffer)} Datenpunkte erfolgreich an {topic} gesendet.")
             else:
-                print("Starte GPS Datenerfassung")
-                self.start_recording()
-                while self.is_recording:  # Korrektur: Endlosschleife anpassen
-                    time.sleep(1)
-        except KeyboardInterrupt:
-            print("Programm beendet.")
-        finally:
-            self.mqtt_client.disconnect()
-            self.data_sender.close()
+                logging.warning("DataRecorder: Formatierter CSV-String ist leer, keine Daten gesendet.")
+
+            # Sende den End-Marker "-1", um den Abschluss zu signalisieren
+            self.mqtt_handler.publish_message(topic, "-1")
+            logging.info(f"DataRecorder: End-Marker (-1) an {topic} gesendet.")
+
+        except Exception as e:
+            logging.error(f"DataRecorder: Fehler beim Senden der Daten oder des End-Markers via MQTT: {e}")
+
+        # Das Leeren des Puffers wird durch clear_buffer() gehandhabt,
+        # das in start_recording() von Worx_GPS_Rec.py aufgerufen wird.
+        # Falls der Puffer *direkt nach dem Senden* geleert werden soll,
+        # kann hier self.clear_buffer() aufgerufen werden.
 
 
-if __name__ == "__main__":
-    from config import MQTT_CONFIG, REC_CONFIG
+# Beispielhafte Verwendung (nur für Testzwecke, wird normalerweise von Worx_GPS_Rec.py importiert und genutzt)
+if __name__ == '__main__':
+    # Erstelle einen Dummy-MQTT-Handler nur für lokale Tests
+    class MockMqttHandler:
+        def __init__(self):
+            # Definiere das Topic, das der DataRecorder verwenden soll
+            self.topic_gps = "test/worx/gps"
+            print(f"MockMqttHandler initialisiert. Ziel-Topic: {self.topic_gps}")
 
-    serial_port = REC_CONFIG["serial_port"]
-    baud_rate = REC_CONFIG["baudrate"]
-    mqtt_broker = MQTT_CONFIG["host"]
-    mqtt_port = MQTT_CONFIG["port"]
-    # Erstelle ein DataRecorder Objekt.
-    recorder = DataRecorder(serial_port, baud_rate, mqtt_broker, mqtt_port)
-    recorder.run()
+        def publish_message(self, topic, payload):
+            # Simuliere das Senden einer MQTT-Nachricht durch Ausgabe auf der Konsole
+            print(f"--- Mock MQTT Publish ---")
+            print(f"Topic: {topic}")
+            # Kürze lange Payloads für die Ausgabe
+            payload_str = str(payload)
+            if len(payload_str) > 300:
+                print(f"Payload (gekürzt): {payload_str[:300]}...")
+            else:
+                print(f"Payload: {payload_str}")
+            print(f"-------------------------")
+
+
+    print("--- Starte DataRecorder Test ---")
+    mock_handler = MockMqttHandler()
+    recorder = DataRecorder(mock_handler)
+
+    # Simuliere das Hinzufügen von GPS-Daten
+    print("\n--- Füge Testdaten hinzu ---")
+    recorder.add_gps_data({'lat': 46.8118, 'lon': 7.1328, 'timestamp': 1678886400.123, 'satellites': 5})
+    recorder.add_gps_data({'lat': 46.8119, 'lon': 7.1329, 'timestamp': 1678886402.456, 'satellites': 6})
+    recorder.add_gps_data({'lat': 46.8120, 'lon': 7.1330, 'timestamp': 1678886404.789, 'satellites': 7})
+    recorder.add_gps_data(None)  # Teste das Hinzufügen von None
+    recorder.add_gps_data({'lat': 46.8121, 'lon': 7.1331})  # Teste fehlende Keys
+
+    print(f"\nAktuelle Puffergrösse: {len(recorder.gps_data_buffer)}")
+
+    # Simuliere das Senden der Daten nach einem Stopp-Befehl
+    print("\n--- Sende gepufferte Daten ---")
+    recorder.send_buffer_data()
+
+    # Teste das Senden eines leeren Puffers
+    print("\n--- Teste Senden bei leerem Puffer ---")
+    recorder.clear_buffer()
+    print(f"Puffergrösse nach clear_buffer(): {len(recorder.gps_data_buffer)}")
+    recorder.send_buffer_data()
+
+    print("\n--- DataRecorder Test Ende ---")
+
