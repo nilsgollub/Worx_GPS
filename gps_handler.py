@@ -1,4 +1,7 @@
 # gps_handler.py
+
+import logging
+import datetime
 import random
 import time
 import serial
@@ -7,8 +10,9 @@ import requests
 import platform
 from datetime import datetime, timedelta
 from config import GEO_CONFIG, ASSIST_NOW_CONFIG, REC_CONFIG
-from pyubx2 import UBXMessage
 import math
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class GpsHandler:
@@ -82,44 +86,69 @@ class GpsHandler:
                 print(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
 
     def get_gps_data(self):
-        if self.is_fake_gps:  # Fake-GPS-Modus
-            # Route Simulation
-            if self.route_simulator:
-                latitude, longitude = self.route_simulator.move()
-                # Bei erreichen der Grenze neue Richtung wählen
-                if not self.is_inside_boundaries(latitude, longitude):
-                    self.route_simulator.change_direction(random.uniform(120, 240))  # Zufällige Richtungsänderung
-                    latitude, longitude = self.route_simulator.move()
-            else:  # zufällige punkte
-                latitude = random.uniform(self.lat_bounds[0], self.lat_bounds[1])
-                longitude = random.uniform(self.lon_bounds[0], self.lon_bounds[1])
-            timestamp = time.time()
-            satellites = random.randint(4, 12)
-            return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites}
-        else:  # Linux oder Windows (NMEA-Kommunikation)
-            try:
-                line = self.ser_gps.readline().decode('latin-1').strip()
-                if line:  # prüfe ob eine Zeile vorhanden ist
-                    if line.startswith('$GP'):  # Überprüfen, ob es eine GP-Nachricht ist
-                        msg = pynmea2.parse(line)
-                        if msg.gps_qual > 0:  # GPS-Fix vorhanden
-                            latitude = msg.latitude
-                            longitude = msg.longitude
-                            timestamp = msg.timestamp
-                            satellites = msg.num_sats
-                            return {"lat": latitude, "lon": longitude, "timestamp": timestamp, "satellites": satellites}
-                        else:
-                            print("Kein GPS-Fix vorhanden.")
-                            return None
-                    else:
-                        print("Ungültige NMEA-Nachricht empfangen:", line)
-                        return None
-                else:
-                    print("Keine Daten vom GPS-Modul empfangen.")
-                    return None
-            except (serial.SerialException, ValueError, pynmea2.ParseError) as e:
-                print(f"Fehler beim Abrufen der GPS-Daten: {e}")
+        """Liest und parst eine einzelne NMEA-Nachricht vom seriellen Port oder generiert Fake-Daten."""
+        if self.mode == "fake_random":
+            return self.generate_fake_data()
+        elif self.mode == "fake_route":
+            return self.generate_fake_route_data()
+        elif self.mode == "real":
+            if not self.ser_gps or not self.ser_gps.is_open:
+                logging.warning("Serielle GPS-Verbindung nicht offen.")
+                self._reconnect_serial()  # Versuch, die Verbindung wiederherzustellen
                 return None
+
+            try:
+                line = self.ser_gps.readline().decode('utf-8', errors='ignore').strip()
+                if line.startswith('$'):
+                    try:
+                        msg = pynmea2.parse(line)
+                        # --- Modification Start ---
+                        # Check if the message is a GGA sentence before accessing GGA fields
+                        if isinstance(msg, pynmea2.types.talker.GGA):
+                            # Check for a valid GPS fix (gps_qual > 0)
+                            if hasattr(msg, 'gps_qual') and msg.gps_qual is not None and msg.gps_qual > 0:
+                                current_time = time.time()
+                                self.last_valid_fix_time = current_time  # Update last valid fix time
+                                self.last_known_position = {
+                                    'lat': msg.latitude,
+                                    'lon': msg.longitude,
+                                    'timestamp': current_time,
+                                    'satellites': msg.num_sats if hasattr(msg, 'num_sats') else 0,
+                                    'mode': self.mode  # Include current mode
+                                }
+                                logging.debug(f"Gültige GGA-Daten empfangen: {self.last_known_position}")
+                                return self.last_known_position
+                            else:
+                                logging.debug(
+                                    f"GGA empfangen, aber kein gültiger Fix (Qual={getattr(msg, 'gps_qual', 'N/A')}).")
+                                # Optional: Return last known position if no fix for a while?
+                                # Or just return None
+                                return None
+                        # Optional: Handle other message types if needed (e.g., RMC for speed/course)
+                        # elif isinstance(msg, pynmea2.RMC):
+                        #     logging.debug(f"RMC empfangen: {msg}")
+                        #     pass # Process RMC if necessary
+                        else:
+                            # Message is not GGA, ignore for position data
+                            logging.debug(f"Andere NMEA-Nachricht empfangen: {msg.sentence_type}")
+                            return None
+                        # --- Modification End ---
+
+                    except pynmea2.ParseError as e:
+                        logging.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
+                        return None
+                    except AttributeError as e:
+                        # This might catch errors if a field is missing even after type check (less likely)
+                        logging.error(f"Attributfehler beim Verarbeiten der NMEA-Nachricht: {e} - Nachricht: {msg}")
+                        return None
+            except serial.SerialException as e:
+                logging.error(f"Serieller Fehler beim Lesen von GPS: {e}")
+                self._reconnect_serial()  # Versuch, die Verbindung wiederherzustellen
+                return None
+            except Exception as e:
+                logging.error(f"Unerwarteter Fehler in get_gps_data: {e}")
+                return None
+        return None  # Default return if no valid data is found
 
     def check_assist_now(self):
         if self.assist_now_enabled and datetime.now() - self.last_assist_now_update >= timedelta(days=1):
