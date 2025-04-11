@@ -9,11 +9,14 @@ MQTT_CONFIG = {
     "port": int(os.getenv("MQTT_PORT")),
     "user": os.getenv("MQTT_USER"),
     "password": os.getenv("MQTT_PASSWORD"),
-    "host_lokal": os.getenv("MQTT_HOST_LOKAL"),  # Korrektur: Key angepasst.
+    "host_lokal": os.getenv("MQTT_HOST_LOKAL"),
     "port_lokal": int(os.getenv("MQTT_PORT_LOKAL")) if os.getenv("MQTT_PORT_LOKAL") else 1883,
-    # Korrektur: Key angepasst.
     "user_local": os.getenv("MQTT_USER_LOCAL"),
     "password_local": os.getenv("MQTT_PASSWORD_LOCAL"),
+    # --- Hinzugefügte Zeilen ---
+    "topic_gps": os.getenv("MQTT_TOPIC_GPS"),
+    "topic_status": os.getenv("MQTT_TOPIC_STATUS"),
+    "topic_control": os.getenv("MQTT_TOPIC_CONTROL"),
 }
 
 # GPS

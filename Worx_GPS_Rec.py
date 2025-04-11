@@ -1,4 +1,16 @@
+
 # Worx_GPS_Rec.py
+import sys
+import pkg_resources
+
+print(f"--- Debug Info ---")
+print(f"Python Executable: {sys.executable}")
+try:
+    paho_version = pkg_resources.get_distribution("paho-mqtt").version
+    print(f"Paho-MQTT Version: {paho_version}")
+except pkg_resources.DistributionNotFound:
+    print("Paho-MQTT Version: Not Found!")
+print(f"--- End Debug Info ---")
 from mqtt_handler import MqttHandler
 from gps_handler import GpsHandler
 from data_recorder import DataRecorder
