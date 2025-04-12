@@ -1,121 +1,147 @@
+# tests/test_data_recorder.py
 import unittest
-import threading
-from unittest.mock import patch, MagicMock
-import paho.mqtt.client as mqtt
+from unittest.mock import MagicMock, call, patch
+import io # Für StringIO
 from data_recorder import DataRecorder
-import os
-import csv
-from config import MQTT_CONFIG, GEO_CONFIG
-import time
-import serial
-
 
 class TestDataRecorder(unittest.TestCase):
+    """
+    Testet die DataRecorder Klasse.
+    """
 
     def setUp(self):
-        self.mock_mqtt_client = MagicMock()
-        self.mock_mqtt_client.publish = MagicMock()
-        self.data_recorder = DataRecorder(
-            serial_port="/dev/ttyFAKE",
-            baud_rate=9600,
-            mqtt_broker=MQTT_CONFIG["host"],
-            mqtt_port=MQTT_CONFIG["port"]
-        )
-        self.data_recorder.mqtt_client = self.mock_mqtt_client
-        self.data_recorder.start_recording = MagicMock()  # Methode Moken
-        self.data_recorder.read_gps_data = MagicMock()
-        self.data_recorder.generate_fake_data = MagicMock()
-        self.data_recorder.send_data_mqtt = MagicMock()
-        # Erstellen einer temporären CSV-Datei für Testzwecke
-        self.temp_csv_file = "temp_data.csv"
-        self.data_recorder.data_file = self.temp_csv_file
-        with open(self.temp_csv_file, 'w', newline='') as csvfile:
-            fieldnames = ['latitude', 'longitude', 'timestamp', 'satellites', "state"]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerow(
-                {'latitude': 46.811819, 'longitude': 7.132838, 'timestamp': 1672531200.0, 'satellites': 10,
-                 "state": "moving"})
-            writer.writerow(
-                {'latitude': 46.811919, 'longitude': 7.132938, 'timestamp': 1672531201.0, 'satellites': 10,
-                 "state": "moving"})
+        """
+        Setzt die Testumgebung für jeden Test auf.
+        """
+        # Erstelle einen Mock für den MqttHandler
+        self.mock_mqtt_handler = MagicMock()
+        # Definiere das Topic, das der Recorder verwenden soll
+        self.test_topic = "test/worx/gps"
+        self.mock_mqtt_handler.topic_gps = self.test_topic
 
-    def tearDown(self):
-        # Aufräumen nach den Tests
-        if os.path.exists(self.temp_csv_file):
-            os.remove(self.temp_csv_file)
+        # Instanziiere den DataRecorder mit dem Mock-Handler
+        self.data_recorder = DataRecorder(self.mock_mqtt_handler)
 
-    @patch('data_recorder.serial.Serial')
-    def test_read_gps_data(self, mock_serial):
-        # Mocken der seriellen Verbindung
-        mock_instance = mock_serial.return_value
-        mock_instance.readline.return_value = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,"
-        # Aufrufen der zu testenden Funktion
-        self.data_recorder.is_recording = True
-        self.data_recorder.read_gps_data()
-        # Überprüfungen
-        self.assertTrue(mock_instance.readline.called)
-        self.assertIsNotNone(self.data_recorder.gps_coordinates)
-        # Beende Aufnahme
-        self.data_recorder.is_recording = False
+    def test_init(self):
+        """Testet die Initialisierung."""
+        self.assertEqual(self.data_recorder.mqtt_handler, self.mock_mqtt_handler)
+        self.assertEqual(self.data_recorder.gps_data_buffer, [])
 
-    def test_generate_fake_data(self):
-        # Aktivieren von Fake-Daten
-        GEO_CONFIG["is_fake"] = True
-        self.data_recorder.is_fake = True
-        # Aufrufen der Funktion zum Generieren von Fake-Daten
-        self.data_recorder.is_recording = True
-        # Starte den Fake Daten Stream
-        threading.Thread(target=self.data_recorder.generate_fake_data, daemon=True).start()
-        time.sleep(1)
-        # Überprüfen, ob GPS-Koordinaten generiert wurden
-        self.assertIsNotNone(self.data_recorder.gps_coordinates)
-        # Beende Aufnahme
-        self.data_recorder.is_recording = False
+    def test_init_no_handler(self):
+        """Testet, ob ein Fehler ausgelöst wird, wenn kein Handler übergeben wird."""
+        with self.assertRaises(ValueError):
+            DataRecorder(None)
 
-    def test_save_data_to_csv(self):
-        # Fügen Testdaten hinzu
-        test_data = {
-            'latitude': 46.811819,
-            'longitude': 7.132838,
-            'timestamp': 1672531200.0,  # Korrektur: Float
-            'satellites': 10,
-            'state': "test"
-        }
-        self.data_recorder.gps_data.append(test_data)
-        # Test
-        self.data_recorder.save_data_to_csv()
-        # Überprüfen, ob die Datei existiert
-        self.assertTrue(os.path.exists(self.temp_csv_file))
+    def test_add_gps_data_valid(self):
+        """Testet das Hinzufügen gültiger GPS-Daten."""
+        data1 = {'lat': 46.1, 'lon': 7.1, 'timestamp': 1000.0, 'satellites': 5}
+        data2 = {'lat': 46.2, 'lon': 7.2, 'timestamp': 1001.5, 'satellites': 6}
 
-    def test_on_connect(self):
-        self.data_recorder.on_connect(self.mock_mqtt_client, None, None, 0)
-        self.mock_mqtt_client.subscribe.assert_called()
+        self.data_recorder.add_gps_data(data1)
+        self.assertEqual(self.data_recorder.gps_data_buffer, [data1])
 
-    def test_on_message(self):
-        # Starte den Recorder
-        self.data_recorder.start_recording()
-        # Sende die Start Nachricht
-        message = mqtt.MQTTMessage()  # Korrektur: Erstelle ein MQTTMessage Objekt
-        message.topic = "worx/start"
-        message.payload = b"start"
-        self.data_recorder.on_message(self.mock_mqtt_client, None, message)
-        # Teste ob der Recorder läuft
-        self.assertTrue(self.data_recorder.is_recording)
-        # Sende die Stop Nachricht
-        message = mqtt.MQTTMessage()  # Korrektur: Erstelle ein MQTTMessage Objekt
-        message.topic = "worx/stop"
-        message.payload = b"stop"
-        self.data_recorder.on_message(self.mock_mqtt_client, None, message)
-        # Teste ob der Recorder gestoppt ist
-        self.assertFalse(self.data_recorder.is_recording)
+        self.data_recorder.add_gps_data(data2)
+        self.assertEqual(self.data_recorder.gps_data_buffer, [data1, data2])
 
-    @patch('data_sender.DataSender.send_data')
-    def test_send_data_mqtt(self, mock_send_data):
-        self.data_recorder.send_data_mqtt()
-        mock_send_data.assert_called_once()
-        self.assertTrue(os.path.exists(self.temp_csv_file))
+    def test_add_gps_data_invalid(self):
+        """Testet das Hinzufügen ungültiger Daten (kein Dict oder None)."""
+        initial_buffer = list(self.data_recorder.gps_data_buffer) # Kopie erstellen
 
-    def test_clear_data(self):
-        self.data_recorder.clear_data()
-        self.assertFalse(os.path.exists(self.temp_csv_file))
+        with patch('data_recorder.logging') as mock_logging:
+            self.data_recorder.add_gps_data(None)
+            # Buffer sollte unverändert sein, keine Warnung für None
+            self.assertEqual(self.data_recorder.gps_data_buffer, initial_buffer)
+            mock_logging.warning.assert_not_called()
+
+            self.data_recorder.add_gps_data("not a dict")
+            # Buffer sollte unverändert sein, Warnung sollte geloggt werden
+            self.assertEqual(self.data_recorder.gps_data_buffer, initial_buffer)
+            mock_logging.warning.assert_called_once()
+            self.assertIn("Ignoriere ungültige GPS-Daten", mock_logging.warning.call_args[0][0])
+
+    def test_clear_buffer(self):
+        """Testet das Leeren des Puffers."""
+        self.data_recorder.add_gps_data({'lat': 46.1, 'lon': 7.1, 'timestamp': 1000.0, 'satellites': 5})
+        self.assertNotEqual(self.data_recorder.gps_data_buffer, []) # Sicherstellen, dass er nicht leer ist
+
+        self.data_recorder.clear_buffer()
+        self.assertEqual(self.data_recorder.gps_data_buffer, [])
+
+    def test_send_buffer_data_with_data(self):
+        """Testet das Senden von Daten, wenn der Puffer gefüllt ist."""
+        data1 = {'lat': 46.1, 'lon': 7.1, 'timestamp': 1000.0, 'satellites': 5}
+        data2 = {'lat': 46.2, 'lon': 7.2, 'timestamp': 1001.5, 'satellites': 6}
+        data3 = {'lat': 46.3, 'lon': 7.3} # Fehlende Keys testen
+
+        self.data_recorder.add_gps_data(data1)
+        self.data_recorder.add_gps_data(data2)
+        self.data_recorder.add_gps_data(data3)
+
+        # Erwarteter CSV-String (ohne Kopfzeile, fehlende Werte sind leer)
+        expected_csv_string = f"{data1['lat']},{data1['lon']},{data1['timestamp']},{data1['satellites']}\n" \
+                              f"{data2['lat']},{data2['lon']},{data2['timestamp']},{data2['satellites']}\n" \
+                              f"{data3['lat']},{data3['lon']},,\n" # timestamp und satellites fehlen
+
+        self.data_recorder.send_buffer_data()
+
+        # Überprüfe, ob publish_message zweimal aufgerufen wurde:
+        # 1. Mit den CSV-Daten
+        # 2. Mit dem End-Marker "-1"
+        expected_calls = [
+            call(self.test_topic, expected_csv_string),
+            call(self.test_topic, "-1")
+        ]
+        self.mock_mqtt_handler.publish_message.assert_has_calls(expected_calls)
+        self.assertEqual(self.mock_mqtt_handler.publish_message.call_count, 2)
+
+    def test_send_buffer_data_empty_buffer(self):
+        """Testet das Senden von Daten, wenn der Puffer leer ist."""
+        self.assertEqual(self.data_recorder.gps_data_buffer, []) # Sicherstellen, dass er leer ist
+
+        with patch('data_recorder.logging') as mock_logging:
+             self.data_recorder.send_buffer_data()
+
+             # Überprüfe, ob publish_message nur einmal aufgerufen wurde (mit dem End-Marker)
+             self.mock_mqtt_handler.publish_message.assert_called_once_with(self.test_topic, "-1")
+             # Überprüfe, ob eine Warnung geloggt wurde
+             mock_logging.warning.assert_called_once()
+             self.assertIn("Kein Daten im Puffer zum Senden", mock_logging.warning.call_args[0][0])
+
+
+    def test_send_buffer_data_mqtt_error(self):
+        """Testet das Verhalten bei einem Fehler während des MQTT-Publish."""
+        data1 = {'lat': 46.1, 'lon': 7.1, 'timestamp': 1000.0, 'satellites': 5}
+        self.data_recorder.add_gps_data(data1)
+
+        # Simuliere einen Fehler beim ersten Publish-Aufruf (Daten)
+        self.mock_mqtt_handler.publish_message.side_effect = [Exception("MQTT Publish Error"), None] # Fehler beim ersten, Erfolg beim zweiten (-1)
+
+        with patch('data_recorder.logging') as mock_logging:
+            self.data_recorder.send_buffer_data()
+
+            # Überprüfe, ob publish_message zweimal versucht wurde
+            self.assertEqual(self.mock_mqtt_handler.publish_message.call_count, 2)
+            # Überprüfe, ob der Fehler geloggt wurde
+            mock_logging.error.assert_called_once()
+            self.assertIn("Fehler beim Senden der Daten oder des End-Markers via MQTT", mock_logging.error.call_args[0][0])
+
+    def test_send_buffer_data_no_topic(self):
+        """Testet das Verhalten, wenn das MQTT-Topic im Handler fehlt."""
+        # Entferne das Topic-Attribut vom Mock-Handler
+        del self.mock_mqtt_handler.topic_gps
+
+        data1 = {'lat': 46.1, 'lon': 7.1, 'timestamp': 1000.0, 'satellites': 5}
+        self.data_recorder.add_gps_data(data1)
+
+        with patch('data_recorder.logging') as mock_logging:
+            self.data_recorder.send_buffer_data()
+
+            # publish_message sollte nicht aufgerufen worden sein
+            self.mock_mqtt_handler.publish_message.assert_not_called()
+            # Fehler sollte geloggt werden
+            mock_logging.error.assert_called_once()
+            self.assertIn("MQTT handler hat kein 'topic_gps' Attribut", mock_logging.error.call_args[0][0])
+
+
+if __name__ == '__main__':
+    unittest.main()
