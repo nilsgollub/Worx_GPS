@@ -1,269 +1,231 @@
-# tests/test_data_manager.py
-import unittest
-import os
+import pytest
 import json
-import time
+import os
 from unittest.mock import patch, mock_open, MagicMock, call
 from collections import deque
 from datetime import datetime, timedelta
-from data_manager import DataManager
-from config import PROBLEM_CONFIG # Importiere Konfiguration
+import time
+from freezegun import freeze_time  # For time-based tests
 
-# Mock-Konfiguration für Tests
-MOCK_PROBLEM_CONFIG = {
-    "problem_json": "test_problemzonen.json", # Eigener Dateiname für Tests
-    "max_problemzonen": 5 # Kleinere maxlen für Tests
+# Mock config before importing DataManager
+PROBLEM_CONFIG_MOCK = {
+    "problem_json": "test_problems.json",
+    "max_problemzonen": 5
 }
 
-@patch.dict('data_manager.PROBLEM_CONFIG', MOCK_PROBLEM_CONFIG, clear=True)
-class TestDataManager(unittest.TestCase):
-    """
-    Testet die DataManager Klasse.
-    """
 
-    def setUp(self):
-        """
-        Setzt die Testumgebung für jeden Test auf.
-        """
-        self.test_problem_file = MOCK_PROBLEM_CONFIG["problem_json"]
-        # Stelle sicher, dass die Testdatei vor jedem Test nicht existiert
-        if os.path.exists(self.test_problem_file):
-            os.remove(self.test_problem_file)
-
-        # Mocke os.path.exists, um das Laden zu steuern
-        with patch('data_manager.os.path.exists') as mock_exists:
-             mock_exists.return_value = False # Standardmässig existiert die Datei nicht
-             self.data_manager = DataManager()
-
-        # Überprüfe Initialisierungswerte
-        self.assertEqual(self.data_manager.problem_json, self.test_problem_file)
-        self.assertEqual(self.data_manager.max_problemzonen, MOCK_PROBLEM_CONFIG["max_problemzonen"])
-        self.assertIsInstance(self.data_manager.problemzonen_data, deque)
-        self.assertEqual(self.data_manager.problemzonen_data.maxlen, MOCK_PROBLEM_CONFIG["max_problemzonen"])
-        self.assertEqual(len(self.data_manager.problemzonen_data), 0) # Sollte leer sein, da Datei nicht existierte
-
-    def tearDown(self):
-        """
-        Räumt nach jedem Test auf.
-        """
-        # Lösche die Testdatei, falls sie erstellt wurde
-        if os.path.exists(self.test_problem_file):
-            os.remove(self.test_problem_file)
-
-    def test_save_gps_data(self):
-        """Testet das Speichern von GPS-Daten."""
-        test_filename = "test_gps_data.json"
-        test_data = [{"lat": 46.1, "lon": 7.1, "timestamp": 1000.0}]
-
-        # Mocke open, um den Schreibvorgang abzufangen
-        m = mock_open()
-        with patch("data_manager.open", m):
-            self.data_manager.save_gps_data(test_data, test_filename)
-
-            # Überprüfe, ob open mit den richtigen Argumenten aufgerufen wurde
-            m.assert_called_once_with(test_filename, "w")
-            # Überprüfe, ob json.dump mit den richtigen Daten aufgerufen wurde
-            handle = m() # Hole das Dateihandle-Mock
-            handle.write.assert_called_once_with(json.dumps(test_data))
-
-        # Aufräumen (obwohl die Datei nicht wirklich erstellt wurde)
-        if os.path.exists(test_filename):
-             os.remove(test_filename)
+@patch('data_manager.PROBLEM_CONFIG', PROBLEM_CONFIG_MOCK)
+@patch('data_manager.DataManager.load_problemzonen_data')  # Mock loading during init
+def test_data_manager_init(mock_load):
+    """Tests DataManager initialization."""
+    from data_manager import DataManager
+    dm = DataManager()
+    assert dm.problem_json == "test_problems.json"
+    assert dm.max_problemzonen == 5
+    assert isinstance(dm.problemzonen_data, deque)
+    assert dm.problemzonen_data.maxlen == 5
+    mock_load.assert_called_once()  # Check that load was called
 
 
-    def test_save_and_load_problemzonen_data(self):
-        """Testet das Speichern und anschliessende Laden von Problemzonen."""
-        # 1. Daten speichern
-        data_to_save = [
-            {"lat": 46.1, "lon": 7.1, "timestamp": time.time() - 10},
-            {"lat": 46.2, "lon": 7.2, "timestamp": time.time()},
-        ]
-        # Erstelle eine Deque zum Speichern
-        problem_deque = deque(data_to_save, maxlen=self.data_manager.max_problemzonen)
+# Need to patch PROBLEM_CONFIG for all tests using DataManager
+@patch('data_manager.PROBLEM_CONFIG', PROBLEM_CONFIG_MOCK)
+class TestDataManagerMethods:
 
-        # Mocke open für den Schreibvorgang
-        m_write = mock_open()
-        with patch("data_manager.open", m_write):
-            self.data_manager.save_problemzonen_data(problem_deque)
+    @pytest.fixture(autouse=True)
+    def setup_method(self):
+        # Ensure load is mocked for each test method within the class
+        with patch('data_manager.DataManager.load_problemzonen_data') as self.mock_load:
+            from data_manager import DataManager
+            self.dm = DataManager()
+            # Reset deque for each test
+            self.dm.problemzonen_data = deque(maxlen=PROBLEM_CONFIG_MOCK["max_problemzonen"])
+            yield  # Allows the test to run
 
-            m_write.assert_called_once_with(self.test_problem_file, "w")
-            handle_write = m_write()
-            # Überprüfe, ob die Deque als Liste gespeichert wurde
-            handle_write.write.assert_called_once_with(json.dumps(list(problem_deque)))
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('json.dump')
+    def test_save_gps_data_success(self, mock_json_dump, mock_file):
+        """Tests successful saving of GPS data."""
+        test_data = [{"lat": 1.0, "lon": 2.0}]
+        filename = "gps_test.json"
+        self.dm.save_gps_data(test_data, filename)
+        mock_file.assert_called_once_with(filename, "w")
+        mock_json_dump.assert_called_once_with(test_data, mock_file())
 
-        # 2. Neuen DataManager initialisieren, der die Daten laden soll
-        # Mocke os.path.exists, damit die Datei gefunden wird
-        # Mocke open für den Lesevorgang
-        m_read = mock_open(read_data=json.dumps(data_to_save))
-        with patch('data_manager.os.path.exists') as mock_exists:
-            mock_exists.return_value = True
-            with patch("data_manager.open", m_read):
-                new_data_manager = DataManager()
+    @patch('builtins.open', side_effect=IOError("Disk full"))
+    def test_save_gps_data_failure(self, mock_open_error, capsys):
+        """Tests failure during saving GPS data."""
+        self.dm.save_gps_data([{"lat": 1.0}], "gps_fail.json")
+        captured = capsys.readouterr()
+        assert "Fehler beim Speichern der GPS-Daten: Disk full" in captured.out
 
-                # Überprüfe, ob die Datei gelesen wurde
-                m_read.assert_called_once_with(self.test_problem_file, "r")
-                # Überprüfe, ob die Daten korrekt in die Deque geladen wurden
-                self.assertEqual(len(new_data_manager.problemzonen_data), len(data_to_save))
-                # Vergleiche als Listen, da die Reihenfolge in Deques wichtig ist
-                self.assertEqual(list(new_data_manager.problemzonen_data), data_to_save)
-                # Überprüfe maxlen
-                self.assertEqual(new_data_manager.problemzonen_data.maxlen, MOCK_PROBLEM_CONFIG["max_problemzonen"])
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('json.dump')
+    def test_save_problemzonen_data_success(self, mock_json_dump, mock_file):
+        """Tests successful saving of problem zones (deque to list)."""
+        test_deque = deque([{"lat": 1.0, "ts": 123}, {"lat": 2.0, "ts": 456}], maxlen=5)
+        self.dm.save_problemzonen_data(test_deque)
+        mock_file.assert_called_once_with(self.dm.problem_json, "w")
+        # Check that the deque was converted to a list for dumping
+        mock_json_dump.assert_called_once_with([{"lat": 1.0, "ts": 123}, {"lat": 2.0, "ts": 456}], mock_file())
 
+    @patch('os.path.exists', return_value=True)
+    @patch('builtins.open', new_callable=mock_open, read_data='[{"lat": 1.1, "ts": 100}, {"lat": 2.2, "ts": 200}]')
+    @patch('json.load')
+    def test_load_problemzonen_data_exists(self, mock_json_load, mock_file, mock_exists):
+        """Tests loading existing problem zones file."""
+        # We mocked load_problemzonen_data in init, so call it manually here
+        # Unpatch the init mock for this specific test instance if needed, or test differently.
+        # Let's call the *real* method by bypassing the init mock for this test scope
+        from data_manager import DataManager
+        with patch('data_manager.PROBLEM_CONFIG', PROBLEM_CONFIG_MOCK):  # Ensure config is patched
+            dm_load_test = DataManager()  # This will call the real load
 
-    def test_load_problemzonen_data_file_not_exist(self):
-        """Testet das Laden, wenn die Problemzonen-Datei nicht existiert."""
-        # setUp stellt sicher, dass die Datei nicht existiert und mockt exists=False
-        # DataManager wird in setUp initialisiert
-        self.assertEqual(len(self.data_manager.problemzonen_data), 0)
+            mock_exists.assert_called_once_with(dm_load_test.problem_json)
+            mock_file.assert_called_once_with(dm_load_test.problem_json, "r")
+            mock_json_load.assert_called_once_with(mock_file())
+            # Check if data was loaded into the deque (assuming json.load returns the list)
+            mock_json_load.return_value = [{"lat": 1.1, "ts": 100}, {"lat": 2.2, "ts": 200}]
+            dm_load_test.load_problemzonen_data()  # Call again to process return value
+            assert len(dm_load_test.problemzonen_data) == 2
+            assert list(dm_load_test.problemzonen_data) == [{"lat": 1.1, "ts": 100}, {"lat": 2.2, "ts": 200}]
 
-    def test_load_problemzonen_data_json_error(self):
-        """Testet das Laden, wenn die JSON-Datei korrupt ist."""
-        # Erstelle eine ungültige JSON-Datei
-        with open(self.test_problem_file, "w") as f:
-            f.write("[{'lat': 46.1, 'lon': 7.1, ]") # Ungültiges JSON
+    @patch('os.path.exists', return_value=False)
+    def test_load_problemzonen_data_not_exists(self, mock_exists):
+        """Tests loading when problem zones file does not exist."""
+        from data_manager import DataManager
+        with patch('data_manager.PROBLEM_CONFIG', PROBLEM_CONFIG_MOCK):
+            dm_load_test = DataManager()  # Calls real load
+            assert len(dm_load_test.problemzonen_data) == 0
+            mock_exists.assert_called_once_with(dm_load_test.problem_json)
 
-        # Mocke os.path.exists, damit die Datei gefunden wird
-        with patch('data_manager.os.path.exists') as mock_exists:
-             mock_exists.return_value = True
-             # Mocke print, um Fehlermeldung zu unterdrücken
-             with patch('builtins.print'):
-                 new_data_manager = DataManager()
-                 # Der Puffer sollte trotz Fehler leer sein
-                 self.assertEqual(len(new_data_manager.problemzonen_data), 0)
+    @patch('os.path.exists', return_value=True)
+    @patch('builtins.open', side_effect=IOError("Read error"))
+    def test_load_problemzonen_data_read_error(self, mock_open_error, mock_exists, capsys):
+        """Tests handling read error during loading."""
+        from data_manager import DataManager
+        with patch('data_manager.PROBLEM_CONFIG', PROBLEM_CONFIG_MOCK):
+            dm_load_test = DataManager()  # Calls real load
+            assert len(dm_load_test.problemzonen_data) == 0
+            captured = capsys.readouterr()
+            assert "Fehler beim Lesen der Problemzonen-Daten: Read error" in captured.out
 
     def test_read_problemzonen_data(self):
-        """Testet das Zurückgeben der aktuellen Problemzonen."""
-        test_data = [{"lat": 46.1, "lon": 7.1, "timestamp": time.time()}]
-        self.data_manager.problemzonen_data = deque(test_data, maxlen=self.data_manager.max_problemzonen)
-        read_data = self.data_manager.read_problemzonen_data()
-        # read_problemzonen_data sollte die Deque zurückgeben
-        self.assertIsInstance(read_data, deque)
-        self.assertEqual(list(read_data), test_data)
+        """Tests returning the current problem zones."""
+        self.dm.problemzonen_data.append({"lat": 5.0})
+        assert self.dm.read_problemzonen_data() == self.dm.problemzonen_data
+        assert list(self.dm.read_problemzonen_data()) == [{"lat": 5.0}]
 
+    @freeze_time("2023-10-27 12:00:00")  # Freeze time for consistent testing
     def test_remove_old_problemzonen(self):
-        """Testet das Entfernen alter Problemzonen."""
+        """Tests removing problem zones older than 2 months."""
         now = datetime.now()
-        current_ts = now.timestamp()
-        old_ts = (now - timedelta(days=70)).timestamp() # Älter als 60 Tage
-        recent_ts = (now - timedelta(days=10)).timestamp() # Jünger als 60 Tage
+        two_months_ago = now - timedelta(days=60)
+        three_months_ago = now - timedelta(days=90)
 
-        initial_data = [
-            {"lat": 46.1, "lon": 7.1, "timestamp": old_ts},
-            {"lat": 46.2, "lon": 7.2, "timestamp": recent_ts},
-            {"lat": 46.3, "lon": 7.3, "timestamp": current_ts},
-        ]
-        self.data_manager.problemzonen_data = deque(initial_data, maxlen=self.data_manager.max_problemzonen)
+        self.dm.problemzonen_data.extend([
+            {"lat": 1.0, "timestamp": three_months_ago.timestamp()},  # Old
+            {"lat": 2.0, "timestamp": (two_months_ago + timedelta(days=1)).timestamp()},  # Keep
+            {"lat": 3.0, "timestamp": (two_months_ago - timedelta(seconds=1)).timestamp()},  # Old
+            {"lat": 4.0, "timestamp": now.timestamp()}  # Keep
+        ])
+        assert len(self.dm.problemzonen_data) == 4
 
-        self.data_manager.remove_old_problemzonen()
+        self.dm.remove_old_problemzonen()
 
-        # Erwartet: Nur die neueren Einträge sollten übrig bleiben
-        expected_data = [
-            {"lat": 46.2, "lon": 7.2, "timestamp": recent_ts},
-            {"lat": 46.3, "lon": 7.3, "timestamp": current_ts},
-        ]
-        self.assertEqual(list(self.data_manager.problemzonen_data), expected_data)
+        assert len(self.dm.problemzonen_data) == 2
+        remaining_lats = [item["lat"] for item in self.dm.problemzonen_data]
+        assert 1.0 not in remaining_lats
+        assert 3.0 not in remaining_lats
+        assert 2.0 in remaining_lats
+        assert 4.0 in remaining_lats
 
-    def test_remove_old_problemzonen_empty(self):
-        """Testet remove_old_problemzonen mit leerer Liste."""
-        self.assertEqual(len(self.data_manager.problemzonen_data), 0)
-        self.data_manager.remove_old_problemzonen()
-        self.assertEqual(len(self.data_manager.problemzonen_data), 0)
-
-    @patch('data_manager.os.listdir')
+    @patch('os.listdir')
     def test_get_next_mow_filename_no_files(self, mock_listdir):
-        """Testet get_next_mow_filename, wenn keine Mäh-Dateien existieren."""
-        mock_listdir.return_value = ["other_file.txt", "config.py"] # Keine Mäh-Dateien
-        next_filename = self.data_manager.get_next_mow_filename()
-        self.assertEqual(next_filename, "maehvorgang_1.json")
-        mock_listdir.assert_called_once_with(".") # Standardmässig aktueller Ordner
+        """Tests getting filename when no previous files exist."""
+        mock_listdir.return_value = []
+        filename = self.dm.get_next_mow_filename(folder="test_folder")
+        assert filename == "maehvorgang_1.json"
+        mock_listdir.assert_called_once_with("test_folder")
 
-    @patch('data_manager.os.listdir')
-    def test_get_next_mow_filename_with_files(self, mock_listdir):
-        """Testet get_next_mow_filename, wenn bereits Mäh-Dateien existieren."""
-        mock_listdir.return_value = ["maehvorgang_1.json", "maehvorgang_3.json", "maehvorgang_2.json", "other.txt"]
-        next_filename = self.data_manager.get_next_mow_filename(folder="some/folder")
-        self.assertEqual(next_filename, "maehvorgang_4.json") # Höchste Nummer war 3 -> nächste ist 4
-        mock_listdir.assert_called_once_with("some/folder")
+    @patch('os.listdir')
+    def test_get_next_mow_filename_files_exist(self, mock_listdir):
+        """Tests getting filename when previous files exist."""
+        mock_listdir.return_value = ["maehvorgang_1.json", "maehvorgang_3.json", "otherfile.txt", "maehvorgang_2.json"]
+        filename = self.dm.get_next_mow_filename(folder="test_folder")
+        assert filename == "maehvorgang_4.json"  # Highest was 3, next is 4
+        mock_listdir.assert_called_once_with("test_folder")
 
-    @patch('data_manager.os.listdir')
-    def test_get_next_mow_filename_invalid_files(self, mock_listdir):
-        """Testet get_next_mow_filename mit ungültigen Dateinamen."""
-        mock_listdir.return_value = ["maehvorgang_1.json", "maehvorgang_abc.json", "maehvorgang_2.txt"]
-        with patch('builtins.print'): # Unterdrücke Fehlermeldung
-            next_filename = self.data_manager.get_next_mow_filename()
-        self.assertEqual(next_filename, "maehvorgang_2.json") # Höchste gültige Nummer war 1 -> nächste ist 2
+    @patch('os.listdir')
+    def test_get_next_mow_filename_invalid_files(self, mock_listdir, capsys):
+        """Tests getting filename with invalid filenames present."""
+        mock_listdir.return_value = ["maehvorgang_1.json", "maehvorgang_invalid.json", "maehvorgang_5.json"]
+        filename = self.dm.get_next_mow_filename(folder="test_folder")
+        assert filename == "maehvorgang_6.json"  # Highest valid was 5, next is 6
+        captured = capsys.readouterr()
+        assert "Ungültiger Dateiname: maehvorgang_invalid.json" in captured.out
 
-    @patch('data_manager.glob.glob')
-    @patch('data_manager.open', new_callable=mock_open)
-    @patch('data_manager.json.load')
-    def test_load_all_mow_data(self, mock_json_load, mock_open_func, mock_glob):
-        """Testet das Laden aller Mähvorgangsdaten."""
-        test_folder = "mow_data"
-        files = [os.path.join(test_folder, "maehvorgang_1.json"), os.path.join(test_folder, "maehvorgang_2.json")]
-        mock_glob.return_value = files
+    @patch('glob.glob')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('json.load')
+    def test_load_all_mow_data(self, mock_json_load, mock_file, mock_glob):
+        """Tests loading data from all mow files."""
+        mock_glob.return_value = ["folder/maehvorgang_1.json", "folder/maehvorgang_2.json"]
+        # Define what json.load should return for each file call
+        mock_json_load.side_effect = [[{"lat": 1}], [{"lat": 2}]]
+        # Define what open().read() should return (not strictly needed if json.load is mocked well)
+        mock_file.side_effect = [
+            mock_open(read_data='[{"lat": 1}]').return_value,
+            mock_open(read_data='[{"lat": 2}]').return_value
+        ]
 
-        # Simuliere die Daten, die json.load zurückgeben soll
-        data1 = [{"lat": 1.0}]
-        data2 = [{"lat": 2.0}]
-        mock_json_load.side_effect = [data1, data2]
+        all_data = self.dm.load_all_mow_data(folder="folder")
 
-        all_data = self.data_manager.load_all_mow_data(folder=test_folder)
+        mock_glob.assert_called_once_with(os.path.join("folder", "maehvorgang_*.json"))
+        assert mock_file.call_count == 2
+        calls = [call(os.path.join("folder", "maehvorgang_1.json"), "r"),
+                 call(os.path.join("folder", "maehvorgang_2.json"), "r")]
+        mock_file.assert_has_calls(calls, any_order=True)  # Order might vary
+        assert mock_json_load.call_count == 2
+        assert all_data == [[{"lat": 1}], [{"lat": 2}]]
 
-        # Überprüfe glob Aufruf
-        mock_glob.assert_called_once_with(os.path.join(test_folder, "maehvorgang_*.json"))
+    @patch('glob.glob', return_value=[])
+    def test_load_all_mow_data_no_files(self, mock_glob):
+        """Tests loading all data when no files are found."""
+        all_data = self.dm.load_all_mow_data(folder="empty_folder")
+        assert all_data == []
+        mock_glob.assert_called_once_with(os.path.join("empty_folder", "maehvorgang_*.json"))
 
-        # Überprüfe open und json.load Aufrufe
-        expected_open_calls = [call(files[0], "r"), call(files[1], "r")]
-        mock_open_func.assert_has_calls(expected_open_calls)
-        self.assertEqual(mock_json_load.call_count, 2)
+    @patch('os.listdir')
+    @patch('os.path.getctime')
+    @patch('os.path.join', side_effect=lambda *args: "/".join(args))  # Simple mock for join
+    @patch('builtins.open', new_callable=mock_open, read_data='[{"lat": "last"}]')
+    @patch('json.load', return_value=[{"lat": "last"}])
+    def test_load_last_mow_data(self, mock_json_load, mock_file, mock_join, mock_getctime, mock_listdir):
+        """Tests loading data from the last mow file."""
+        mock_listdir.return_value = ["maehvorgang_1.json", "maehvorgang_3.json", "maehvorgang_2.json"]
 
-        # Überprüfe das Ergebnis
-        self.assertEqual(all_data, [data1, data2])
-
-    @patch('data_manager.os.listdir')
-    @patch('data_manager.os.path.getctime')
-    @patch('data_manager.os.path.join', side_effect=lambda *args: "/".join(args)) # Einfaches Mock für Pfad-Join
-    @patch('data_manager.open', new_callable=mock_open)
-    @patch('data_manager.json.load')
-    def test_load_last_mow_data(self, mock_json_load, mock_open_func, mock_join, mock_getctime, mock_listdir):
-        """Testet das Laden des letzten Mähvorgangs."""
-        test_folder = "mower_logs"
-        files_in_dir = ["maehvorgang_1.json", "maehvorgang_3.json", "maehvorgang_2.json", "other.txt"]
-        mock_listdir.return_value = files_in_dir
-
-        # Mocke ctime, um maehvorgang_3.json zur neuesten zu machen
+        # Simulate ctimes to make file 3 the latest
         def ctime_side_effect(path):
-            if path.endswith("maehvorgang_1.json"): return 100
-            if path.endswith("maehvorgang_2.json"): return 300
-            if path.endswith("maehvorgang_3.json"): return 500 # Neueste
+            if path == "folder/maehvorgang_1.json": return 100
+            if path == "folder/maehvorgang_2.json": return 300
+            if path == "folder/maehvorgang_3.json": return 500
             return 0
+
         mock_getctime.side_effect = ctime_side_effect
 
-        # Simuliere die Daten, die json.load zurückgeben soll (nur für die neueste Datei)
-        last_data = [{"lat": 3.0}]
-        mock_json_load.return_value = last_data
+        last_data = self.dm.load_last_mow_data(folder="folder")
 
-        loaded_data = self.data_manager.load_last_mow_data(folder=test_folder)
-
-        # Überprüfe listdir Aufruf
-        mock_listdir.assert_called_once_with(test_folder)
-        # Überprüfe getctime Aufrufe (sollte für alle Mäh-Dateien aufgerufen werden)
-        self.assertEqual(mock_getctime.call_count, 3)
-        # Überprüfe open und json.load (nur für die neueste Datei)
-        mock_open_func.assert_called_once_with(f"{test_folder}/maehvorgang_3.json", "r")
+        mock_listdir.assert_called_once_with("folder")
+        # Check getctime was called for each file path
+        assert mock_getctime.call_count == 3
+        # Check open and load were called for the latest file
+        mock_file.assert_called_once_with("folder/maehvorgang_3.json", "r")
         mock_json_load.assert_called_once()
+        assert last_data == [{"lat": "last"}]
 
-        # Überprüfe das Ergebnis
-        self.assertEqual(loaded_data, last_data)
-
-    @patch('data_manager.os.listdir')
+    @patch('os.listdir', return_value=[])
     def test_load_last_mow_data_no_files(self, mock_listdir):
-        """Testet load_last_mow_data, wenn keine Mäh-Dateien existieren."""
-        mock_listdir.return_value = []
-        loaded_data = self.data_manager.load_last_mow_data()
-        self.assertEqual(loaded_data, [])
-
-
-if __name__ == '__main__':
-    unittest.main()
-
+        """Tests loading last data when no files exist."""
+        last_data = self.dm.load_last_mow_data(folder="empty")
+        assert last_data == []
+        mock_listdir.assert_called_once_with("empty")
