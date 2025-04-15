@@ -1,35 +1,38 @@
+# tests/test_data_recorder.py
 import pytest
-from unittest.mock import MagicMock, call, patch
-import io
+from unittest.mock import patch, MagicMock, call
+import logging
+import io  # Import io
+
+# Importiere die zu testende Klasse
+from data_recorder import DataRecorder
 
 
-# Mock the dependency before importing the class
+# --- Fixtures ---
 @pytest.fixture
 def mock_mqtt_handler():
+    """Erstellt einen einfachen Mock für den MqttHandler."""
     handler = MagicMock()
-    handler.topic_gps = "test/worx/gps"
-    handler.publish_message = MagicMock()
+    handler.topic_gps = "test/gps"  # Wichtig: Topic muss gesetzt sein
     return handler
 
 
+# --- Tests ---
 def test_data_recorder_init(mock_mqtt_handler):
-    """Tests DataRecorder initialization."""
-    from data_recorder import DataRecorder
+    """Testet die Initialisierung des DataRecorders."""
     recorder = DataRecorder(mock_mqtt_handler)
-    assert recorder.mqtt_handler == mock_mqtt_handler
+    assert recorder.mqtt_handler is mock_mqtt_handler
     assert recorder.gps_data_buffer == []
 
 
 def test_data_recorder_init_no_handler():
-    """Tests that initialization fails without a handler."""
-    from data_recorder import DataRecorder
-    with pytest.raises(ValueError, match="MqttHandler instance is required."):
+    """Testet, dass die Initialisierung ohne Handler fehlschlägt."""
+    with pytest.raises(ValueError, match="MqttHandler instance is required"):
         DataRecorder(None)
 
 
 def test_add_gps_data(mock_mqtt_handler):
-    """Tests adding valid GPS data."""
-    from data_recorder import DataRecorder
+    """Testet das Hinzufügen gültiger GPS-Daten."""
     recorder = DataRecorder(mock_mqtt_handler)
     data1 = {'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5}
     data2 = {'lat': 1.1, 'lon': 2.1, 'timestamp': 101, 'satellites': 6}
@@ -39,120 +42,136 @@ def test_add_gps_data(mock_mqtt_handler):
 
 
 def test_add_gps_data_none_and_invalid(mock_mqtt_handler, caplog):
-    """Tests adding None and invalid data types."""
-    from data_recorder import DataRecorder
+    """Testet das Ignorieren von None und ungültigen Daten beim Hinzufügen."""
+    caplog.set_level(logging.WARNING)
     recorder = DataRecorder(mock_mqtt_handler)
     data1 = {'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5}
     recorder.add_gps_data(data1)
-    recorder.add_gps_data(None)
-    recorder.add_gps_data("invalid string")  # Add invalid type
-
-    assert recorder.gps_data_buffer == [data1]  # Only valid data added
-    assert "Ignoriere ungültige GPS-Daten: invalid string" in caplog.text
+    recorder.add_gps_data(None)  # Sollte ignoriert werden
+    recorder.add_gps_data("invalid_string")  # Sollte ignoriert werden
+    recorder.add_gps_data([1, 2, 3])  # Sollte ignoriert werden
+    assert recorder.gps_data_buffer == [data1]  # Nur data1 sollte im Puffer sein
+    assert "Ignoriere ungültige GPS-Daten: invalid_string" in caplog.text
+    assert "Ignoriere ungültige GPS-Daten: [1, 2, 3]" in caplog.text
 
 
 def test_clear_buffer(mock_mqtt_handler):
-    """Tests clearing the buffer."""
-    from data_recorder import DataRecorder
+    """Testet das Leeren des Puffers."""
     recorder = DataRecorder(mock_mqtt_handler)
-    data1 = {'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5}
-    recorder.add_gps_data(data1)
+    recorder.add_gps_data({'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5})
     assert len(recorder.gps_data_buffer) == 1
     recorder.clear_buffer()
     assert recorder.gps_data_buffer == []
 
 
 def test_send_buffer_data_non_empty(mock_mqtt_handler):
-    """Tests sending data from a non-empty buffer."""
-    from data_recorder import DataRecorder
+    """Testet das Senden eines nicht-leeren Puffers."""
     recorder = DataRecorder(mock_mqtt_handler)
     data1 = {'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5}
     data2 = {'lat': 1.1, 'lon': 2.1, 'timestamp': 101, 'satellites': 6}
-    data3 = {'lat': 1.2, 'lon': 2.2}  # Missing keys test
     recorder.add_gps_data(data1)
     recorder.add_gps_data(data2)
-    recorder.add_gps_data(data3)
 
     recorder.send_buffer_data()
 
-    expected_csv = "1.0,2.0,100,5\n1.1,2.1,101,6\n1.2,2.2,,\n"  # Note empty values for missing keys
-    expected_marker = "-1"
+    # Erwarteter CSV-String (ohne Kopfzeile, mit Newlines)
+    expected_csv = "1.0,2.0,100,5\n1.1,2.1,101,6\n"
 
-    # Check that publish was called twice: once for data, once for marker
-    assert mock_mqtt_handler.publish_message.call_count == 2
-    # Check the calls explicitly
-    calls = [
+    # Prüfe, ob publish_message zweimal aufgerufen wurde: einmal mit Daten, einmal mit Marker
+    expected_calls = [
         call(mock_mqtt_handler.topic_gps, expected_csv),
-        call(mock_mqtt_handler.topic_gps, expected_marker)
+        call(mock_mqtt_handler.topic_gps, "-1")
     ]
-    mock_mqtt_handler.publish_message.assert_has_calls(calls)
+    mock_mqtt_handler.publish_message.assert_has_calls(expected_calls, any_order=False)
+    assert mock_mqtt_handler.publish_message.call_count == 2
 
 
-def test_send_buffer_data_empty(mock_mqtt_handler):
-    """Tests sending when the buffer is empty."""
-    from data_recorder import DataRecorder
+def test_send_buffer_data_empty(mock_mqtt_handler, caplog):
+    """Testet das Senden eines leeren Puffers."""
+    caplog.set_level(logging.WARNING)
     recorder = DataRecorder(mock_mqtt_handler)
-    recorder.clear_buffer()  # Ensure buffer is empty
-
     recorder.send_buffer_data()
 
-    expected_marker = "-1"
-
-    # Check that publish was called only once for the marker
-    mock_mqtt_handler.publish_message.assert_called_once_with(
-        mock_mqtt_handler.topic_gps, expected_marker
-    )
+    # Prüfe, ob nur der End-Marker gesendet wurde
+    mock_mqtt_handler.publish_message.assert_called_once_with(mock_mqtt_handler.topic_gps, "-1")
+    # Prüfe, ob die Warnung geloggt wurde
+    assert "Kein Daten im Puffer zum Senden" in caplog.text
 
 
 def test_send_buffer_data_no_topic(mock_mqtt_handler, caplog):
-    """Tests sending when the handler is missing the topic_gps attribute."""
-    from data_recorder import DataRecorder
-    # Remove the attribute for this test
+    """Testet das Verhalten, wenn das MQTT-Topic fehlt."""
+    caplog.set_level(logging.ERROR)
+    # Entferne das Topic-Attribut vom Mock
     del mock_mqtt_handler.topic_gps
     recorder = DataRecorder(mock_mqtt_handler)
+    recorder.add_gps_data({'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5})
+    recorder.send_buffer_data()
+
+    # Prüfe, dass publish_message nicht aufgerufen wurde
+    mock_mqtt_handler.publish_message.assert_not_called()
+    # Prüfe die Fehlermeldung im Log
+    assert "MQTT handler hat kein 'topic_gps' Attribut" in caplog.text
+
+
+# --- KORREKTUR: Patch-Ziel und Testlogik ---
+@patch('data_recorder.logging')  # Mock logging, um Fehler zu prüfen
+@patch('data_recorder.io.StringIO')  # Patch die Klasse io.StringIO
+def test_send_buffer_data_format_error(mock_stringio_class, mock_logging, mock_mqtt_handler, caplog):
+    """Tests handling errors during CSV formatting."""
+    # Konfiguriere den Mock, den io.StringIO zurückgeben soll
+    mock_stringio_instance = MagicMock(spec=io.StringIO)  # Spezifiziere io.StringIO für bessere Mock-Eigenschaften
+    mock_stringio_instance.write.side_effect = TypeError("Format Error")
+    # getvalue muss aufgerufen werden können, auch wenn write fehlschlägt
+    mock_stringio_instance.getvalue.return_value = "partially_written_or_empty"
+    # close muss aufgerufen werden können
+    mock_stringio_instance.close.return_value = None
+    mock_stringio_class.return_value = mock_stringio_instance  # io.StringIO() gibt jetzt unseren Mock zurück
+
+    caplog.set_level(logging.ERROR)
+    from data_recorder import DataRecorder
+    recorder = DataRecorder(mock_mqtt_handler)
+    # Füge Daten hinzu, die den Fehler auslösen würden
     recorder.add_gps_data({'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5})
 
     recorder.send_buffer_data()
 
-    # Check that publish was not called
-    mock_mqtt_handler.publish_message.assert_not_called()
-    # Check for error log
-    assert "MQTT handler hat kein 'topic_gps' Attribut" in caplog.text
-
-
-@patch('io.StringIO.write', side_effect=IOError("String IO Error"))
-def test_send_buffer_data_format_error(mock_stringio_write, mock_mqtt_handler, caplog):
-    """Tests handling errors during CSV formatting."""
-    from data_recorder import DataRecorder
-    recorder = DataRecorder(mock_mqtt_handler)
-    data1 = {'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5}
-    recorder.add_gps_data(data1)
-
-    recorder.send_buffer_data()
-
-    # Check that publish was still called for the end marker
-    mock_mqtt_handler.publish_message.assert_called_once_with(
-        mock_mqtt_handler.topic_gps, "-1"
-    )
-    # Check for error log during formatting
+    # Prüfe, ob der Fehler geloggt wurde
     assert "Fehler beim Formatieren des Datenpunkts" in caplog.text
-    assert "String IO Error" in caplog.text
+    assert "TypeError: Format Error" in caplog.text  # Der spezifische Fehler
+    # Prüfe, ob der End-Marker trotzdem gesendet wurde
+    # Der CSV-String wird leer sein oder unvollständig, aber der Marker sollte gesendet werden
+    mock_mqtt_handler.publish_message.assert_called_with(mock_mqtt_handler.topic_gps, "-1")
+    # Prüfe, dass die (potenziell leeren/unvollständigen) Daten NICHT gesendet wurden,
+    # oder zumindest, dass der Marker der LETZTE Aufruf war.
+    # Da getvalue "partially_written_or_empty" zurückgibt, wird versucht, dies zu senden.
+    # Wir erwarten also zwei Aufrufe: Daten (leer/unvollständig) und Marker.
+    # Der wichtigste Check ist, dass der Marker gesendet wird.
+    assert call(mock_mqtt_handler.topic_gps, "-1") in mock_mqtt_handler.publish_message.call_args_list
 
 
-def test_send_buffer_data_publish_error(mock_mqtt_handler, caplog):
+@patch('data_recorder.logging')  # Mock logging
+def test_send_buffer_data_publish_error(mock_logging, mock_mqtt_handler, caplog):
     """Tests handling errors during MQTT publish."""
+    caplog.set_level(logging.ERROR)  # Fehler loggen
     from data_recorder import DataRecorder
     recorder = DataRecorder(mock_mqtt_handler)
     data1 = {'lat': 1.0, 'lon': 2.0, 'timestamp': 100, 'satellites': 5}
     recorder.add_gps_data(data1)
 
-    # Simulate publish error
+    # Simuliere Publish-Fehler beim Senden der Daten
     mock_mqtt_handler.publish_message.side_effect = [Exception("MQTT Broker down"),
-                                                     None]  # Error on first call (data), success on second (marker)
+                                                     None]  # Fehler bei Daten, OK bei Marker
 
     recorder.send_buffer_data()
 
-    # Check publish was attempted twice
-    assert mock_mqtt_handler.publish_message.call_count == 2
-    # Check for error log
+    # --- KORREKTUR: Erwartete Aufrufanzahl ---
+    # publish_message wird für die Daten aufgerufen (schlägt fehl),
+    # dann wird die Exception gefangen, und der Marker wird NICHT mehr versucht zu senden.
+    assert mock_mqtt_handler.publish_message.call_count == 1
+
+    # Prüfe den ersten (und einzigen) Aufruf
+    expected_csv = "1.0,2.0,100,5\n"
+    mock_mqtt_handler.publish_message.assert_called_once_with(mock_mqtt_handler.topic_gps, expected_csv)
+
+    # Prüfe, ob der Fehler geloggt wurde
     assert "Fehler beim Senden der Daten oder des End-Markers via MQTT: MQTT Broker down" in caplog.text

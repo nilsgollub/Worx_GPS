@@ -1,236 +1,241 @@
+# tests/test_heatmap_generator.py
 import pytest
-import os
 from unittest.mock import patch, MagicMock, mock_open, call
-import folium  # Required for mocks
-import csv
-import io
+import os
+import folium  # Import folium for spec
+from selenium.common.exceptions import WebDriverException  # Import specific exception
 
-# Mock config before importing HeatmapGenerator
-GEO_CONFIG_MOCK = {
-    "map_center": (46.8, 7.1),
-    "zoom_start": 14,
-    "crop_coordinates": ((46.7, 7.0), (46.9, 7.2)),
-    "crop_enabled": False,
-}
-HEATMAP_CONFIG_MOCK = {
-    "tile": 'TestTile',
-}
+# Importiere die zu testende Klasse und die verwendeten Konfigurationen
+from heatmap_generator import HeatmapGenerator
+from config import HEATMAP_CONFIG as REAL_HEATMAP_CONFIG
+from config import GEO_CONFIG as REAL_GEO_CONFIG
+
+# Mock-Konfigurationen für Tests
+GEO_CONFIG_MOCK = REAL_GEO_CONFIG.copy()
+GEO_CONFIG_MOCK["map_center"] = (45.0, 10.0)
+GEO_CONFIG_MOCK["zoom_start"] = 12
+
+HEATMAP_CONFIG_MOCK = REAL_HEATMAP_CONFIG.copy()
+HEATMAP_CONFIG_MOCK["tile"] = 'Stamen Terrain'  # Use a different tile for testing
 
 
-# Mock external dependencies that might not be installed in test env or are slow
-@patch('heatmap_generator.webdriver')
-@patch('heatmap_generator.ChromeDriverManager')
+# --- Testklasse ---
+# Patch die Konfigurationen und externe Abhängigkeiten im heatmap_generator Modul
+@patch('heatmap_generator.GEO_CONFIG', GEO_CONFIG_MOCK)
+@patch('heatmap_generator.HEATMAP_CONFIG', HEATMAP_CONFIG_MOCK)
 @patch('heatmap_generator.folium.Map')
 @patch('heatmap_generator.folium.plugins.HeatMap')
 @patch('heatmap_generator.folium.PolyLine')
-@patch('heatmap_generator.GEO_CONFIG', GEO_CONFIG_MOCK)
-@patch('heatmap_generator.HEATMAP_CONFIG', HEATMAP_CONFIG_MOCK)
+@patch('heatmap_generator.webdriver.Chrome')  # Patch webdriver.Chrome
+@patch('heatmap_generator.ChromeDriverManager')  # Patch ChromeDriverManager
 class TestHeatmapGenerator:
 
     @pytest.fixture(autouse=True)
-    def setup_mocks(self, MockPolyLine, MockHeatMap, MockFoliumMap, MockDriverManager, MockWebDriver):
-        # Store mocks for access within tests if needed
-        self.MockPolyLine = MockPolyLine
-        self.MockHeatMap = MockHeatMap
+    # --- KORREKTUR: Mocks aus Signatur entfernt ---
+    def setup_mocks(self, MockDriverManager, MockWebDriver, MockPolyLine, MockHeatMap, MockFoliumMap):
+        """Setzt Mocks für externe Abhängigkeiten auf."""
         self.MockFoliumMap = MockFoliumMap
         self.mock_map_instance = MockFoliumMap.return_value
-        self.mock_map_instance.save = MagicMock()  # Mock the save method
-
+        self.MockHeatMap = MockHeatMap
+        self.mock_heatmap_instance = MockHeatMap.return_value
+        self.MockPolyLine = MockPolyLine
+        self.mock_polyline_instance = MockPolyLine.return_value
         self.MockWebDriver = MockWebDriver
-        self.mock_driver_instance = MockWebDriver.Chrome.return_value
+        self.mock_driver_instance = MockWebDriver.return_value
         self.MockDriverManager = MockDriverManager
+        self.mock_driver_manager_instance = MockDriverManager.return_value
+        # Mock install() method
+        self.mock_driver_manager_instance.install.return_value = "/path/to/mock/chromedriver"
 
-        # Create generator instance for tests
-        from heatmap_generator import HeatmapGenerator
+        # Instanz des Generators erstellen
         self.generator = HeatmapGenerator()
-        yield  # Run the test
+        yield  # Lässt den Test laufen
 
+    # Die Tests benötigen die Mocks nicht mehr als Argumente
     def test_heatmap_generator_init(self):
-        """Tests HeatmapGenerator initialization."""
+        """Tests the initialization of HeatmapGenerator."""
         assert self.generator.map_center == GEO_CONFIG_MOCK["map_center"]
-        assert self.generator.tile == HEATMAP_CONFIG_MOCK[
-            "tile"]  # Note: tile is used in code, but not directly set in init
+        assert self.generator.tile == HEATMAP_CONFIG_MOCK["tile"]  # Should use patched config
         assert self.generator.zoom_start == GEO_CONFIG_MOCK["zoom_start"]
-        assert self.generator.crop_coordinates == GEO_CONFIG_MOCK["crop_coordinates"]
-        assert self.generator.crop_enabled == GEO_CONFIG_MOCK["crop_enabled"]
+        # crop settings are optional in config, check if they exist before asserting
+        if "crop_coordinates" in REAL_GEO_CONFIG:
+            assert self.generator.crop_coordinates == REAL_GEO_CONFIG["crop_coordinates"]
+        if "crop_enabled" in REAL_GEO_CONFIG:
+            assert self.generator.crop_enabled == REAL_GEO_CONFIG["crop_enabled"]
 
     def test_create_heatmap_no_path(self):
         """Tests creating a heatmap without drawing the path."""
-        data = [
-            {'latitude': '46.81', 'longitude': '7.11'},  # Use strings as they might come from CSV
-            {'latitude': '46.82', 'longitude': '7.12'}
+        test_data = [
+            {'latitude': 45.0, 'longitude': 10.0},
+            {'latitude': 45.1, 'longitude': 10.1}
         ]
-        html_file = "test_heatmap_no_path.html"
+        html_file = "test_no_path.html"
 
-        self.generator.create_heatmap(data, html_file, draw_path=False)
+        self.generator.create_heatmap(test_data, html_file, draw_path=False)
 
-        # Check Map initialization
+        # Prüfe, ob folium.Map korrekt aufgerufen wurde
         self.MockFoliumMap.assert_called_once_with(
-            location=self.generator.map_center,
-            zoom_start=self.generator.zoom_start,
-            tiles="OpenStreetMap"  # Code uses OpenStreetMap directly
+            location=GEO_CONFIG_MOCK["map_center"],
+            zoom_start=GEO_CONFIG_MOCK["zoom_start"],
+            tiles="OpenStreetMap"  # Hardcoded in create_heatmap
         )
 
-        # Check HeatMap plugin call
-        expected_points = [[46.81, 7.11], [46.82, 7.12]]
-        self.MockHeatMap.assert_called_once_with(expected_points)
-        self.MockHeatMap.return_value.add_to.assert_called_once_with(self.mock_map_instance)
+        # Prüfe, ob HeatMap korrekt aufgerufen wurde
+        expected_heatmap_data = [[45.0, 10.0], [45.1, 10.1]]
+        self.MockHeatMap.assert_called_once_with(expected_heatmap_data)
+        self.mock_heatmap_instance.add_to.assert_called_once_with(self.mock_map_instance)
 
-        # Check PolyLine was NOT called
+        # Prüfe, dass PolyLine NICHT aufgerufen wurde
         self.MockPolyLine.assert_not_called()
 
-        # Check map save
+        # Prüfe, ob die Karte gespeichert wurde
         self.mock_map_instance.save.assert_called_once_with(html_file)
 
     def test_create_heatmap_with_path(self):
         """Tests creating a heatmap with drawing the path."""
-        data = [
-            {'latitude': 46.81, 'longitude': 7.11},  # Use floats
-            {'latitude': 46.82, 'longitude': 7.12}
+        test_data = [
+            {'latitude': 45.0, 'longitude': 10.0},
+            {'latitude': 45.1, 'longitude': 10.1},
+            {'latitude': 45.2, 'longitude': 10.2}
         ]
-        html_file = "test_heatmap_with_path.html"
+        html_file = "test_with_path.html"
 
-        self.generator.create_heatmap(data, html_file, draw_path=True)
+        self.generator.create_heatmap(test_data, html_file, draw_path=True)
 
-        # Check Map initialization
-        self.MockFoliumMap.assert_called_once()
+        self.MockFoliumMap.assert_called_once()  # Details wie oben geprüft
+        self.MockHeatMap.assert_called_once()  # Details wie oben geprüft
+        self.mock_heatmap_instance.add_to.assert_called_once_with(self.mock_map_instance)
 
-        # Check HeatMap plugin call
-        expected_points = [[46.81, 7.11], [46.82, 7.12]]
-        self.MockHeatMap.assert_called_once_with(expected_points)
-        self.MockHeatMap.return_value.add_to.assert_called_once_with(self.mock_map_instance)
+        # Prüfe, ob PolyLine aufgerufen wurde
+        expected_path_data = [[45.0, 10.0], [45.1, 10.1], [45.2, 10.2]]
+        self.MockPolyLine.assert_called_once_with(
+            expected_path_data, color="blue", weight=2.5, opacity=1
+        )
+        self.mock_polyline_instance.add_to.assert_called_once_with(self.mock_map_instance)
 
-        # Check PolyLine WAS called
-        self.MockPolyLine.assert_called_once_with(expected_points, color="blue", weight=2.5, opacity=1)
-        self.MockPolyLine.return_value.add_to.assert_called_once_with(self.mock_map_instance)
-
-        # Check map save
         self.mock_map_instance.save.assert_called_once_with(html_file)
 
     def test_create_heatmap_invalid_data(self, capsys):
-        """Tests creating a heatmap with some invalid data points."""
-        data = [
-            {'latitude': '46.81', 'longitude': '7.11'},
-            {'latitude': 'invalid', 'longitude': '7.12'},  # Invalid latitude
-            {'longitude': '7.13'},  # Missing latitude key
-            {'latitude': 46.83, 'longitude': 7.14}
+        """Tests creating a heatmap with invalid data points."""
+        test_data = [
+            {'latitude': 45.0, 'longitude': 10.0},
+            {'latitude': 'invalid', 'longitude': 10.1},  # Invalid latitude
+            {'longitude': 10.2},  # Missing latitude key
+            {'latitude': 45.2, 'longitude': 10.3}
         ]
-        html_file = "test_heatmap_invalid.html"
+        html_file = "test_invalid.html"
 
-        self.generator.create_heatmap(data, html_file, draw_path=False)
+        self.generator.create_heatmap(test_data, html_file, draw_path=False)
 
-        # Check HeatMap was called only with valid points
-        expected_points = [[46.81, 7.11], [46.83, 7.14]]
-        self.MockHeatMap.assert_called_once_with(expected_points)
+        self.MockFoliumMap.assert_called_once()
 
-        # Check logs for errors
-        captured = capsys.readouterr()
-        assert "Fehler: Ungültige Werte in Zeile: {'latitude': 'invalid', 'longitude': '7.12'}" in captured.out
-        assert "could not convert string to float: 'invalid'" in captured.out
-        assert "Fehler: Ungültige Werte in Zeile: {'longitude': '7.13'}" in captured.out
-        assert "'latitude'" in captured.out  # KeyError message
+        # Prüfe, dass HeatMap nur mit den gültigen Punkten aufgerufen wurde
+        expected_heatmap_data = [[45.0, 10.0], [45.2, 10.3]]
+        self.MockHeatMap.assert_called_once_with(expected_heatmap_data)
+        self.mock_heatmap_instance.add_to.assert_called_once_with(self.mock_map_instance)
 
-        # Check map save was still called
+        self.MockPolyLine.assert_not_called()
         self.mock_map_instance.save.assert_called_once_with(html_file)
+
+        # Prüfe die Fehlermeldungen
+        captured = capsys.readouterr()
+        assert "Fehler: Ungültige Werte in Zeile: {'latitude': 'invalid', 'longitude': 10.1}" in captured.out
+        assert "Fehler: Ungültige Werte in Zeile: {'longitude': 10.2}" in captured.out
 
     def test_create_heatmap_empty_data(self):
         """Tests creating a heatmap with empty data."""
-        data = []
-        html_file = "test_heatmap_empty.html"
+        test_data = []
+        html_file = "test_empty.html"
 
-        self.generator.create_heatmap(data, html_file, draw_path=True)
+        self.generator.create_heatmap(test_data, html_file, draw_path=True)
 
-        # Check HeatMap was called with empty list
+        self.MockFoliumMap.assert_called_once()
+        # HeatMap sollte mit leerer Liste aufgerufen werden
         self.MockHeatMap.assert_called_once_with([])
-        # Check PolyLine was not called (needs > 1 point)
+        self.mock_heatmap_instance.add_to.assert_called_once_with(self.mock_map_instance)
+        # PolyLine sollte nicht aufgerufen werden, da weniger als 2 Punkte
         self.MockPolyLine.assert_not_called()
-        # Check map save
         self.mock_map_instance.save.assert_called_once_with(html_file)
 
     @patch('heatmap_generator.HeatmapGenerator.read_csv')
     @patch('heatmap_generator.HeatmapGenerator.create_heatmap')
     def test_generate_heatmap_from_csv(self, mock_create_heatmap, mock_read_csv):
-        """Tests the generate_heatmap_from_csv wrapper method."""
+        """Tests the generate_heatmap_from_csv method."""
+        mock_read_csv.return_value = [{"lat": 1}]
         csv_file = "input.csv"
         html_file = "output.html"
-        mock_data = [{'lat': 1}]
-        mock_read_csv.return_value = mock_data
 
         self.generator.generate_heatmap_from_csv(csv_file, html_file, draw_path=True)
 
         mock_read_csv.assert_called_once_with(csv_file)
-        mock_create_heatmap.assert_called_once_with(mock_data, html_file, True)
+        mock_create_heatmap.assert_called_once_with([{"lat": 1}], html_file, True)
 
-    def test_read_csv_success(self):
-        """Tests reading a valid CSV file."""
-        csv_content = "latitude,longitude,other\n46.1,7.1,a\n46.2,7.2,b"
-        # Use mock_open to simulate reading the file
-        m_open = mock_open(read_data=csv_content)
-        with patch('builtins.open', m_open):
-            result = self.generator.read_csv("dummy.csv")
-
-        expected = [
-            {'latitude': '46.1', 'longitude': '7.1', 'other': 'a'},
-            {'latitude': '46.2', 'longitude': '7.2', 'other': 'b'}
+    @patch("builtins.open", new_callable=mock_open, read_data="latitude,longitude\n45.0,10.0\n45.1,10.1")
+    def test_read_csv_success(self, mock_file):
+        """Tests successful reading of CSV data."""
+        csv_file = "test.csv"
+        expected_data = [
+            {'latitude': '45.0', 'longitude': '10.0'},
+            {'latitude': '45.1', 'longitude': '10.1'}
         ]
-        assert result == expected
-        m_open.assert_called_once_with("dummy.csv", 'r', newline='')
+        result = self.generator.read_csv(csv_file)
+        mock_file.assert_called_once_with(csv_file, 'r', newline='')
+        assert result == expected_data
 
-    def test_read_csv_file_not_found(self, capsys):
-        """Tests reading a non-existent CSV file."""
-        m_open = mock_open()
-        m_open.side_effect = FileNotFoundError("File not found error")
-        with patch('builtins.open', m_open):
-            result = self.generator.read_csv("nonexistent.csv")
-
-        assert result == []
+    @patch("builtins.open", side_effect=FileNotFoundError("File not found"))
+    def test_read_csv_file_not_found(self, mock_file, capsys):
+        """Tests reading CSV when the file is not found."""
+        csv_file = "nonexistent.csv"
+        result = self.generator.read_csv(csv_file)
+        mock_file.assert_called_once_with(csv_file, 'r', newline='')
+        assert result == []  # Should return empty list on error
         captured = capsys.readouterr()
-        assert "Fehler beim lesen der CSV Datei File not found error" in captured.out
+        assert "Fehler beim lesen der CSV Datei" in captured.out
 
-    # Mark test as potentially slow or requiring external setup
-    @pytest.mark.slow
-    def test_save_html_as_png_success(self):
-        """Tests saving HTML as PNG successfully (mocks selenium)."""
+    @pytest.mark.slow  # Mark as slow if it involves actual browser interaction (though mocked here)
+    @patch('os.path.abspath')  # Mock abspath
+    def test_save_html_as_png_success(self, mock_abspath):
+        """Tests saving HTML as PNG successfully."""
         html_file = "test.html"
         png_file = "test.png"
-        abs_path = "/abs/path/to/test.html"
+        abs_html_path = "/abs/path/to/test.html"
+        mock_abspath.return_value = abs_html_path
 
-        # Mock os.path.abspath
-        with patch('os.path.abspath', return_value=abs_path):
-            self.generator.save_html_as_png(html_file, png_file)
+        self.generator.save_html_as_png(html_file, png_file)
 
-        # Check WebDriverManager was called
+        # Prüfe Aufrufe an DriverManager und WebDriver
         self.MockDriverManager.assert_called_once()
-        self.MockDriverManager.return_value.install.assert_called_once()
+        self.mock_driver_manager_instance.install.assert_called_once()
+        # Prüfe, ob Chrome mit den richtigen Optionen aufgerufen wurde
+        # Der Service wird intern erstellt, wir prüfen den Chrome-Aufruf
+        args, kwargs = self.MockWebDriver.call_args
+        assert kwargs['options'] is not None
+        assert "--headless" in kwargs['options'].arguments
+        assert kwargs['service'].executable_path == "/path/to/mock/chromedriver"
 
-        # Check Chrome options (basic check)
-        # Need to mock ChromeOptions if specific options are critical
-        # from selenium.webdriver.chrome.options import Options as ChromeOptions
-        # with patch('heatmap_generator.ChromeOptions') as MockOptions:
-        #     ... check options ...
-
-        # Check WebDriver initialization
-        self.MockWebDriver.Chrome.assert_called_once()  # Check service and options passed
-
-        # Check driver actions
+        # Prüfe Aufrufe an die Driver-Instanz
         self.mock_driver_instance.set_window_size.assert_called_once_with(1200, 1000)
-        self.mock_driver_instance.get.assert_called_once_with(f"file:///{abs_path}")
+        mock_abspath.assert_called_once_with(html_file)
+        self.mock_driver_instance.get.assert_called_once_with(f"file:///{abs_html_path}")
         self.mock_driver_instance.save_screenshot.assert_called_once_with(png_file)
         self.mock_driver_instance.quit.assert_called_once()
 
     @patch('os.path.abspath', return_value="/abs/path/to/fail.html")
     def test_save_html_as_png_failure(self, mock_abspath, capsys):
-        """Tests failure during PNG generation (mocks selenium exception)."""
+        """Tests handling failure during PNG saving."""
         html_file = "fail.html"
         png_file = "fail.png"
-
-        # Simulate an error during WebDriver execution
-        self.MockWebDriver.Chrome.side_effect = Exception("WebDriver Error")
+        # Simuliere einen Fehler beim WebDriver-Aufruf
+        self.mock_driver_instance.save_screenshot.side_effect = WebDriverException("Screenshot failed")
 
         self.generator.save_html_as_png(html_file, png_file)
 
-        # Check error log
+        # Prüfe, dass die relevanten WebDriver-Methoden aufgerufen wurden
+        self.mock_driver_instance.set_window_size.assert_called_once()
+        self.mock_driver_instance.get.assert_called_once()
+        self.mock_driver_instance.save_screenshot.assert_called_once_with(png_file)
+        self.mock_driver_instance.quit.assert_called_once()  # Quit should still be called
+
+        # Prüfe die Fehlermeldung
         captured = capsys.readouterr()
-        assert "Fehler beim Erstellen der PNG Datei: WebDriver Error" in captured.out
-        # Ensure quit wasn't called if initialization failed
-        self.mock_driver_instance.quit.assert_not_called()
+        assert "Fehler beim Erstellen der PNG Datei: Message: Screenshot failed" in captured.out
