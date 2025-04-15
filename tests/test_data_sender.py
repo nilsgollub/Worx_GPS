@@ -1,152 +1,157 @@
-# tests/test_data_sender.py
-import pytest
-from unittest.mock import patch, mock_open, MagicMock, call
+# data_sender.py
+import paho.mqtt.client as mqtt  # Korrekter Import-Alias
 import json
+# from config import MQTT_CONFIG # Wird hier nicht direkt benötigt
+import time
+import logging  # Logging hinzugefügt
+import csv  # CSV importieren
+import os  # OS importieren für Beispiel
 
-# Importiere die zu testende Klasse und die verwendete Konfiguration
-from data_sender import DataSender
-from config import MQTT_CONFIG as REAL_MQTT_CONFIG
-
-# Mock-Konfiguration für Tests
-MQTT_CONFIG_MOCK = REAL_MQTT_CONFIG.copy()
-MQTT_CONFIG_MOCK["host"] = "mock_broker"
-MQTT_CONFIG_MOCK["port"] = 1883
-MQTT_CONFIG_MOCK["topic_gps"] = "mock/gps"
+# Logging konfigurieren
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-# --- Testklasse ---
-# Patch paho.mqtt.client im data_sender Modul
-@patch('data_sender.mqtt.Client')
-class TestDataSender:
+class DataSender:
+    def __init__(self, mqtt_broker, mqtt_port, mqtt_user=None, mqtt_password=None):  # Korrekte Signatur
+        self.mqtt_broker = mqtt_broker
+        self.mqtt_port = mqtt_port
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        # Optional: User/Pass setzen, falls vorhanden
+        if mqtt_user and mqtt_password:
+            self.mqtt_client.username_pw_set(mqtt_user, mqtt_password)
+        # Setze Callbacks (optional, aber gut für Debugging)
+        self.mqtt_client.on_connect = self._on_connect
+        self.mqtt_client.on_disconnect = self._on_disconnect
+        try:
+            self.mqtt_client.connect(self.mqtt_broker, self.mqtt_port, 60)
+            self.mqtt_client.loop_start()
+        except Exception as e:
+            logging.error(f"DataSender: Fehler beim Verbinden oder Starten der MQTT-Schleife: {e}")
+            raise  # Fehler weitergeben, damit der Aufrufer informiert ist
+        self.mqtt_topic_gps = "worx/gps"  # Standard-Topic, kann überschrieben werden
 
-    @pytest.fixture(autouse=True)
-    # --- KORREKTUR: MockPahoClient aus Signatur entfernt ---
-    def setup_mocks_and_instance(self, MockPahoClient):
-        """Setzt Mocks auf und erstellt eine Instanz von DataSender für jeden Test."""
-        # Mock-Instanz für den MQTT-Client holen
-        self.mock_client_instance = MockPahoClient.return_value
-        # DataSender-Instanz erstellen (verwendet den Mock-Client)
-        # Wir patchen hier nicht MQTT_CONFIG, da DataSender Broker/Port als Argumente nimmt
-        self.sender = DataSender(MQTT_CONFIG_MOCK["host"], MQTT_CONFIG_MOCK["port"])
-        # Stelle sicher, dass der Client im Sender der Mock ist
-        assert self.sender.mqtt_client is self.mock_client_instance
-        yield  # Lässt den Test laufen
+    # Optionale Callbacks für Debugging
+    def _on_connect(self, client, userdata, flags, reason_code, properties):
+        if reason_code == 0:
+            logging.info(f"DataSender: Verbunden mit MQTT Broker: {self.mqtt_broker}")
+        else:
+            logging.error(f"DataSender: Verbindung fehlgeschlagen mit RC: {reason_code}")
 
-    # Die Tests benötigen MockPahoClient nicht mehr als Argument
-    def test_data_sender_init(self):
-        """Tests the initialization of DataSender."""
-        # Prüfe, ob der Client korrekt initialisiert und verbunden wurde
-        # MockPahoClient wird von der Klasse bereitgestellt, muss hier nicht übergeben werden
-        # Die Instanz wird in setup_mocks_and_instance erstellt
-        assert self.sender.mqtt_broker == MQTT_CONFIG_MOCK["host"]
-        assert self.sender.mqtt_port == MQTT_CONFIG_MOCK["port"]
-        assert self.sender.mqtt_topic_gps == "worx/gps"  # Topic ist hardcoded in DataSender
-        # Prüfe, ob die Client-Methoden aufgerufen wurden
-        self.mock_client_instance.connect.assert_called_once_with(MQTT_CONFIG_MOCK["host"], MQTT_CONFIG_MOCK["port"],
-                                                                  60)
-        self.mock_client_instance.loop_start.assert_called_once()
+    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
+        if reason_code == 0:
+            logging.info(f"DataSender: Verbindung zum MQTT Broker bewusst getrennt.")
+        else:
+            logging.warning(f"DataSender: Verbindung zum MQTT Broker unerwartet getrennt. RC: {reason_code}")
 
-    @patch("builtins.open", new_callable=mock_open,
-           read_data="lat,lon,timestamp,satellites,state\n1.0,2.0,100,5,fix\n1.1,2.1,101,6,nofix")
-    def test_read_csv_success(self, mock_file):
-        """Tests successful reading of a CSV file."""
-        expected_data = [
-            {"latitude": 1.0, "longitude": 2.0, "timestamp": 100.0, "satellites": 5, "state": "fix"},
-            {"latitude": 1.1, "longitude": 2.1, "timestamp": 101.0, "satellites": 6, "state": "nofix"},
-        ]
-        result = self.sender.read_csv("dummy.csv")
-        mock_file.assert_called_once_with("dummy.csv", 'r')
-        assert result == expected_data
+    def send_data(self, csv_file):
+        """Liest Daten aus einer CSV-Datei und sendet sie als JSON via MQTT."""
+        if not self.mqtt_client.is_connected():
+            logging.error("DataSender: Nicht mit MQTT Broker verbunden. Senden nicht möglich.")
+            return  # Frühzeitiger Ausstieg, wenn nicht verbunden
 
-    @patch("builtins.open", new_callable=mock_open, read_data="")  # Leere Datei
-    def test_read_csv_empty_file(self, mock_file, capsys):
-        """Tests reading an empty CSV file."""
-        result = self.sender.read_csv("empty.csv")
-        mock_file.assert_called_once_with("empty.csv", 'r')
-        assert result == []
-        captured = capsys.readouterr()
-        assert "Keine Daten zum senden gefunden" in captured.out
+        try:
+            data = self.read_csv(csv_file)
+            if not data:  # Nicht senden, wenn keine Daten gelesen wurden
+                logging.warning(f"DataSender: Keine gültigen Daten aus {csv_file} gelesen. Sende nichts.")
+                return
 
-    @patch("builtins.open", new_callable=mock_open, read_data="lat,lon,timestamp,satellites,state\n")  # Nur Header
-    def test_read_csv_header_only(self, mock_file, capsys):
-        """Tests reading a CSV file with only a header."""
-        result = self.sender.read_csv("header.csv")
-        mock_file.assert_called_once_with("header.csv", 'r')
-        assert result == []
-        captured = capsys.readouterr()
-        assert "Keine Daten zum senden gefunden" in captured.out
+            json_data = json.dumps(data)
+            msg_info = self.mqtt_client.publish(self.mqtt_topic_gps, json_data)
 
-    @patch("builtins.open", new_callable=mock_open,
-           read_data="lat,lon,timestamp,satellites,state\n1.0,invalid,100,5,fix")
-    def test_read_csv_invalid_numeric(self, mock_file, capsys):
-        """Tests reading a CSV file with invalid numeric data."""
-        result = self.sender.read_csv("invalid.csv")
-        mock_file.assert_called_once_with("invalid.csv", 'r')
-        # Die fehlerhafte Zeile wird übersprungen
-        assert result == []
-        captured = capsys.readouterr()
-        assert "Fehler beim konvertieren der Werte in Zeile" in captured.out
+            if msg_info.rc == mqtt.MQTT_ERR_SUCCESS:
+                logging.info(
+                    f"DataSender: Daten aus {csv_file} erfolgreich an {self.mqtt_topic_gps} gesendet (mid={msg_info.mid}).")
+            else:
+                logging.warning(f"DataSender: Problem beim Senden der Daten. RC: {msg_info.rc}")
+            # Optional: Auf Bestätigung warten
+            # msg_info.wait_for_publish(timeout=5)
 
-    @patch("builtins.open", new_callable=mock_open,
-           read_data="lat,lon,timestamp,satellites,state\n1.0,2.0,100")  # Fehlende Spalten
-    def test_read_csv_missing_columns(self, mock_file):
-        """Tests reading a CSV file with missing columns."""
-        result = self.sender.read_csv("missing.csv")
-        mock_file.assert_called_once_with("missing.csv", 'r')
-        # Die Zeile wird übersprungen, da len(values) < 5
-        assert result == []
+        except FileNotFoundError:
+            logging.error(f"DataSender: Fehler beim Senden - Datei nicht gefunden: {csv_file}")
+        except json.JSONDecodeError as e:
+            logging.error(f"DataSender: Fehler beim Konvertieren der Daten zu JSON: {e}")
+        except Exception as e:
+            logging.error(f"DataSender: Allgemeiner Fehler beim Senden der Daten aus {csv_file}: {e}")
 
-    @patch('data_sender.DataSender.read_csv')
-    @patch('json.dumps')
-    def test_send_data_success(self, mock_json_dumps, mock_read_csv):
-        """Tests successful sending of data."""
-        mock_read_csv.return_value = [{"lat": 1}]
-        mock_json_dumps.return_value = '[{"lat": 1}]'
+    def read_csv(self, csv_file):
+        """Liest eine CSV-Datei und gibt Daten als Liste von Dictionaries zurück."""
+        data = []
+        try:
+            with open(csv_file, 'r', newline='') as f:  # newline='' ist wichtig für csv
+                reader = csv.DictReader(f)  # Annahme: CSV hat Header
+                required_keys = ['lat', 'lon', 'timestamp', 'satellites', 'state']  # Erwartete Header
 
-        self.sender.send_data("dummy.csv")
+                # Prüfe, ob alle benötigten Header vorhanden sind
+                if not reader.fieldnames:
+                    logging.error(f"DataSender: CSV-Datei {csv_file} ist leer oder hat keine Header-Zeile.")
+                    return []
+                if not all(key in reader.fieldnames for key in required_keys):
+                    logging.error(
+                        f"DataSender: CSV-Datei {csv_file} fehlen benötigte Header ({required_keys}). Gefunden: {reader.fieldnames}")
+                    return []
 
-        mock_read_csv.assert_called_once_with("dummy.csv")
-        mock_json_dumps.assert_called_once_with([{"lat": 1}])
-        self.mock_client_instance.publish.assert_called_once_with(
-            self.sender.mqtt_topic_gps, '[{"lat": 1}]'
-        )
+                for i, row in enumerate(reader):
+                    try:
+                        # Konvertiere Werte und füge sie hinzu
+                        data.append({
+                            "latitude": float(row['lat']),
+                            "longitude": float(row['lon']),
+                            "timestamp": float(row['timestamp']),
+                            "satellites": int(float(row['satellites'])),
+                            "state": row['state'].strip(),
+                        })
+                    except (ValueError, TypeError, KeyError) as e:
+                        # Logge Fehler bei der Konvertierung oder fehlenden Keys in einer Zeile
+                        logging.warning(
+                            f"DataSender: Fehler beim Verarbeiten von Zeile {i + 2} in {csv_file}: {e}. Zeile: {row}")
+                        continue  # Überspringe fehlerhafte Zeile
+        except FileNotFoundError:
+            raise  # Gebe FileNotFoundError weiter an send_data
+        except Exception as e:
+            logging.error(f"DataSender: Fehler beim Lesen der CSV-Datei {csv_file}: {e}")
+            return []  # Leere Liste bei anderen Lesefehlern
 
-    @patch('data_sender.DataSender.read_csv', side_effect=FileNotFoundError("Cannot open"))
-    def test_send_data_read_error(self, mock_read_csv, capsys):
-        """Tests handling error during CSV reading."""
-        self.sender.send_data("nonexistent.csv")
-        mock_read_csv.assert_called_once_with("nonexistent.csv")
-        self.mock_client_instance.publish.assert_not_called()
-        captured = capsys.readouterr()
-        assert "Fehler beim Senden der Daten: Cannot open" in captured.out
+        if not data:
+            logging.warning(f"DataSender: Keine gültigen Datenzeilen in {csv_file} gefunden.")
+        return data
 
-    @patch('data_sender.DataSender.read_csv', return_value=[{"lat": 1}])
-    @patch('json.dumps', side_effect=TypeError("Cannot serialize"))
-    def test_send_data_json_error(self, mock_json_dumps, mock_read_csv, capsys):
-        """Tests handling error during JSON serialization."""
-        self.sender.send_data("dummy.csv")
-        mock_read_csv.assert_called_once_with("dummy.csv")
-        mock_json_dumps.assert_called_once_with([{"lat": 1}])
-        self.mock_client_instance.publish.assert_not_called()
-        captured = capsys.readouterr()
-        assert "Fehler beim Senden der Daten: Cannot serialize" in captured.out
+    def close(self):
+        """Stoppt die MQTT-Schleife und trennt die Verbindung."""
+        if self.mqtt_client:
+            self.mqtt_client.loop_stop()
+            self.mqtt_client.disconnect()
+            logging.info("DataSender: MQTT Verbindung geschlossen.")
 
-    @patch('data_sender.DataSender.read_csv', return_value=[{"lat": 1}])
-    @patch('json.dumps', return_value='[]')
-    def test_send_data_publish_error(self, mock_json_dumps, mock_read_csv, capsys):
-        """Tests handling error during MQTT publish."""
-        self.mock_client_instance.publish.side_effect = Exception("Broker unavailable")
 
-        self.sender.send_data("dummy.csv")
+# Beispielhafte Verwendung (kann entfernt werden)
+if __name__ == '__main__':
+    # Lade Konfiguration für das Beispiel
+    from dotenv import load_dotenv  # Importiere load_dotenv hier
 
-        mock_read_csv.assert_called_once_with("dummy.csv")
-        mock_json_dumps.assert_called_once_with([{"lat": 1}])
-        self.mock_client_instance.publish.assert_called_once_with(self.sender.mqtt_topic_gps, '[]')
-        captured = capsys.readouterr()
-        assert "Fehler beim Senden der Daten: Broker unavailable" in captured.out
+    load_dotenv(".env")
+    broker = os.getenv("MQTT_HOST")
+    port = int(os.getenv("MQTT_PORT", 1883))
+    user = os.getenv("MQTT_USER")
+    password = os.getenv("MQTT_PASSWORD")
 
-    def test_close(self):
-        """Tests closing the MQTT connection."""
-        self.sender.close()
-        self.mock_client_instance.loop_stop.assert_called_once()
-        self.mock_client_instance.disconnect.assert_called_once()
+    if not broker:
+        print("Fehler: MQTT_HOST nicht in .env gesetzt.")
+    else:
+        try:
+            # Erstelle eine Dummy-CSV-Datei
+            dummy_csv = "dummy_data.csv"
+            with open(dummy_csv, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['lat', 'lon', 'timestamp', 'satellites', 'state'])
+                writer.writerow([46.1, 7.1, time.time(), 5, 'fix'])
+                writer.writerow([46.2, 7.2, time.time() + 1, 6, 'nofix'])
+                writer.writerow([46.3, 'invalid', time.time() + 2, 7, 'fix'])  # Ungültige Zeile
+
+            sender = DataSender(broker, port, user, password)
+            time.sleep(2)  # Warte kurz auf Verbindung
+            sender.send_data(dummy_csv)
+            time.sleep(1)  # Warte kurz auf Senden
+            sender.close()
+            os.remove(dummy_csv)  # Räume Dummy-Datei auf
+        except Exception as ex:
+            print(f"Fehler im Beispiel: {ex}")

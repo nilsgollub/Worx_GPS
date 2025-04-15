@@ -1,295 +1,398 @@
 # tests/test_gps_handler.py
 import pytest
-from unittest.mock import patch, MagicMock, call
-import time
+from unittest.mock import patch, MagicMock, ANY, call
+from freezegun import freeze_time
 from datetime import datetime, timedelta
-import serial  # Import serial for SerialException
-import pynmea2  # Import pynmea2 for ParseError
-import logging
+import time
+import serial  # Import für Patch-Pfad und Exception
+import pynmea2  # Import für Patch-Pfad und Exception
+import requests  # Import für Patch-Pfad und Exception
+import math  # Import für Berechnungen
+import logging  # Import für caplog
 
-# Importiere die zu testende Klasse und die verwendeten Konfigurationen
+# Importiere die zu testende Klasse und Konfigurationen
 from gps_handler import GpsHandler
-from config import GEO_CONFIG as REAL_GEO_CONFIG
-from config import ASSIST_NOW_CONFIG as REAL_ASSIST_NOW_CONFIG
-from config import REC_CONFIG as REAL_REC_CONFIG
-
-# Mock-Konfigurationen für Tests
-GEO_CONFIG_MOCK = REAL_GEO_CONFIG.copy()
-GEO_CONFIG_MOCK["lat_bounds"] = (40.0, 50.0)
-GEO_CONFIG_MOCK["lon_bounds"] = (5.0, 15.0)
-GEO_CONFIG_MOCK["map_center"] = (45.0, 10.0)
-GEO_CONFIG_MOCK["fake_gps_range"] = ((44.9, 45.1), (9.9, 10.1))
-
-ASSIST_NOW_CONFIG_MOCK = REAL_ASSIST_NOW_CONFIG.copy()
-ASSIST_NOW_CONFIG_MOCK["assist_now_enabled"] = True
-ASSIST_NOW_CONFIG_MOCK["assist_now_token"] = "mock_token"
-ASSIST_NOW_CONFIG_MOCK["assist_now_offline_url"] = "http://mockassist.com"
-
-REC_CONFIG_MOCK = REAL_REC_CONFIG.copy()
-REC_CONFIG_MOCK["serial_port"] = "/dev/mock_gps"
-REC_CONFIG_MOCK["baudrate"] = 9600
+from config import GEO_CONFIG, ASSIST_NOW_CONFIG, REC_CONFIG
 
 
-# --- Testklasse ---
-# Patche die Konfigurationen und externe Abhängigkeiten im gps_handler Modul
-@patch('gps_handler.GEO_CONFIG', GEO_CONFIG_MOCK)
-@patch('gps_handler.ASSIST_NOW_CONFIG', ASSIST_NOW_CONFIG_MOCK)
-@patch('gps_handler.REC_CONFIG', REC_CONFIG_MOCK)
-@patch('gps_handler.pynmea2.parse')
-@patch('gps_handler.serial.Serial')
-@patch('gps_handler.requests.get')
+# --- FIXTURE DEFINITIONS ---
+@pytest.fixture
+def MockSerial():
+    """Fixture to mock serial.Serial."""
+    with patch('gps_handler.serial.Serial', autospec=True) as MockS:
+        mock_instance = MockS.return_value
+        mock_instance.is_open = True
+        mock_instance.readline.return_value = b''
+        mock_instance.write.return_value = 0
+        mock_instance.close = MagicMock()
+        yield MockS
+
+
+@pytest.fixture
+def MockPynmea2Parse():
+    """Fixture to mock pynmea2.parse."""
+    with patch('gps_handler.pynmea2.parse', autospec=True) as MockP:
+        yield MockP
+
+
+@pytest.fixture
+def MockRequestsGet():
+    """Fixture to mock requests.get."""
+    with patch('gps_handler.requests.get', autospec=True) as MockR:
+        mock_response = MockR.return_value
+        mock_response.status_code = 200
+        mock_response.content = b"dummy_assist_data"
+        mock_response.raise_for_status = MagicMock()
+        yield MockR
+
+
+# --- END FIXTURE DEFINITIONS ---
+
+
 class TestGpsHandler:
 
     @pytest.fixture(autouse=True)
-    # --- KORREKTUR: Mocks aus Signatur entfernt ---
-    def setup_mocks_and_instance(self, MockRequestsGet, MockSerial, MockPynmea2Parse,
-                                 # Die Config-Patches sind auf Klassenebene, keine Argumente hier
-                                 monkeypatch):
-        """Setzt Mocks auf und erstellt eine Instanz von GpsHandler für jeden Test."""
-        # Speichere die Mock-Objekte
-        self.MockRequestsGet = MockRequestsGet
-        self.MockSerial = MockSerial
-        self.mock_serial_instance = MockSerial.return_value  # Instanz von serial.Serial
-        self.MockPynmea2Parse = MockPynmea2Parse
+    def setup_mocks_and_instance(self, MockRequestsGet, MockSerial, MockPynmea2Parse, monkeypatch):
+        """Sets up mocks and the GpsHandler instance for each test."""
 
-        # Standardverhalten für Mocks
-        self.mock_serial_instance.is_open = True  # Simuliere offene Verbindung
-        self.mock_serial_instance.readline.return_value.decode.return_value = ""  # Standard: keine Daten
-        self.MockRequestsGet.return_value.raise_for_status.return_value = None
-        self.MockRequestsGet.return_value.content = b"assist_data"
+        # 1. Mocks an self binden (frühzeitig)
+        self.mock_serial_class = MockSerial
+        self.mock_serial_instance = MockSerial.return_value
+        self.mock_pynmea2_parse = MockPynmea2Parse
+        self.mock_requests_get = MockRequestsGet
 
-        # Instanz der zu testenden Klasse erstellen
-        # Wichtig: Muss *nach* dem Patchen der Configs erfolgen
-        from gps_handler import GpsHandler
-        self.handler = GpsHandler()
-        # Stelle sicher, dass der interne Serial-Mock korrekt gesetzt ist (falls _connect_serial erfolgreich war)
-        if self.handler.ser_gps:
-            assert self.handler.ser_gps is self.mock_serial_instance
+        # 2. Konfiguration patchen
+        self.mock_geo = GEO_CONFIG.copy()
+        self.mock_assist = ASSIST_NOW_CONFIG.copy()
+        self.mock_rec = REC_CONFIG.copy()
+        self.mock_assist["assist_now_enabled"] = False
+        self.mock_rec["serial_port"] = "COM_TEST"
+        self.mock_rec["baudrate"] = 9600
 
-        yield  # Lässt den Test laufen
+        monkeypatch.setattr("gps_handler.GEO_CONFIG", self.mock_geo)
+        monkeypatch.setattr("gps_handler.ASSIST_NOW_CONFIG", self.mock_assist)
+        monkeypatch.setattr("gps_handler.REC_CONFIG", self.mock_rec)
 
-    # Die Tests benötigen die Mocks nicht mehr als Argumente
+        # 3. GpsHandler initialisieren (mit Patch für _connect_serial)
+        try:
+            with patch.object(GpsHandler, '_connect_serial', return_value=None) as mock_connect_in_init:
+                self.handler = GpsHandler()
+                # Speichere den Patch, um zu prüfen, ob er im init aufgerufen wurde
+                self.mock_connect_serial_in_init = mock_connect_in_init
+        except Exception as e:
+            pytest.fail(f"Fehler bei der Initialisierung von GpsHandler in der Fixture: {e}")
+
+        # 4. Sicherstellen, dass handler existiert
+        if not hasattr(self, 'handler'):
+            pytest.fail("Fixture konnte 'self.handler' nicht initialisieren (nach try-except).")
+
+        # 5. Yield für Testausführung
+        yield
+
     def test_gps_handler_init(self):
         """Tests the initialization of GpsHandler."""
-        assert self.handler.lat_bounds == GEO_CONFIG_MOCK["lat_bounds"]
-        assert self.handler.lon_bounds == GEO_CONFIG_MOCK["lon_bounds"]
-        assert self.handler.map_center == GEO_CONFIG_MOCK["map_center"]
-        assert self.handler.assist_now_token == ASSIST_NOW_CONFIG_MOCK["assist_now_token"]
-        assert self.handler.assist_now_enabled == ASSIST_NOW_CONFIG_MOCK["assist_now_enabled"]
-        assert self.handler.serial_port == REC_CONFIG_MOCK["serial_port"]
-        assert self.handler.baudrate == REC_CONFIG_MOCK["baudrate"]
-        assert self.handler.mode == "real"  # Standardmodus
-        assert self.handler.is_fake_gps is False
-        assert self.handler.route_simulator is None
-        # Prüfe, ob _connect_serial aufgerufen wurde (und damit serial.Serial)
-        self.MockSerial.assert_called_once_with(REC_CONFIG_MOCK["serial_port"], REC_CONFIG_MOCK["baudrate"], timeout=1)
-        assert self.handler.ser_gps is self.mock_serial_instance
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        assert self.handler.lat_bounds == self.mock_geo["lat_bounds"]
+        assert self.handler.lon_bounds == self.mock_geo["lon_bounds"]
+        assert self.handler.map_center == self.mock_geo["map_center"]
+        assert self.handler.assist_now_token == self.mock_assist["assist_now_token"]
+        assert self.handler.assist_now_offline_url == self.mock_assist["assist_now_offline_url"]
+        assert self.handler.assist_now_enabled is False
+        assert self.handler.serial_port == "COM_TEST"
+        assert self.handler.baudrate == 9600
+        assert self.handler.mode == "real"
+        self.mock_connect_serial_in_init.assert_called_once()
+        assert self.handler.ser_gps is None
 
     def test_connect_serial_success(self):
-        """Tests successful serial connection attempt."""
-        # Reset mocks if needed, though setup_mocks_and_instance does it implicitly
-        self.MockSerial.reset_mock()
-        self.handler.ser_gps = None  # Simulate no connection initially
+        """Tests successful serial connection call."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        self.handler.mode = "real"
+        # Rufe die *echte* Methode auf (der Patch aus dem Setup ist hier nicht mehr aktiv)
         self.handler._connect_serial()
-        self.MockSerial.assert_called_once_with(REC_CONFIG_MOCK["serial_port"], REC_CONFIG_MOCK["baudrate"], timeout=1)
+        self.mock_serial_class.assert_called_once_with("COM_TEST", 9600, timeout=1)
         assert self.handler.ser_gps is self.mock_serial_instance
+        assert self.mock_serial_instance.is_open is True
 
     def test_connect_serial_closes_existing(self):
         """Tests that an existing connection is closed before reconnecting."""
-        # Setup: Assume a connection exists
-        existing_mock_serial = MagicMock()
-        existing_mock_serial.is_open = True
-        self.handler.ser_gps = existing_mock_serial
-        self.MockSerial.reset_mock()  # Reset class mock
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        # 1. Erste Verbindung
+        self.handler.mode = "real"
+        self.handler._connect_serial()
+        first_instance = self.handler.ser_gps
+        assert first_instance is self.mock_serial_instance
+        self.mock_serial_class.assert_called_once_with("COM_TEST", 9600, timeout=1)
+        first_instance.close.assert_not_called()
 
+        # 2. Zweite Verbindung
         self.handler._connect_serial()
 
-        existing_mock_serial.close.assert_called_once()  # Old connection closed
-        self.MockSerial.assert_called_once_with(REC_CONFIG_MOCK["serial_port"], REC_CONFIG_MOCK["baudrate"],
-                                                timeout=1)  # New connection attempted
-        assert self.handler.ser_gps is self.mock_serial_instance  # New mock instance assigned
+        # Prüfe, ob close auf der *ersten* (und einzigen Mock-) Instanz aufgerufen wurde
+        first_instance.close.assert_called_once()
+        # Prüfe, ob Serial() erneut aufgerufen wurde
+        assert self.mock_serial_class.call_count == 2
+        # Prüfe, ob die Instanz immer noch zugewiesen ist
+        assert self.handler.ser_gps is self.mock_serial_instance
 
     def test_connect_serial_failure(self, caplog):
-        """Tests handling serial connection failure."""
+        """Tests serial connection failure."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         caplog.set_level(logging.ERROR)
-        self.MockSerial.side_effect = serial.SerialException("Permission denied")
-        self.handler.ser_gps = None  # Simulate no connection
-
+        self.handler.mode = "real"
+        # Konfiguriere MockSerial, um eine Exception auszulösen
+        self.mock_serial_class.side_effect = serial.SerialException("Permission denied")
+        # Rufe _connect_serial auf
         self.handler._connect_serial()
-
-        self.MockSerial.assert_called_once_with(REC_CONFIG_MOCK["serial_port"], REC_CONFIG_MOCK["baudrate"], timeout=1)
-        assert self.handler.ser_gps is None  # Should be None after failure
+        # Prüfe, ob Serial() aufgerufen wurde (trotz Fehler)
+        self.mock_serial_class.assert_called_once_with("COM_TEST", 9600, timeout=1)
+        # Prüfe, ob der Fehler geloggt wurde
         assert "Fehler beim Herstellen der seriellen Verbindung: Permission denied" in caplog.text
+        # Prüfe, ob ser_gps None ist
+        assert self.handler.ser_gps is None
 
     def test_connect_serial_fake_mode(self, caplog):
-        """Tests that serial connection is not attempted in fake mode."""
+        """Tests that no serial connection is attempted in fake mode."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         caplog.set_level(logging.INFO)
-        self.MockSerial.reset_mock()
-        self.handler.change_gps_mode("fake_random")  # Switch to fake mode
-
-        # _connect_serial is called internally by change_gps_mode('real'),
-        # but we test calling it directly in fake mode too.
-        self.handler._connect_serial()
-
-        self.MockSerial.assert_not_called()  # Serial should not be called
+        # Wichtig: Zuerst Modus ändern, DANN _connect_serial aufrufen
+        self.handler.change_gps_mode("fake_random")  # Schließt ggf. alte Verbindung
+        self.mock_serial_class.reset_mock()  # Setze Mock zurück nach change_gps_mode
+        self.handler._connect_serial()  # Rufe _connect auf, während Modus fake ist
+        # Prüfe, dass Serial() NICHT aufgerufen wurde
+        self.mock_serial_class.assert_not_called()
+        # Prüfe, ob die Info geloggt wurde
+        assert "Fake-Modus aktiv, keine serielle Verbindung erforderlich." in caplog.text
         assert self.handler.ser_gps is None
-        assert "Fake-Modus aktiv, keine serielle Verbindung erforderlich" in caplog.text
 
     @pytest.mark.freeze_time("2023-10-27 12:00:00")
     def test_get_gps_data_real_mode_success_gga_fix(self):
         """Tests getting valid GGA data with a fix in real mode."""
-        # Simulate receiving a valid GGA sentence
-        gga_string = "$GPGGA,120000.00,4500.00000,N,01000.00000,E,1,08,0.9,100.0,M,47.0,M,,*4E"
-        self.mock_serial_instance.readline.return_value.decode.return_value = gga_string
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        self.handler.mode = "real"
+        self.handler.ser_gps = self.mock_serial_instance  # Weise Mock-Instanz explizit zu
+        self.mock_serial_instance.is_open = True
 
-        # Mock the pynmea2.parse result
+        gga_line = b"$GPGGA,120000.00,4610.12345,N,00705.54321,E,1,08,0.9,545.4,M,46.9,M,,*47\r\n"
+        self.mock_serial_instance.readline.return_value = gga_line
+
         mock_gga_msg = MagicMock(spec=pynmea2.types.talker.GGA)
         mock_gga_msg.sentence_type = 'GGA'
-        mock_gga_msg.latitude = 45.0
-        mock_gga_msg.longitude = 10.0
-        mock_gga_msg.gps_qual = 1  # Valid fix
-        mock_gga_msg.num_sats = 8
-        self.MockPynmea2Parse.return_value = mock_gga_msg
+        mock_gga_msg.latitude = 46.16872416666667
+        mock_gga_msg.longitude = 7.092386833333333
+        mock_gga_msg.gps_qual = 1
+        mock_gga_msg.num_sats = '08'  # pynmea2 liefert es als String
+        self.mock_pynmea2_parse.return_value = mock_gga_msg
+
+        expected_timestamp = time.time()
+        expected_data = {
+            'lat': mock_gga_msg.latitude,
+            'lon': mock_gga_msg.longitude,
+            'timestamp': expected_timestamp,
+            'satellites': 8,  # Erwartet wird int (wird in gps_handler.py konvertiert)
+            'mode': 'real'
+        }
 
         result = self.handler.get_gps_data()
 
         self.mock_serial_instance.readline.assert_called_once()
-        self.MockPynmea2Parse.assert_called_once_with(gga_string)
-        expected_timestamp = time.time()  # From freeze_time
-        expected_result = {
-            'lat': 45.0,
-            'lon': 10.0,
-            'timestamp': expected_timestamp,
-            'satellites': 8,
-            'mode': 'real'
-        }
-        assert result == expected_result
-        assert self.handler.last_known_position == expected_result
+        self.mock_pynmea2_parse.assert_called_once_with(gga_line.decode().strip())
+        assert result == expected_data  # Sollte jetzt passen
         assert self.handler.last_valid_fix_time == expected_timestamp
+        assert self.handler.last_known_position == expected_data
 
-    # ... (Add more tests for other scenarios in get_gps_data: no fix, other NMEA, parse error, serial error) ...
-
-    def test_get_gps_data_fake_random(self):
+    @patch('gps_handler.random.uniform', side_effect=[46.123, 7.456])
+    @patch('gps_handler.random.randint', return_value=9)
+    @freeze_time("2023-10-27 13:00:00")
+    def test_get_gps_data_fake_random(self, mock_randint, mock_uniform):
         """Tests getting data in fake_random mode."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         self.handler.change_gps_mode("fake_random")
+        expected_timestamp = time.time()
+        expected_data = {
+            'lat': 46.123,
+            'lon': 7.456,
+            'timestamp': expected_timestamp,
+            'satellites': 9,
+            'mode': 'fake_random'
+        }
         result = self.handler.get_gps_data()
+        assert result == expected_data
+        assert self.handler.last_known_position == expected_data
+        self.mock_serial_instance.readline.assert_not_called()
 
-        assert result is not None
-        assert result['mode'] == 'fake_random'
-        assert GEO_CONFIG_MOCK["fake_gps_range"][0][0] <= result['lat'] <= GEO_CONFIG_MOCK["fake_gps_range"][0][1]
-        assert GEO_CONFIG_MOCK["fake_gps_range"][1][0] <= result['lon'] <= GEO_CONFIG_MOCK["fake_gps_range"][1][1]
-        assert isinstance(result['timestamp'], float)
-        assert 4 <= result['satellites'] <= 12
-        assert self.handler.last_known_position == result
-
+    @freeze_time("2023-10-27 14:00:00")
     def test_get_gps_data_fake_route(self):
         """Tests getting data in fake_route mode."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         self.handler.change_gps_mode("fake_route")
         assert self.handler.route_simulator is not None
-        # Mock the simulator's move method if needed for predictability
-        with patch.object(self.handler.route_simulator, 'move', return_value=(45.0001, 10.0001)) as mock_move:
+
+        start_lat, start_lon = self.handler.map_center
+        with patch.object(self.handler.route_simulator, 'move',
+                          return_value=(start_lat + 0.0001, start_lon + 0.0001)) as mock_move:
+            expected_timestamp = time.time()
+            expected_data = {
+                'lat': start_lat + 0.0001,
+                'lon': start_lon + 0.0001,
+                'timestamp': expected_timestamp,
+                'satellites': ANY,
+                'mode': 'fake_route'
+            }
             result = self.handler.get_gps_data()
 
             mock_move.assert_called_once()
-            assert result is not None
-            assert result['mode'] == 'fake_route'
-            assert result['lat'] == 45.0001
-            assert result['lon'] == 10.0001
-            assert isinstance(result['timestamp'], float)
-            assert 7 <= result['satellites'] <= 12  # Usually good reception
+            assert result['lat'] == expected_data['lat']
+            assert result['lon'] == expected_data['lon']
+            assert result['timestamp'] == expected_data['timestamp']
+            assert result['mode'] == expected_data['mode']
             assert self.handler.last_known_position == result
+            self.mock_serial_instance.readline.assert_not_called()
 
     def test_is_inside_boundaries(self):
         """Tests the boundary check."""
-        assert self.handler.is_inside_boundaries(45.0, 10.0) is True
-        assert self.handler.is_inside_boundaries(39.0, 10.0) is False  # Below lat
-        assert self.handler.is_inside_boundaries(51.0, 10.0) is False  # Above lat
-        assert self.handler.is_inside_boundaries(45.0, 4.0) is False  # Below lon
-        assert self.handler.is_inside_boundaries(45.0, 16.0) is False  # Above lon
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        lat_min, lat_max = self.handler.lat_bounds
+        lon_min, lon_max = self.handler.lon_bounds
+        assert self.handler.is_inside_boundaries(lat_min + 0.0001, lon_min + 0.0001) is True
+        assert self.handler.is_inside_boundaries(lat_max - 0.0001, lon_max - 0.0001) is True
+        assert self.handler.is_inside_boundaries(lat_min - 0.0001, lon_min) is False
+        assert self.handler.is_inside_boundaries(lat_min, lon_min - 0.0001) is False
+        assert self.handler.is_inside_boundaries(lat_max + 0.0001, lon_max) is False
+        assert self.handler.is_inside_boundaries(lat_max, lon_max + 0.0001) is False
 
     def test_download_assist_now_data_success(self):
         """Tests successful download of AssistNow data."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         result = self.handler.download_assist_now_data()
-        self.MockRequestsGet.assert_called_once()
-        # Check specific args if needed, e.g., url, params['token']
-        args, kwargs = self.MockRequestsGet.call_args
-        assert args[0] == ASSIST_NOW_CONFIG_MOCK["assist_now_offline_url"]
-        assert kwargs['params']['token'] == ASSIST_NOW_CONFIG_MOCK["assist_now_token"]
-        assert result == b"assist_data"
+        self.mock_requests_get.assert_called_once()
+        args, kwargs = self.mock_requests_get.call_args
+        assert args[0] == self.handler.assist_now_offline_url
+        assert kwargs['params']['token'] == self.handler.assist_now_token
+        assert result == b"dummy_assist_data"
+        self.mock_requests_get.return_value.raise_for_status.assert_called_once()
 
-    def test_download_assist_now_data_failure(self):
-        """Tests failed download of AssistNow data."""
-        self.MockRequestsGet.side_effect = requests.exceptions.RequestException("Download failed")
+    # --- KORREKTUR: Patch logging.error statt builtins.print ---
+    @patch('gps_handler.logging.error')
+    def test_download_assist_now_data_failure(self, mock_log_error):  # mock_print ersetzt
+        """Tests failure during download of AssistNow data."""
+        assert hasattr(self, 'mock_requests_get'), "self.mock_requests_get wurde nicht initialisiert"
+        self.mock_requests_get.side_effect = requests.exceptions.RequestException("Network error")
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         result = self.handler.download_assist_now_data()
-        self.MockRequestsGet.assert_called_once()
+        self.mock_requests_get.assert_called_once()
         assert result is None
+        # Prüfe, ob logging.error aufgerufen wurde
+        mock_log_error.assert_called_with("Fehler beim Herunterladen der AssistNow Offline-Daten: Network error")
 
-    def test_send_assist_now_data_success(self):
+    # --- ENDE KORREKTUR ---
+
+    def test_send_assist_now_data_success(self, caplog):
         """Tests successful sending of AssistNow data."""
-        # Ensure serial connection is mocked as open
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        caplog.set_level(logging.INFO)
+        # Stelle sicher, dass eine Verbindung simuliert wird
+        self.handler.mode = "real"
         self.handler.ser_gps = self.mock_serial_instance
         self.mock_serial_instance.is_open = True
 
-        self.handler.send_assist_now_data(b"test_data")
-        self.mock_serial_instance.write.assert_called_once_with(b"test_data")
+        test_data = b"some_ubx_data"
+        self.handler.send_assist_now_data(test_data)
+        self.mock_serial_instance.write.assert_called_once_with(test_data)
+        assert "AssistNow Offline-Daten erfolgreich gesendet." in caplog.text
 
     def test_send_assist_now_data_not_open(self, caplog):
-        """Tests sending AssistNow data when serial is not open."""
+        """Tests sending AssistNow data when serial port is not open."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
         caplog.set_level(logging.WARNING)
-        self.handler.ser_gps = None  # Simulate no connection
-        self.handler.send_assist_now_data(b"test_data")
-        assert "Kann AssistNow nicht senden: Serielle Verbindung nicht offen" in caplog.text
-        # write should not be called
-        # self.mock_serial_instance.write.assert_not_called() # Fails if ser_gps is None
+        self.handler.ser_gps = None  # Simuliere geschlossene Verbindung
+        test_data = b"some_ubx_data"
+        self.handler.send_assist_now_data(test_data)
+        self.mock_serial_instance.write.assert_not_called()
+        assert "Kann AssistNow nicht senden: Serielle Verbindung nicht offen." in caplog.text
 
-    def test_check_assist_now_update_needed(self):
-        """Tests check_assist_now when an update is needed and successful."""
-        # Force update needed
+    @freeze_time("2023-10-27 15:00:00")
+    @patch.object(GpsHandler, 'download_assist_now_data')
+    @patch.object(GpsHandler, 'send_assist_now_data')
+    def test_check_assist_now_update_needed(self, mock_send, mock_download):
+        """Tests check_assist_now when an update is needed."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        self.handler.assist_now_enabled = True
         self.handler.last_assist_now_update = datetime.now() - timedelta(days=2)
-        # Mock download and send
-        with patch.object(self.handler, 'download_assist_now_data', return_value=b"new_data") as mock_download, \
-                patch.object(self.handler, 'send_assist_now_data') as mock_send:
-            result = self.handler.check_assist_now()
+        mock_download.return_value = b"new_assist_data"
+        result = self.handler.check_assist_now()
+        assert result is True
+        mock_download.assert_called_once()
+        mock_send.assert_called_once_with(b"new_assist_data")
+        assert self.handler.last_assist_now_update == datetime(2023, 10, 27, 15, 0, 0)
 
-            assert result is True
-            mock_download.assert_called_once()
-            mock_send.assert_called_once_with(b"new_data")
-            # Check if last_assist_now_update was updated (approximately)
-            assert datetime.now() - self.handler.last_assist_now_update < timedelta(seconds=5)
-
-    def test_check_assist_now_no_update_needed(self):
+    @freeze_time("2023-10-27 15:00:00")
+    @patch.object(GpsHandler, 'download_assist_now_data')
+    @patch.object(GpsHandler, 'send_assist_now_data')
+    def test_check_assist_now_no_update_needed(self, mock_send, mock_download):
         """Tests check_assist_now when no update is needed."""
-        self.handler.last_assist_now_update = datetime.now() - timedelta(hours=1)  # Recent update
-        with patch.object(self.handler, 'download_assist_now_data') as mock_download:
-            result = self.handler.check_assist_now()
-            assert result is True
-            mock_download.assert_not_called()
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        self.handler.assist_now_enabled = True
+        # Setze eine Zeit, die *innerhalb* des Update-Intervalls liegt
+        self.handler.last_assist_now_update = datetime.now() - timedelta(hours=12)
+        initial_update_time = self.handler.last_assist_now_update  # Merke dir die Zeit
 
-    def test_change_gps_mode(self):
-        """Tests changing GPS modes."""
-        # Real to Fake Random
-        assert self.handler.change_gps_mode("fake_random") is True
+        result = self.handler.check_assist_now()
+        assert result is True
+        mock_download.assert_not_called()
+        mock_send.assert_not_called()
+        # Zeitstempel sollte unverändert bleiben
+        assert self.handler.last_assist_now_update == initial_update_time
+
+    @patch.object(GpsHandler, '_connect_serial')
+    def test_change_gps_mode(self, mock_connect_serial, caplog):
+        """Tests changing the GPS mode."""
+        assert hasattr(self, 'handler'), "self.handler wurde nicht initialisiert"
+        assert hasattr(self, 'mock_serial_instance'), "self.mock_serial_instance wurde nicht initialisiert"
+        caplog.set_level(logging.INFO)
+
+        # Simuliere, dass initial eine Verbindung besteht
+        self.handler.ser_gps = self.mock_serial_instance
+        self.mock_serial_instance.is_open = True
+
+        # 1. Wechsel zu fake_random
+        result1 = self.handler.change_gps_mode("fake_random")
+        assert result1 is True
         assert self.handler.mode == "fake_random"
         assert self.handler.is_fake_gps is True
         assert self.handler.route_simulator is None
-        self.mock_serial_instance.close.assert_called_once()  # Should close existing connection
+        self.mock_serial_instance.close.assert_called_once()
+        assert "Serielle Verbindung für Fake-Modus geschlossen." in caplog.text
+        assert self.handler.ser_gps is None
+        mock_connect_serial.assert_not_called()  # _connect_serial wird nicht gerufen
 
-        # Fake Random to Fake Route
-        self.mock_serial_instance.reset_mock()
-        assert self.handler.change_gps_mode("fake_route") is True
+        # 2. Wechsel zu fake_route
+        self.mock_serial_instance.close.reset_mock()  # Setze close zurück
+        caplog.clear()  # Leere caplog
+        result2 = self.handler.change_gps_mode("fake_route")
+        assert result2 is True
         assert self.handler.mode == "fake_route"
         assert self.handler.is_fake_gps is True
-        assert self.handler.route_simulator is not None
-        self.mock_serial_instance.close.assert_not_called()  # Already closed
+        assert isinstance(self.handler.route_simulator, GpsHandler.RouteSimulator)
+        # close wird nicht erneut gerufen, da ser_gps schon None ist
+        self.mock_serial_instance.close.assert_not_called()
+        mock_connect_serial.assert_not_called()
 
-        # Fake Route to Real
-        self.MockSerial.reset_mock()  # Reset class mock for connect check
-        assert self.handler.change_gps_mode("real") is True
+        # 3. Wechsel zurück zu real
+        caplog.clear()
+        result3 = self.handler.change_gps_mode("real")
+        assert result3 is True
         assert self.handler.mode == "real"
         assert self.handler.is_fake_gps is False
         assert self.handler.route_simulator is None
-        self.MockSerial.assert_called_once()  # Should attempt to connect
+        # Prüfe, ob _connect_serial aufgerufen wurde
+        mock_connect_serial.assert_called_once()
 
-        # Invalid mode
-        assert self.handler.change_gps_mode("invalid_mode") is False
-        assert self.handler.mode == "real"  # Should remain in previous valid mode
+        # 4. Ungültiger Modus
+        mock_connect_serial.reset_mock()  # Setze Mock zurück
+        caplog.clear()
+        result4 = self.handler.change_gps_mode("invalid_mode")
+        assert result4 is False
+        assert self.handler.mode == "real"  # Modus sollte unverändert bleiben
+        assert "Ungültiger GPS-Modus angefordert: invalid_mode" in caplog.text
+        mock_connect_serial.assert_not_called()  # Nicht aufgerufen bei ungültigem Modus

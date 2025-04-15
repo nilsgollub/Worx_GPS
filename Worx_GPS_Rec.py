@@ -2,6 +2,10 @@
 import sys
 import pkg_resources
 import logging  # Logging importieren
+# --- ADDED IMPORTS ---
+import serial
+import paho.mqtt.client as paho_mqtt_client
+# --- END ADDED IMPORTS ---
 from mqtt_handler import MqttHandler
 from gps_handler import GpsHandler
 from data_recorder import DataRecorder
@@ -55,7 +59,7 @@ class WorxGpsRec:
                 self.send_problem_message()
             elif payload == "fakegps_on":
                 self.gps_handler.change_gps_mode("fake_route")
-                logging.info("GPS-Modus auf 'fake_route' geändert.")  # Log
+                logging.info("GPS-Modus auf 'fake_route' gendert.")  # Log
             elif payload == "fakegps_off":
                 self.gps_handler.change_gps_mode("real")
                 logging.info("GPS-Modus auf 'real' geändert.")  # Log
@@ -113,56 +117,64 @@ class WorxGpsRec:
         last_status_send = time.time() - 10  # Sicherstellen, dass der erste Status sofort gesendet wird
         logging.info("Hauptschleife gestartet.")  # Log
         while True:
-            try:  # Füge try...except um die Hauptlogik hinzu
+            try:  # Keep the try block for specific errors
                 current_time = time.time()
                 gps_data = self.gps_handler.get_gps_data()  # Hole GPS Daten einmal pro Durchlauf
 
                 if self.is_recording:
-                    if gps_data:  # Nur wenn gültige GPS-Daten vorhanden sind
-                        # --- Korrektur: add_gps_data und add_position in den if-Block verschoben ---
+                    if gps_data:
                         if self.gps_handler.is_inside_boundaries(gps_data["lat"], gps_data["lon"]) or self.test_mode:
-                            # Daten im Puffer sammeln (immer, auch im Testmodus)
                             self.data_recorder.add_gps_data(gps_data)
-                            # Neue Position an Problem Detector senden
                             self.problem_detector.add_position(gps_data)
-                            logging.debug(f"Gültiger GPS-Punkt innerhalb Grenzen verarbeitet: {gps_data}")  # Debug Log
-                        # --- Ende Korrektur ---
+                            logging.debug(f"Gültiger GPS-Punkt innerhalb Grenzen verarbeitet: {gps_data}")
                         else:
                             logging.debug(
-                                f"Koordinaten ({gps_data['lat']},{gps_data['lon']}) liegen außerhalb des Grundstücks.")  # Debug Log
+                                f"Koordinaten ({gps_data['lat']},{gps_data['lon']}) liegen außerhalb des Grundstücks.")
                     else:
-                        logging.debug("Keine gültigen GPS-Daten während der Aufnahme.")  # Debug Log
+                        logging.debug("Keine gültigen GPS-Daten während der Aufnahme.")
 
-                # Auch wenn keine Aufzeichnung läuft, Status-Updates senden (alle 10 Sekunden)
                 if current_time - last_status_send >= 10:
-                    # Verwende die bereits abgerufenen gps_data
                     if gps_data:
                         status_message = f"{gps_data['lat']},{gps_data['lon']},{gps_data['timestamp']},{gps_data['satellites']}"
-                        logging.debug(f"Sende Status-Update: {status_message}")  # Debug Log
+                        logging.debug(f"Sende Status-Update: {status_message}")
                         self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, status_message)
                     else:
-                        logging.debug("Keine gültigen GPS-Daten für Statusmeldung.")  # Debug Log
-                    last_status_send = current_time  # Zeit aktualisieren
+                        logging.debug("Keine gültigen GPS-Daten für Statusmeldung.")
+                    last_status_send = current_time
 
-                # AssistNow Offline-Daten aktualisieren (einmal täglich)
-                # Die check_assist_now Methode loggt bereits intern
                 self.gps_handler.check_assist_now()
 
-                # Wartezeit basierend auf Konfiguration
                 time.sleep(REC_CONFIG["storage_interval"])
+
+            except serial.SerialException as ser_e:  # Catch specific serial errors
+                logging.error(f"Serieller Fehler in der Hauptschleife: {ser_e}")
+                # Attempt to reconnect or handle appropriately
+                if self.gps_handler:
+                    # Check if the method exists before calling
+                    if hasattr(self.gps_handler, '_reconnect_serial') and callable(
+                            getattr(self.gps_handler, '_reconnect_serial')):
+                        self.gps_handler._reconnect_serial()
+                    else:
+                        logging.warning("GpsHandler hat keine '_reconnect_serial' Methode.")
+                time.sleep(5)  # Wait before retrying
+
+            # --- REMOVED generic except Exception as mqtt_e: ---
+            # except Exception as mqtt_e:
+            #    logging.error(f"Möglicher MQTT oder anderer unerwarteter Fehler in der Hauptschleife: {mqtt_e}", exc_info=True)
+            #    time.sleep(5)
+            # --- END REMOVAL ---
 
             except KeyboardInterrupt:
                 logging.info("KeyboardInterrupt empfangen. Beende Hauptschleife.")
-                break  # Schleife beenden
-            except Exception as e:
-                logging.error(f"Unerwarteter Fehler in der Hauptschleife: {e}", exc_info=True)
-                time.sleep(5)  # Warte kurz nach einem Fehler
+                break  # Exit the loop cleanly
+            # Any other exception (like StopTestLoopException) will now propagate out
 
-        # Aufrn nach der Schleife
+        # Cleanup after the loop
         logging.info("Hauptschleife beendet. Trenne MQTT-Verbindung.")
         if self.mqtt_handler:
             self.mqtt_handler.disconnect()
-        if self.gps_handler and self.gps_handler.ser_gps and self.gps_handler.ser_gps.is_open:
+        if self.gps_handler and hasattr(self.gps_handler,
+                                        'ser_gps') and self.gps_handler.ser_gps and self.gps_handler.ser_gps.is_open:
             logging.info("Schließe serielle GPS-Verbindung.")
             self.gps_handler.ser_gps.close()
 
