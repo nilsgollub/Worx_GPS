@@ -16,7 +16,7 @@ import subprocess
 
 # Logging konfigurieren (optional, aber empfohlen)
 # Stelle sicher, dass das Level auf DEBUG steht, um alle Meldungen zu sehen
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class WorxGpsRec:
