@@ -29,9 +29,7 @@ class WorxGpsRec:
         self.is_recording = False
         self.mqtt_handler.set_message_callback(self.on_mqtt_message)
         self.mqtt_handler.connect()
-        # --- KORREKTUR: subscribe() HIER ENTFERNT ---
         # Das Abonnieren erfolgt jetzt automatisch im _on_connect Callback des MqttHandlers
-        # --- Ende KORREKTUR ---
         logging.info("WorxGpsRec initialisiert.")  # Info Log
 
     def on_mqtt_message(self, msg):
@@ -113,6 +111,9 @@ class WorxGpsRec:
         logging.info("Hauptschleife gestartet.")
         loop_counter = 0
         while True:
+            # --- NEUES LOGGING HIER ---
+            logging.debug(f"*** main_loop: Entering while True (Iteration {loop_counter + 1}) ***")
+            # --- Ende NEUES LOGGING ---
             try:
                 loop_counter += 1
                 logging.debug(f"--- Start Hauptschleife Iteration {loop_counter} ---")
