@@ -30,7 +30,13 @@ GEO_CONFIG = {
     "map_center": (46.811819, 7.132838),
     "zoom_start": 15,
     "crop_coordinates": ((46.8115, 7.1325), (46.8120, 7.1330)),  # (left-top, right-bottom)
-    "crop_enabled": False,
+    "crop_enabled": True,
+    "crop_center_percentage": 20, # Beispiel: Behalte 75% der kleineren Dimension als Quadrat
+    # "crop_pixel_left": 150,  # Pixel vom linken Rand
+    # "crop_pixel_top": 100,  # Pixel vom oberen Rand
+    # "crop_pixel_right": 150,  # Pixel vom rechten Rand (Abstand, nicht Koordinate!)
+    # "crop_pixel_bottom": 200,  # Pixel vom unteren Rand (Abstand, nicht Koordinate!)
+    # --- ENDE NEU ---
     "save_interval": 5,  # Wird aktuell nicht direkt hier verwendet
 }
 
@@ -40,26 +46,26 @@ HEATMAP_CONFIG = {
     "heatmap_aktuell": {
         "output": "heatmaps/heatmap_aktuell.html",
         "png_output": "heatmaps/heatmap_aktuell.png",
-        "radius": 15,
-        "blur": 10
+        "radius": 3,
+        "blur": 3
     },
     "heatmap_10_maehvorgang": {
         "output": "heatmaps/heatmap_10.html",
         "png_output": "heatmaps/heatmap_10.png",
-        "radius": 10,
-        "blur": 5
+        "radius": 3,
+        "blur": 3
     },
     "heatmap_kumuliert": {
         "output": "heatmaps/heatmap_kumuliert.html",
         "png_output": "heatmaps/heatmap_kumuliert.png",
-        "radius": 8,
-        "blur": 4
+        "radius": 3,
+        "blur": 3
     },
     "problemzonen_heatmap": {
         "output": "heatmaps/problemzonen.html",
         "png_output": "heatmaps/problemzonen.png",
-        "radius": 20,
-        "blur": 15
+        "radius": 5,
+        "blur": 3
     },
 }
 
