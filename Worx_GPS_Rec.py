@@ -1,11 +1,8 @@
 # Worx_GPS_Rec.py
 import sys
-# import pkg_resources # Nicht mehr benötigt für die Kernfunktionalität, DeprecationWarning vermeiden
-import logging  # Logging importieren
-# --- ADDED IMPORTS ---
+import logging
 import serial
 import paho.mqtt.client as paho_mqtt_client
-# --- END ADDED IMPORTS ---
 from mqtt_handler import MqttHandler
 from gps_handler import GpsHandler
 from data_recorder import DataRecorder
@@ -30,7 +27,7 @@ class WorxGpsRec:
         self.mqtt_handler.set_message_callback(self.on_mqtt_message)
         self.mqtt_handler.connect()
         # Das Abonnieren erfolgt jetzt automatisch im _on_connect Callback des MqttHandlers
-        logging.info("WorxGpsRec initialisiert.")  # Info Log
+        logging.info("WorxGpsRec initialisiert.")
 
     def on_mqtt_message(self, msg):
         # Sicherstellen, dass Payload dekodierbar ist
@@ -66,11 +63,17 @@ class WorxGpsRec:
             elif payload == "shutdown":
                 logging.info("Shutdown-Befehl empfangen. Fahre Raspberry Pi herunter...")
                 try:
-                    subprocess.call(["sudo", "shutdown", "-h", "now"])
+                    # Verwende subprocess.run für bessere Fehlerbehandlung und Kompatibilität
+                    result = subprocess.run(["sudo", "shutdown", "-h", "now"], check=False, capture_output=True,
+                                            text=True)
+                    if result.returncode != 0:
+                        logging.error(f"Fehler beim Ausführen des Shutdown-Befehls: {result.stderr}")
+                    else:
+                        logging.info("Shutdown-Befehl erfolgreich ausgeführt.")
                 except FileNotFoundError:
                     logging.error("Fehler: 'sudo' Befehl nicht gefunden. Shutdown nicht möglich.")
                 except Exception as e:
-                    logging.error(f"Fehler beim Ausführen des Shutdown-Befehls: {e}")
+                    logging.error(f"Unerwarteter Fehler beim Ausführen des Shutdown-Befehls: {e}")
             else:
                 logging.warning(f"Unbekannter Befehl empfangen: {payload}")
                 self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_command")
@@ -107,26 +110,27 @@ class WorxGpsRec:
             self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_gps")
 
     def main_loop(self):
-        last_status_send = time.time() - 10
+        # Sende Status sofort beim Start und dann alle 10s
+        last_status_send = time.time() - 11  # Stelle sicher, dass beim ersten Durchlauf gesendet wird
         logging.info("Hauptschleife gestartet.")
         loop_counter = 0
         while True:
-            # --- NEUES LOGGING HIER ---
             logging.debug(f"*** main_loop: Entering while True (Iteration {loop_counter + 1}) ***")
-            # --- Ende NEUES LOGGING ---
             try:
                 loop_counter += 1
                 logging.debug(f"--- Start Hauptschleife Iteration {loop_counter} ---")
                 current_time = time.time()
 
-                # --- GPS Daten holen und loggen ---
+                # --- GPS Daten holen (aktualisiert internen Status im Handler) ---
+                # gps_data enthält die Position nur bei gültigem Fix, ist sonst None
                 gps_data = self.gps_handler.get_gps_data()
                 logging.debug(f"GPS Data received in loop: {gps_data}")
-                # --- Ende GPS Daten Log ---
 
+                # --- Aufnahme-Logik ---
                 if self.is_recording:
-                    if gps_data:
+                    if gps_data:  # Nur hinzufügen, wenn Position gültig ist
                         if all(k in gps_data for k in ("lat", "lon")):
+                            # Prüfe, ob innerhalb der Grenzen (oder im Testmodus)
                             if self.gps_handler.is_inside_boundaries(gps_data["lat"],
                                                                      gps_data["lon"]) or self.test_mode:
                                 self.data_recorder.add_gps_data(gps_data)
@@ -139,22 +143,18 @@ class WorxGpsRec:
                             logging.warning(f"Empfangene GPS-Daten unvollständig (lat/lon fehlt): {gps_data}")
                     else:
                         logging.debug("Keine gültigen GPS-Daten während der Aufnahme erhalten.")
+                # --- Ende Aufnahme-Logik ---
 
-                # Status senden alle 10 Sekunden
+                # --- Status senden alle 10 Sekunden (korrigiert) ---
                 if current_time - last_status_send >= 10:
-                    logging.debug("Prüfe, ob Status gesendet werden soll...")
-                    if gps_data:
-                        if all(k in gps_data for k in ("lat", "lon", "timestamp", "satellites")):
-                            status_message = f"{gps_data['lat']},{gps_data['lon']},{gps_data['timestamp']},{gps_data['satellites']}"
-                            logging.debug(f"Sende Status-Update: {status_message}")
-                            # --- HIER WIRD DER STATUS GESENDET ---
-                            self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, status_message)
-                            # --- --- --- --- --- --- --- --- --- ---
-                        else:
-                            logging.warning(f"GPS-Daten für Status unvollständig: {gps_data}")
-                    else:
-                        logging.debug("Keine gültigen GPS-Daten für Statusmeldung vorhanden.")
-                    last_status_send = current_time  # Zeit auch aktualisieren, wenn nichts gesendet wurde
+                    logging.debug("Sende GPS-Status...")
+                    # Hole den formatierten Status-String vom Handler
+                    # Dieser basiert auf dem letzten bekannten GGA-Status (auch ohne Fix)
+                    status_message = self.gps_handler.get_last_gga_status()
+                    # Sende den Status
+                    self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, status_message)
+                    last_status_send = current_time
+                # --- Ende Status senden ---
 
                 # AssistNow prüfen
                 logging.debug("Prüfe AssistNow...")

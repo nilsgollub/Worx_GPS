@@ -17,7 +17,7 @@ import time
 import numpy as np  # Importiere numpy für min/max Berechnungen
 
 # Logging konfigurieren
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class HeatmapGenerator:

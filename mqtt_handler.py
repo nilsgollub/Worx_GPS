@@ -11,7 +11,7 @@ import inspect
 
 # Logging konfigurieren
 # Stelle sicher, dass das Level auf DEBUG steht, um alle Meldungen zu sehen
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class MqttHandler:

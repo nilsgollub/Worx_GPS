@@ -4,7 +4,7 @@ import logging  # Logging importieren
 import io  # Für StringIO
 
 # Logging konfigurieren (kann auch zentral erfolgen, hier zur Sicherheit)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def read_gps_data_from_csv_string(csv_string):

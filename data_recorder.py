@@ -6,7 +6,7 @@ import logging
 import io  # Benötigt für das effiziente Erstellen von Strings im Speicher
 
 # Logging konfigurieren (optional, aber empfohlen für die Fehlersuche)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class DataRecorder:

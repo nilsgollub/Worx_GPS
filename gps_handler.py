@@ -12,7 +12,7 @@ from config import GEO_CONFIG, ASSIST_NOW_CONFIG, REC_CONFIG
 import math
 
 # Stelle sicher, dass das Level auf DEBUG steht, um die neuen Logs zu sehen
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class GpsHandler:
@@ -36,7 +36,8 @@ class GpsHandler:
         self.last_known_position = None
         # --- NEU: Letzte GGA Statusinformationen ---
         # Speichert den letzten bekannten Status, auch wenn kein Fix vorliegt
-        self.last_gga_info = {'qual': 0, 'sats': 0, 'timestamp': 0}
+        # Initialisiere mit einem Status, der "Connecting" oder "No Fix" entspricht
+        self.last_gga_info = {'qual': -1 if self.mode == "real" else 0, 'sats': 0, 'timestamp': time.time()}
         # --- ENDE NEU ---
 
     def _connect_serial(self):
@@ -54,21 +55,23 @@ class GpsHandler:
                 logging.info(f"Versuche, serielle Verbindung zu {self.serial_port} herzustellen...")
                 self.ser_gps = serial.Serial(self.serial_port, self.baudrate, timeout=1)
                 logging.info("Serielle Verbindung erfolgreich hergestellt.")
+                # Setze Status auf "No Fix" nach erfolgreicher Verbindung, bis GGA kommt
+                self.last_gga_info = {'qual': 0, 'sats': 0, 'timestamp': time.time()}
             except serial.SerialException as e:
                 logging.error(f"Fehler beim Herstellen der seriellen Verbindung: {e}")
                 self.ser_gps = None
-                # --- NEU: Status bei Verbindungsfehler aktualisieren ---
+                # --- Status bei Verbindungsfehler aktualisieren ---
                 self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}  # -1 für Verbindungsfehler
-                # --- ENDE NEU ---
             except Exception as e:
                 logging.error(f"Unerwarteter Fehler beim Herstellen der seriellen Verbindung: {e}")
                 self.ser_gps = None
-                # --- NEU: Status bei Verbindungsfehler aktualisieren ---
+                # --- Status bei Verbindungsfehler aktualisieren ---
                 self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}  # -1 für Verbindungsfehler
-                # --- ENDE NEU ---
         else:
             logging.info("Fake-Modus aktiv, keine serielle Verbindung erforderlich.")
             self.ser_gps = None
+            # Setze Status für Fake-Modus (wird in get_gps_data überschrieben)
+            self.last_gga_info = {'qual': 1, 'sats': 8, 'timestamp': time.time()}  # Simulierter Fix
 
     def _reconnect_serial(self):
         """Wrapper für _connect_serial für den Einsatz bei Fehlern."""
@@ -76,7 +79,6 @@ class GpsHandler:
         self._connect_serial()
 
     class RouteSimulator:
-        # ... ( bleibt unverändert ) ...
         def __init__(self, start_lat, start_lon, speed=0.00001, direction=0):
             self.current_lat = start_lat
             self.current_lon = start_lon
@@ -92,12 +94,10 @@ class GpsHandler:
             self.direction = (self.direction + angle_change) % 360
 
     def is_inside_boundaries(self, lat, lon):
-        # ... ( bleibt unverändert ) ...
         return (lat >= self.lat_bounds[0] and lat <= self.lat_bounds[1] and lon >= self.lon_bounds[0] and lon <=
                 self.lon_bounds[1])
 
     def download_assist_now_data(self):
-        # ... ( bleibt unverändert ) ...
         try:
             headers = {"useragent": "Thingstream Client"}
             params = {
@@ -119,7 +119,6 @@ class GpsHandler:
             return None
 
     def send_assist_now_data(self, data):
-        # ... ( bleibt unverändert ) ...
         if not self.ser_gps or not self.ser_gps.is_open:
             logging.warning("Kann AssistNow nicht senden: Serielle Verbindung nicht offen.")
             return
@@ -231,9 +230,8 @@ class GpsHandler:
                     return None
             except serial.SerialException as e:
                 logging.error(f"Serieller Fehler beim Lesen von GPS: {e}")
-                # --- NEU: Status bei Verbindungsfehler aktualisieren ---
+                # --- Status bei Verbindungsfehler aktualisieren ---
                 self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}  # -1 für Verbindungsfehler
-                # --- ENDE NEU ---
                 self._reconnect_serial()
                 return None  # Keine gültige Position
             except UnicodeDecodeError as e:
@@ -276,7 +274,6 @@ class GpsHandler:
     # --- ENDE NEUE METHODE ---
 
     def generate_fake_data(self):
-        # ... ( bleibt unverändert ) ...
         lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
         fake_pos = {
             'lat': random.uniform(*lat_range),
@@ -290,7 +287,6 @@ class GpsHandler:
         return fake_pos
 
     def generate_fake_route_data(self):
-        # ... ( bleibt unverändert ) ...
         if self.route_simulator:
             if random.random() < 0.1:
                 self.route_simulator.change_direction(random.randint(-30, 30))
@@ -311,7 +307,6 @@ class GpsHandler:
             return self.generate_fake_data()
 
     def check_assist_now(self):
-        # ... ( bleibt unverändert ) ...
         if self.assist_now_enabled and datetime.now() - self.last_assist_now_update >= timedelta(days=1):
             logging.info("Prüfe auf AssistNow Offline Update...")
             data = self.download_assist_now_data()
@@ -327,12 +322,11 @@ class GpsHandler:
         return True
 
     def change_gps_mode(self, new_mode):
-        # ... ( bleibt unverändert ) ...
         if new_mode == self.mode:
             logging.info(f"GPS-Modus ist bereits '{new_mode}'. Keine Änderung.")
             return True
 
-        logging.info(f"Ändere GPS-Modus von '{self.mode}' zu: {new_mode}")
+        logging.info(f" GPS-Modus von '{self.mode}' zu: {new_mode}")  # Korrigiertes Log
         if new_mode == "fake_route":
             self.mode = "fake_route"
             self.is_fake_gps = True
@@ -355,7 +349,7 @@ class GpsHandler:
             self.mode = "real"
             self.is_fake_gps = False
             self.route_simulator = None
-            self._connect_serial()
+            self._connect_serial()  # Stelle Verbindung wieder her
         else:
             logging.warning(f"Ungültiger GPS-Modus angefordert: {new_mode}")
             return False
