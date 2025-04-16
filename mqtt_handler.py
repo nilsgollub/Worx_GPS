@@ -32,7 +32,7 @@ class MqttHandler:
         self._host = MQTT_CONFIG.get("host", "localhost")
         self._port = MQTT_CONFIG.get("port", 1883)
         self._keepalive = MQTT_CONFIG.get("keepalive", 60)
-        self._username = MQTT_CONFIG.get("username")
+        self._username = MQTT_CONFIG.get("user")
         self._password = MQTT_CONFIG.get("password")
 
         # Reconnect-Parameter
