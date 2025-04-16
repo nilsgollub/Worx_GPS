@@ -6,3 +6,5 @@
 *.html
 
 /*.png
+/send_test_data.py
+/test_data.csv

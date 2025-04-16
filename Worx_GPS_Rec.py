@@ -286,6 +286,7 @@ if __name__ == "__main__":
     # Hauptausführungspunkt
     logging.info("Starte Worx GPS Recorder Anwendung.")
     try:
+        print("Start")
         worx_gps_rec = WorxGpsRec()
         worx_gps_rec.main_loop()  # Startet die Hauptschleife
     except Exception as global_e:
