@@ -128,21 +128,29 @@ class MqttHandler:
         # z.B. Nachrichten aus einer "pending confirmation" Liste entfernen.
 
     # --- Angepasste Callbacks für Verbindungsstatus und Queue ---
+    # In mqtt_handler.py -> _on_connect Methode
+
     def _on_connect(self, client, userdata, flags, rc):
         """Callback, der bei erfolgreicher Verbindung zum Broker aufgerufen wird."""
         if rc == 0:
             self._is_connected = True
             logging.info("MQTT erfolgreich verbunden.")
-            # Abonniere das Kontroll-Topic
+            # --- Korrektur: Alle relevanten Topics abonnieren ---
+            topics_to_subscribe = [
+                (self.topic_control, 1),  # Control mit QoS 1
+                (self.topic_gps, 0),  # GPS Daten mit QoS 0 (Standard)
+                (self.topic_status, 0)  # Status auch mit QoS 0
+            ]
             try:
-                result, mid = self.client.subscribe(self.topic_control, qos=1)
+                # subscribe kann eine Liste von Tupeln (topic, qos) verarbeiten
+                result, mid = self.client.subscribe(topics_to_subscribe)
                 if result == paho_mqtt_client.MQTT_ERR_SUCCESS:
-                    logging.info(f"Erfolgreich Topic '{self.topic_control}' abonniert (mid={mid}).")
+                    subscribed_topics_str = ", ".join([f"'{t[0]}'(QoS {t[1]})" for t in topics_to_subscribe])
+                    logging.info(f"Erfolgreich Topics abonniert: {subscribed_topics_str} (mid={mid}).")
                 else:
-                    logging.error(
-                        f"Fehler beim Abonnieren von Topic '{self.topic_control}': {paho_mqtt_client.error_string(result)}")
+                    logging.error(f"Fehler beim Abonnieren von Topics: {paho_mqtt_client.error_string(result)}")
             except Exception as e:
-                logging.error(f"Ausnahme beim Abonnieren von Topic '{self.topic_control}': {e}", exc_info=True)
+                logging.error(f"Ausnahme beim Abonnieren von Topics: {e}", exc_info=True)
 
             # Status "online" senden (verwende die Methode, um Queue-Logik zu nutzen)
             self.publish_message(self.topic_status, "recorder_online", qos=1, retain=True)
