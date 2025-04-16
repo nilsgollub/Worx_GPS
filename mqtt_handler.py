@@ -1,226 +1,413 @@
 # mqtt_handler.py
-
-import paho.mqtt.client as paho_mqtt_client
-from paho.mqtt.enums import CallbackAPIVersion
-# Assuming REC_CONFIG might be needed if test_mode influences more than just broker details
-from config import MQTT_CONFIG, REC_CONFIG
 import logging
-import inspect
+import time
+import paho.mqtt.client as paho_mqtt_client
+from config import MQTT_CONFIG, REC_CONFIG
+from queue import Queue, Full, Empty  # Thread-sichere Warteschlange
+import threading  # Für den Queue-Verarbeitungs-Thread
 
-# import random # Optional für eindeutige Client IDs
-
-# Logging konfigurieren
-# Stelle sicher, dass das Level auf DEBUG steht, um alle Meldungen zu sehen
-#logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Standard-Reconnect-Verzögerungen (in Sekunden)
+DEFAULT_INITIAL_RECONNECT_DELAY = 1
+DEFAULT_MAX_RECONNECT_DELAY = 60
+# DEFAULT_RECONNECT_RATE = 2 # Nicht direkt von Paho verwendet, aber für eigene Logik nlich
+DEFAULT_MAX_QUEUE_SIZE = 1000  # Maximale Anzahl Nachrichten in der Warteschlange, 0 für unbegrenzt
 
 
 class MqttHandler:
-    def __init__(self, test_mode):
+    """
+    Verwaltet die MQTT-Verbindung, Abonnements und das Senden/Empfangen von Nachrichten.
+    Implementiert automatische Wiederverbindungslogik mit exponentiellem Backoff
+    und eine Warteschlange für ausgehende Nachrichten, um Datenverlust bei
+    Verbindungsunterbrechungen zu minimieren.
+    """
+
+    def __init__(self, test_mode=False):
+        """
+        Initialisiert den MQTT-Handler.
+
+        Args:
+            test_mode (bool): Wenn True, wird ein Präfix zu den Topics hinzugefügt.
+        """
         self.test_mode = test_mode
-        # Broker-Details basierend auf test_mode auswählen
-        self.broker = MQTT_CONFIG["host_lokal"] if test_mode else MQTT_CONFIG["host"]
-        self.port = MQTT_CONFIG["port_lokal"] if test_mode else MQTT_CONFIG["port"]
-        self.user = MQTT_CONFIG["user_local"] if test_mode else MQTT_CONFIG["user"]
-        self.password = MQTT_CONFIG["password_local"] if test_mode else MQTT_CONFIG["password"]
+        self._host = MQTT_CONFIG.get("host", "localhost")
+        self._port = MQTT_CONFIG.get("port", 1883)
+        self._keepalive = MQTT_CONFIG.get("keepalive", 60)
+        self._username = MQTT_CONFIG.get("username")
+        self._password = MQTT_CONFIG.get("password")
 
-        # MQTT Topics aus der Konfiguration holen
-        self.topic_control = MQTT_CONFIG["topic_control"]
-        self.topic_gps = MQTT_CONFIG["topic_gps"]
-        self.topic_status = MQTT_CONFIG["topic_status"]
+        # Reconnect-Parameter
+        self._initial_reconnect_delay = MQTT_CONFIG.get("initial_reconnect_delay", DEFAULT_INITIAL_RECONNECT_DELAY)
+        self._max_reconnect_delay = MQTT_CONFIG.get("max_reconnect_delay", DEFAULT_MAX_RECONNECT_DELAY)
+        # self._reconnect_rate = MQTT_CONFIG.get("reconnect_rate", DEFAULT_RECONNECT_RATE) # Nicht direkt von Paho verwendet
 
-        # --- Debug Info CallbackAPIVersion (kann später entfernt werden) ---
-        # print("--- Debug Info CallbackAPIVersion (mqtt_handler.py) ---")
-        # print(f"Typ von CallbackAPIVersion: {type(CallbackAPIVersion)}")
-        # try:
-        #     print(f"Modul von CallbackAPIVersion: {inspect.getmodule(CallbackAPIVersion)}")
-        #     print(f"Datei von CallbackAPIVersion: {inspect.getfile(CallbackAPIVersion)}")
-        # except Exception as inspect_e:
-        #     print(f"Konnte Details zu CallbackAPIVersion nicht ermitteln: {inspect_e}")
-        # print(f"Attribute in CallbackAPIVersion: {dir(CallbackAPIVersion)}")
-        # print("--- Zusätzliches Debugging Ende ---")
-        # --- Ende Debug Info ---
+        # Queue-Parameter
+        self._max_queue_size = MQTT_CONFIG.get("max_queue_size", DEFAULT_MAX_QUEUE_SIZE)
+        # Initialisiere die thread-sichere Warteschlange
+        self._message_queue = Queue(maxsize=self._max_queue_size)
+        self._queue_processing_thread = None
+        self._stop_queue_processing = threading.Event()  # Zum Stoppen des Threads
 
-        # MQTT Client initialisieren mit Callback API Version 2
-        try:
-            # Client ID hinzufügen, um sicherzustellen, dass Broker sie unterscheiden kann (optional aber gut)
-            # client_id = f"worx_handler_{random.randint(0, 1000)}" # Wenn mehrere Instanzen laufen könnten
-            self.mqtt_client = paho_mqtt_client.Client(CallbackAPIVersion.VERSION2)  # , client_id=client_id)
-            logging.info("MQTT Client mit CallbackAPIVersion.VERSION2 initialisiert.")
-        except AttributeError as e:
-            logging.error(f"FEHLER bei Initialisierung von mqtt.Client: {e}")
-            logging.error(
-                "Stellen Sie sicher, dass paho-mqtt >= 2.0.0 installiert ist und kein Namenskonflikt (mqtt.py/paho/) vorliegt.")
-            raise RuntimeError("Konnte MQTT Client nicht korrekt initialisieren.") from e
+        # Topics
+        topic_prefix = "test/" if self.test_mode else ""
+        self.topic_control = f"{topic_prefix}{MQTT_CONFIG.get('topic_control', 'worx/control')}"
+        self.topic_status = f"{topic_prefix}{MQTT_CONFIG.get('topic_status', 'worx/status')}"
+        self.topic_data = f"{topic_prefix}{MQTT_CONFIG.get('topic_data', 'worx/data')}"
+        self.topic_problem = f"{topic_prefix}{MQTT_CONFIG.get('topic_problem', 'worx/problem')}"
 
-        # Callbacks setzen
-        self.mqtt_client.on_connect = self._on_connect
-        self.mqtt_client.on_disconnect = self._on_disconnect
-        self.mqtt_client.on_message = self._on_message  # Standard-Nachrichtenhandler
+        # Client-Setup
+        client_id = f"worx_gps_recorder_{int(time.time())}"
+        self.client = paho_mqtt_client.Client(client_id=client_id, protocol=paho_mqtt_client.MQTTv311)
 
-    def _on_connect(self, client, userdata, flags, reason_code, properties):
-        """Interner Callback für erfolgreiche Verbindung (V2 Signatur)."""
-        if reason_code == 0:
-            logging.info(f"Erfolgreich mit MQTT Broker verbunden: {self.broker}:{self.port}")
-            logging.debug("Callback _on_connect: Verbindung erfolgreich (rc=0). Versuche Topics zu abonnieren...")
-            try:
-                # --- JETZT ALLE DEFINIERTEN TOPICS ABONNIEREN ---
-                topics_to_subscribe = [
-                    self.topic_control,
-                    self.topic_gps,
-                    self.topic_status
-                ]
-                for topic in topics_to_subscribe:
-                    if topic:  # Nur abonnieren, wenn Topic in Config definiert ist
-                        logging.debug(f"Callback _on_connect: Rufe self.subscribe für {topic} auf...")
-                        self.subscribe(topic)
-                        logging.debug(f"Callback _on_connect: self.subscribe für {topic} beendet.")
-                    else:
-                        # Finde heraus, welcher Key fehlt (für bessere Fehlermeldung)
-                        missing_key = "Unbekannt"
-                        for key, value in MQTT_CONFIG.items():
-                            if value == topic:  # Findet den Key, dessen Wert None oder leer ist
-                                missing_key = key
-                                break
-                        logging.warning(
-                            f"Callback _on_connect: Topic '{missing_key}' ist in der MQTT-Konfiguration nicht definiert oder leer!")
-                # --- ENDE ALLE TOPICS ABONNIEREN ---
-            except Exception as sub_err:
-                logging.error(f"Callback _on_connect: Fehler während des Abonnierens: {sub_err}", exc_info=True)
-            logging.debug("Callback _on_connect: Abonnier-Logik beendet.")
+        if self._username and self._password:
+            self.client.username_pw_set(self._username, self._password)
+            logging.info("MQTT-Authentifizierung konfiguriert.")
+
+        # Callbacks
+        self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect
+        self.client.on_message = self._on_message
+        self.client.on_publish = self._on_publish
+        self.client.on_log = self._on_log
+
+        # Will-Nachricht
+        will_topic = self.topic_status
+        will_payload = "recorder_offline"
+        self.client.will_set(will_topic, payload=will_payload, qos=1, retain=True)
+        logging.info(f"MQTT Will gesetzt: Topic='{will_topic}', Payload='{will_payload}'")
+
+        self._user_message_callback = None
+        self._is_connected = False
+
+        # Automatische Wiederverbindung konfigurieren
+        self.client.reconnect_delay_set(min_delay=self._initial_reconnect_delay, max_delay=self._max_reconnect_delay)
+
+        logging.info(f"MqttHandler initialisiert für Broker {self._host}:{self._port}")
+        logging.info(f"  Control Topic: {self.topic_control}")
+        logging.info(f"  Status Topic: {self.topic_status}")
+        logging.info(f"  Data Topic: {self.topic_data}")
+        logging.info(f"  Problem Topic: {self.topic_problem}")
+        logging.info(f"  Reconnect Delays: min={self._initial_reconnect_delay}s, max={self._max_reconnect_delay}s")
+        logging.info(
+            f"  Ausgehende Nachrichten-Queue Größe: {self._max_queue_size if self._max_queue_size > 0 else 'Unbegrenzt'}")
+
+    # --- Standard Callbacks (on_log, on_message, on_publish bleiben gleich) ---
+    def _on_log(self, client, userdata, level, buf):
+        """Leitet Paho-Logmeldungen an das Python-Logging weiter."""
+        if level == paho_mqtt_client.MQTT_LOG_INFO:
+            log_level = logging.INFO
+        elif level == paho_mqtt_client.MQTT_LOG_NOTICE:
+            log_level = logging.INFO
+        elif level == paho_mqtt_client.MQTT_LOG_WARNING:
+            log_level = logging.WARNING
+        elif level == paho_mqtt_client.MQTT_LOG_ERR:
+            log_level = logging.ERROR
+        elif level == paho_mqtt_client.MQTT_LOG_DEBUG:
+            log_level = logging.DEBUG
         else:
-            logging.error(f"Verbindung zum MQTT Broker fehlgeschlagen mit Reason Code: {reason_code}")
-
-    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
-        """Interner Callback für Verbindungsabbruch (V2 Signatur)."""
-        if reason_code == 0:
-            logging.info(f"Verbindung zum MQTT Broker bewusst getrennt.")
-        else:
-            logging.warning(f"Verbindung zum MQTT Broker unerwartet getrennt. Reason Code: {reason_code}")
+            log_level = logging.DEBUG
+        if logging.getLogger().isEnabledFor(log_level):
+            logging.log(log_level, f"[PahoMQTT] {buf}")
 
     def _on_message(self, client, userdata, msg):
-        """Standard-Callback für eingehende Nachrichten."""
-        # Versuche Payload zu dekodieren, logge Fehler bei Misserfolg
-        try:
-            payload_str = msg.payload.decode()
-            logging.debug(f"Standard-Nachricht empfangen auf Topic '{msg.topic}': {payload_str}")
-        except UnicodeDecodeError:
-            logging.warning(f"Standard-Nachricht auf Topic '{msg.topic}' konnte nicht dekodiert werden.")
-
-    def set_message_callback(self, callback):
-        """Setzt eine benutzerdefinierte Callback-Funktion für eingehende Nachrichten."""
-        if self.mqtt_client:
-            logging.info(f"Setze benutzerdefinierten Nachrichten-Callback: {callback.__name__}")
-
-            # Wrapper, um sicherzustellen, dass der Callback nur aufgerufen wird, wenn msg existiert
-            def safe_callback_wrapper(client, userdata, msg):
-                if msg:
-                    callback(msg)
-                else:
-                    logging.warning("Leere Nachricht (None) im on_message Wrapper empfangen.")
-
-            self.mqtt_client.on_message = safe_callback_wrapper
+        """Callback, der bei Empfang einer Nachricht aufgerufen wird."""
+        logging.debug(
+            f"MQTT Nachricht empfangen - Topic: '{msg.topic}', Payload: '{msg.payload[:50]}...' (Retain: {msg.retain})")
+        if self._user_message_callback:
+            try:
+                self._user_message_callback(msg)
+            except Exception as e:
+                logging.error(f"Fehler im benutzerdefinierten MQTT-Nachrichten-Callback: {e}", exc_info=True)
         else:
-            logging.error("MQTT Client nicht initialisiert, Callback kann nicht gesetzt werden.")
+            logging.debug("Kein benutzerdefinierter Callback für MQTT-Nachrichten gesetzt.")
 
-    def connect(self):
-        """Stellt die Verbindung zum MQTT Broker her und startet die Netzwerkschleife."""
-        if not self.mqtt_client:
-            logging.error("MQTT Client nicht initialisiert, Verbindung nicht mglich.")
+    def _on_publish(self, client, userdata, mid):
+        """Callback, der nach erfolgreichem Senden einer Nachricht mit QoS > 0 aufgerufen wird."""
+        logging.debug(f"MQTT Nachricht (mid={mid}) erfolgreich veröffentlicht.")
+        # Hier könnte man komplexere Logik für QoS 1/2 Bestätigungen einbauen,
+        # z.B. Nachrichten aus einer "pending confirmation" Liste entfernen.
+
+    # --- Angepasste Callbacks für Verbindungsstatus und Queue ---
+    def _on_connect(self, client, userdata, flags, rc):
+        """Callback, der bei erfolgreicher Verbindung zum Broker aufgerufen wird."""
+        if rc == 0:
+            self._is_connected = True
+            logging.info("MQTT erfolgreich verbunden.")
+            # Abonniere das Kontroll-Topic
+            try:
+                result, mid = self.client.subscribe(self.topic_control, qos=1)
+                if result == paho_mqtt_client.MQTT_ERR_SUCCESS:
+                    logging.info(f"Erfolgreich Topic '{self.topic_control}' abonniert (mid={mid}).")
+                else:
+                    logging.error(
+                        f"Fehler beim Abonnieren von Topic '{self.topic_control}': {paho_mqtt_client.error_string(result)}")
+            except Exception as e:
+                logging.error(f"Ausnahme beim Abonnieren von Topic '{self.topic_control}': {e}", exc_info=True)
+
+            # Status "online" senden (verwende die Methode, um Queue-Logik zu nutzen)
+            self.publish_message(self.topic_status, "recorder_online", qos=1, retain=True)
+
+            # Starte den Thread zur Verarbeitung der Warteschlange, falls nicht schon läuft
+            self._start_queue_processing()
+
+        else:
+            self._is_connected = False
+            logging.error(f"MQTT-Verbindungsfehler mit Code {rc}: {paho_mqtt_client.connack_string(rc)}")
+            # Paho's loop kümmert sich um Reconnect
+
+    def _on_disconnect(self, client, userdata, rc):
+        """Callback, der bei Verbindungsverlust aufgerufen wird."""
+        # was_connected = self._is_connected # Merken, ob wir vorher verbunden waren
+        self._is_connected = False
+        if rc == 0:
+            logging.info("MQTT-Verbindung ordnungsgemäß getrennt.")
+        else:
+            logging.warning(
+                f"MQTT unerwartet getrennt mit Code {rc}: {paho_mqtt_client.error_string(rc)}. Automatische Wiederverbindung wird versucht...")
+
+        # Stoppe den Queue-Processing-Thread nicht hier bei unerwartetem Disconnect,
+        # damit er weiterlaufen und Nachrichten senden kann, sobald die Verbindung wieder steht.
+        # Er wird in disconnect() gestoppt.
+
+    # --- Methoden für Queue-Verarbeitung ---
+    def _start_queue_processing(self):
+        """Startet den Hintergrundthread zur Verarbeitung der Nachrichten-Queue."""
+        if self._queue_processing_thread and self._queue_processing_thread.is_alive():
+            logging.debug("Queue-Verarbeitungs-Thread läuft bereits.")
             return
+
+        self._stop_queue_processing.clear()  # Signal zurücksetzen
+        self._queue_processing_thread = threading.Thread(target=self._process_queue, daemon=True,
+                                                         name="MqttQueueProcessor")
+        self._queue_processing_thread.start()
+        logging.info("Queue-Verarbeitungs-Thread gestartet.")
+
+    def _stop_queue_processing_thread(self):
+        """Signalisiert dem Queue-Verarbeitungs-Thread, dass er anhalten soll und wartet."""
+        if self._queue_processing_thread and self._queue_processing_thread.is_alive():
+            logging.info("Stoppe Queue-Verarbeitungs-Thread...")
+            self._stop_queue_processing.set()  # Signal setzen
+            # Wecke den Thread auf, falls er in wait() oder get() blockiert
+            self._message_queue.put(None)  # Sentinel-Wert einfügen, um get() zu deblockieren
+
+            self._queue_processing_thread.join(timeout=5.0)  # Warte auf Beendigung
+            if self._queue_processing_thread.is_alive():
+                logging.warning("Queue-Verarbeitungs-Thread konnte nicht innerhalb des Timeouts gestoppt werden.")
+            else:
+                logging.info("Queue-Verarbeitungs-Thread gestoppt.")
+        self._queue_processing_thread = None
+        self._stop_queue_processing.clear()  # Signal für nächsten Start zurücksetzen
+
+    def _process_queue(self):
+        """Verarbeitet Nachrichten aus der Warteschlange (läuft in eigenem Thread)."""
+        logging.info("Starte Verarbeitung der Nachrichten-Warteschlange...")
+        while not self._stop_queue_processing.is_set():
+            if not self._is_connected:
+                # Wenn nicht verbunden, kurz warten und erneut prüfen
+                logging.debug("Queue-Verarbeitung pausiert (nicht verbunden).")
+                # Warte auf Stop-Signal oder Timeout
+                self._stop_queue_processing.wait(timeout=self._initial_reconnect_delay)
+                continue
+
+            message_item = None
+            try:
+                # Versuche, eine Nachricht aus der Queue zu holen (blockierend mit Timeout)
+                # Timeout, um regelmäßig auf _stop_queue_processing prüfen zu können
+                message_item = self._message_queue.get(block=True, timeout=1.0)
+
+                # Prüfe auf Sentinel-Wert zum Beenden
+                if message_item is None:
+                    logging.debug("Sentinel-Wert in Queue empfangen, beende Verarbeitung.")
+                    break  # Schleife verlassen
+
+                topic, payload_bytes, qos, retain = message_item
+                logging.debug(f"Verarbeite Nachricht aus Queue: Topic={topic}, QoS={qos}, Retain={retain}")
+
+                # Versuche, die Nachricht zu senden
+                msg_info = self.client.publish(topic, payload_bytes, qos=qos, retain=retain)
+
+                if msg_info.rc == paho_mqtt_client.MQTT_ERR_SUCCESS:
+                    logging.debug(f"Nachricht (mid={msg_info.mid}) aus Queue erfolgreich an Paho übergeben.")
+                    self._message_queue.task_done()  # Markiere Aufgabe als erledigt
+                elif msg_info.rc == paho_mqtt_client.MQTT_ERR_QUEUE_SIZE:
+                    logging.warning(
+                        f"Paho-interne Warteschlange voll beim Senden aus externer Queue (mid={msg_info.mid}). Nachricht zurück ans Ende der Queue.")
+                    # Nachricht zurück ans Ende der Queue legen
+                    try:
+                        self._message_queue.put(message_item)  # Zurück ans Ende
+                    except Full:
+                        logging.error(
+                            "Externe Nachrichten-Queue ist voll, konnte Nachricht nicht zurücklegen. Nachricht geht verloren!")
+                        self._message_queue.task_done()  # Trotzdem als erledigt markieren, um Blockade zu verhindern
+                    # Kurze Pause, um Paho Zeit zu geben
+                    time.sleep(0.5)
+                else:
+                    # Anderer Fehler beim Senden aus der Queue
+                    logging.error(
+                        f"Fehler beim Senden der Nachricht aus Queue (mid={msg_info.mid}): {paho_mqtt_client.error_string(msg_info.rc)}. Nachricht wird verworfen.")
+                    self._message_queue.task_done()  # Als erledigt markieren, um Blockade zu verhindern
+
+            except Empty:
+                # Queue ist leer, warte auf neue Nachrichten oder Stop-Signal (passiert durch get mit Timeout)
+                logging.debug("Nachrichten-Queue ist leer. Warte auf neue Einträge oder Stop...")
+                continue  # Nächste Iteration der while-Schleife
+
+            except Exception as e:
+                logging.error(f"Unerwarteter Fehler in der Queue-Verarbeitung: {e}", exc_info=True)
+                if message_item and message_item is not None:
+                    # Versuche, die Aufgabe trotzdem als erledigt zu markieren, um Blockaden zu vermeiden
+                    try:
+                        self._message_queue.task_done()
+                    except ValueError:
+                        pass  # task_done() wurde vielleicht schon aufgerufen
+                # Kurze Pause, um CPU-Last bei Dauerfehlern zu vermeiden
+                time.sleep(1)
+
+        logging.info("Verarbeitung der Nachrichten-Warteschlange beendet.")
+
+    # --- Öffentliche Methoden (set_message_callback, is_connected bleiben gleich) ---
+    def set_message_callback(self, callback_func):
+        """Setzt die Callback-Funktion für eingehende Nachrichten."""
+        if callable(callback_func):
+            self._user_message_callback = callback_func
+            logging.info("Benutzerdefinierter MQTT-Nachrichten-Callback gesetzt.")
+        else:
+            logging.warning("Versuch, einen nicht aufrufbaren MQTT-Nachrichten-Callback zu setzen.")
+
+    def is_connected(self) -> bool:
+        """Gibt zurück, ob der Client aktuell mit dem MQTT-Broker verbunden ist."""
+        return self._is_connected
+
+    # --- Angepasste connect / disconnect Methoden ---
+    def connect(self):
+        """Stellt die Verbindung her und startet die Netzwerkschleife."""
+        # Queue Processing wird in _on_connect gestartet
+        if self._is_connected:
+            logging.warning("Bereits mit MQTT verbunden.")
+            return
+
+        logging.info(f"Versuche, zu MQTT Broker {self._host}:{self._port} zu verbinden...")
         try:
-            if self.user and self.password:
-                self.mqtt_client.username_pw_set(self.user, self.password)
-                logging.info("MQTT Benutzername und Passwort gesetzt.")
-            logging.info(f"Verbinde mit MQTT Broker: {self.broker}:{self.port}")
-            self.mqtt_client.connect(self.broker, self.port, 60)
-            self.mqtt_client.loop_start()
-            logging.info("MQTT Netzwerkschleife gestartet.")
+            self.client.connect_async(self._host, self._port, self._keepalive)
+            self.client.loop_start()  # Startet Paho's Netzwerk-Thread (inkl. Reconnect)
+            logging.info("MQTT Netzwerkschleife gestartet (loop_start).")
+        except (OSError, ConnectionRefusedError) as e:
+            logging.error(f"Fehler beim initialen MQTT-Verbindungsversuch: {e}")
         except Exception as e:
-            logging.error(f"Fehler beim Verbinden oder Starten der MQTT-Schleife: {e}",
-                          exc_info=True)  # exc_info hinzugefügt
+            logging.error(f"Unerwarteter Fehler beim Starten der MQTT-Verbindung: {e}", exc_info=True)
+            # Versuche trotzdem, die Schleife zu starten, falls möglich
+            try:
+                # Prüfen, ob loop_start() vielleicht doch schon lief oder gestartet werden kann
+                if not self.client.is_connected() and self.client._thread is None:
+                    self.client.loop_start()
+                    logging.info("MQTT Netzwerkschleife nach Fehler gestartet.")
+            except Exception as loop_e:
+                logging.error(f"Konnte MQTT Netzwerkschleife nach Fehler nicht starten: {loop_e}")
 
     def disconnect(self):
-        """Trennt die Verbindung zum MQTT Broker und stoppt die Netzwerkschleife."""
-        if self.mqtt_client:
+        """Stoppt Queue-Verarbeitung, trennt Verbindung und stoppt Netzwerkschleife."""
+        logging.info("Trenne MQTT-Verbindung...")
+
+        # 1. Stoppe den Queue-Processing-Thread zuerst
+        self._stop_queue_processing_thread()
+
+        # 2. Versuche, letzte Will-Nachricht zu senden (optional)
+        if self._is_connected:
             try:
-                logging.info("Trenne Verbindung zum MQTT Broker...")
-                rc = self.mqtt_client.loop_stop()  # Stoppt den Netzwerk-Thread
-                if not rc == 0:
-                    logging.warning(f"loop_stop() beendet mit rc={rc}")
-                # Warte kurz, damit der Thread sicher beendet wird (optional, kann helfen)
-                # import time
-                # time.sleep(0.1)
-                self.mqtt_client.disconnect()  # Sendet DISCONNECT-Paket
-                logging.info("MQTT Verbindung getrennt und Schleife gestoppt.")
+                logging.info("Sende 'recorder_offline' Status vor dem Trennen...")
+                # Verwende publish direkt, nicht die Methode mit Queue-Logik
+                msg_info = self.client.publish(self.topic_status, "recorder_offline", qos=1, retain=True)
+                if msg_info.rc == paho_mqtt_client.MQTT_ERR_SUCCESS:
+                    # Warte kurz, damit die Nachricht eine Chance hat, gesendet zu werden
+                    # Dies ist keine Garantie, besonders bei Netzwerkproblemen
+                    time.sleep(1.0)
+                else:
+                    logging.warning(
+                        f"Konnte 'recorder_offline' Status vor dem Trennen nicht senden: {paho_mqtt_client.error_string(msg_info.rc)}")
             except Exception as e:
-                logging.error(f"Fehler beim Trennen der MQTT-Verbindung: {e}")
+                logging.warning(f"Fehler beim Senden des Offline-Status: {e}")
 
-    def publish_message(self, topic, payload, retain=False):
-        """Veröffentlicht eine Nachricht auf dem angegebenen Topic."""
-        if not self.mqtt_client or not self.mqtt_client.is_connected():
-            logging.warning(f"Kann Nachricht nicht senden: MQTT Client nicht verbunden. Topic: {topic}")
-            return None
+        # 3. Stoppe Paho's Netzwerkschleife
         try:
-            if not isinstance(payload, bytes):
-                payload_bytes = str(payload).encode('utf-8')
-            else:
+            self.client.loop_stop()
+            logging.info("MQTT Netzwerkschleife gestoppt (loop_stop).")
+        except Exception as e:
+            logging.error(f"Fehler beim Stoppen der MQTT Netzwerkschleife: {e}", exc_info=True)
+
+        # 4. Trenne die Verbindung zum Broker
+        try:
+            self.client.disconnect()
+            # _on_disconnect wird aufgerufen und setzt _is_connected = False
+            logging.info("MQTT disconnect() aufgerufen.")
+        except Exception as e:
+            logging.error(f"Fehler beim Trennen der MQTT-Verbindung: {e}", exc_info=True)
+        finally:
+            # Sicherstellen, dass der Status als nicht verbunden markiert wird
+            self._is_connected = False
+            logging.info("MQTT-Verbindung getrennt.")
+
+    # --- Angepasste publish_message Methode ---
+    def publish_message(self, topic, payload, qos=0, retain=False):
+        """
+        Veröffentlicht eine Nachricht oder stellt sie in die Warteschlange,
+        wenn die Verbindung nicht besteht oder das Senden fehlschlägt.
+
+        Args:
+            topic (str): Das MQTT-Topic.
+            payload (str or bytes): Die zu sendende Nachricht.
+            qos (int): Quality of Service Level (0, 1 oder 2).
+            retain (bool): Ob die Nachricht als Retained Message gesendet werden soll.
+
+        Returns:
+            bool: True, wenn die Nachricht erfolgreich gesendet oder in die Queue gestellt wurde,
+                  False, wenn die Queue voll war.
+        """
+        try:
+            # Konvertiere Payload zu Bytes
+            if isinstance(payload, str):
+                payload_bytes = payload.encode('utf-8')
+            elif isinstance(payload, bytes):
                 payload_bytes = payload
-            logging.debug(f"Sende Nachricht auf Topic '{topic}': {payload_bytes[:100]}...")  # Payload gekürzt für Log
-            msg_info = self.mqtt_client.publish(topic, payload_bytes, retain=retain)
-            if msg_info.rc == paho_mqtt_client.MQTT_ERR_SUCCESS:
-                logging.debug(f"Nachricht zur Veröffentlichung übergeben (mid={msg_info.mid}).")
             else:
-                logging.warning(
-                    f"Problem beim Übergeben der Nachricht auf Topic '{topic}'. RC: {msg_info.rc} ({paho_mqtt_client.error_string(msg_info.rc)})")
-            return msg_info
-        except Exception as e:
-            logging.error(f"Fehler beim Senden der MQTT-Nachricht auf Topic '{topic}': {e}")
-            return None
+                logging.warning(f"Ungültiger Payload-Typ ({type(payload)}) für Topic '{topic}'. Konvertiere zu String.")
+                payload_bytes = str(payload).encode('utf-8')
 
-    def subscribe(self, topic, qos=0):
-        """Abonniert das angegebene Topic."""
-        # Zusätzliche Prüfung, auch wenn es von _on_connect aufgerufen wird
-        if not self.mqtt_client or not self.mqtt_client.is_connected():
-            # Diese Warnung sollte jetzt nicht mehr erscheinen, wenn es von _on_connect kommt
-            logging.warning(f"Kann Topic nicht abonnieren (im subscribe): MQTT Client nicht verbunden. Topic: {topic}")
-            return None, None
-        try:
-            logging.info(f"Abonniere Topic: {topic} mit QoS={qos}")  # INFO statt DEBUG, um es sicher zu sehen
-            result, mid = self.mqtt_client.subscribe(topic, qos)
-            if result == paho_mqtt_client.MQTT_ERR_SUCCESS:
-                logging.info(f"Topic '{topic}' erfolgreich zum Abonnieren angefragt (mid={mid}).")  # INFO statt DEBUG
+            # Bereite das Queue-Item vor
+            queue_item = (topic, payload_bytes, qos, retain)
+
+            if self._is_connected:
+                # Wenn verbunden, versuche direkt zu senden
+                logging.debug(f"Versuche direkte Veröffentlichung: Topic={topic}, QoS={qos}, Retain={retain}")
+                msg_info = self.client.publish(topic, payload_bytes, qos=qos, retain=retain)
+
+                if msg_info.rc == paho_mqtt_client.MQTT_ERR_SUCCESS:
+                    logging.debug(f"Nachricht (mid={msg_info.mid}) direkt an Paho übergeben.")
+                    return True  # Erfolgreich gesendet (oder an Paho übergeben)
+                elif msg_info.rc == paho_mqtt_client.MQTT_ERR_QUEUE_SIZE:
+                    logging.warning(
+                        f"Paho-interne Warteschlange voll bei direktem Sendeversuch (mid={msg_info.mid}). Nachricht wird in externe Queue gestellt.")
+                    # Fällt durch zur Queue-Logik unten
+                else:
+                    # Anderer Fehler beim direkten Senden
+                    logging.error(
+                        f"Fehler bei direktem Sendeversuch (mid={msg_info.mid}): {paho_mqtt_client.error_string(msg_info.rc)}. Nachricht wird in externe Queue gestellt.")
+                    # Fällt durch zur Queue-Logik unten
             else:
-                logging.warning(
-                    f"Problem beim Anfragen des Abonnements für Topic '{topic}'. RC: {result} ({paho_mqtt_client.error_string(result)})")
-            return result, mid
+                logging.warning(f"MQTT nicht verbunden. Nachricht für Topic '{topic}' wird in die Queue gestellt.")
+                # Fällt durch zur Queue-Logik unten
+
+            # --- Fallback: Nachricht in die Queue stellen ---
+            try:
+                self._message_queue.put_nowait(queue_item)
+                logging.info(
+                    f"Nachricht für Topic '{topic}' in die Warteschlange gestellt (Größe: {self._message_queue.qsize()}).")
+                # Starte den Verarbeitungs-Thread, falls er nicht läuft (z.B. nach manuellem Stop)
+                self._start_queue_processing()
+                return True
+            except Full:
+                logging.error(
+                    f"Nachrichten-Warteschlange ist voll (max: {self._max_queue_size}). Nachricht für Topic '{topic}' kann nicht hinzugefügt werden und geht verloren!")
+                return False
+
         except Exception as e:
-            logging.error(f"Fehler beim Abonnieren von Topic '{topic}': {e}")
-            return None, None
-
-
-# Beispiel für die Verwendung (kann entfernt oder auskommentiert werden)
-if __name__ == '__main__':
-    try:
-        test_handler = MqttHandler(test_mode=REC_CONFIG["test_mode"])
-        test_handler.connect()
-
-
-        def my_callback(msg):
-            print(f"CALLBACK EMPFANGEN - Topic: {msg.topic}, Payload: {msg.payload.decode()}")
-
-
-        test_handler.set_message_callback(my_callback)
-        # Subscription erfolgt jetzt automatisch in _on_connect
-        import time
-
-        time.sleep(2)
-        test_handler.publish_message(test_handler.topic_status, "Handler gestartet (Test)")
-        print("Warte 10 Sekunden auf eingehende Nachrichten oder Trennung...")
-        time.sleep(10)
-        test_handler.disconnect()
-        print("Test beendet.")
-    except KeyError as e:
-        print(
-            f"FEHLER: Konfigurationsschlüssel fehlt: {e}. Stelle sicher, dass config.py aktuell ist und .env geladen wurde.")
-    except Exception as e:
-        print(f"Ein unerwarteter Fehler ist im Beispiel aufgetreten: {e}")
+            logging.error(f"Unerwarteter Fehler in publish_message für Topic '{topic}': {e}", exc_info=True)
+            return False  # Im Fehlerfall als nicht erfolgreich betrachten
