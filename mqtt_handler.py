@@ -53,6 +53,7 @@ class MqttHandler:
         self.topic_status = f"{topic_prefix}{MQTT_CONFIG.get('topic_status', 'worx/status')}"
         self.topic_data = f"{topic_prefix}{MQTT_CONFIG.get('topic_data', 'worx/data')}"
         self.topic_problem = f"{topic_prefix}{MQTT_CONFIG.get('topic_problem', 'worx/problem')}"
+        self.topic_gps = f"{topic_prefix}{MQTT_CONFIG.get('topic_gps', 'worx/gps')}"
 
         # Client-Setup
         client_id = f"worx_gps_recorder_{int(time.time())}"
