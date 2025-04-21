@@ -29,14 +29,16 @@ class GpsHandler:
         self.mode = "real"
         self._connect_serial()
 
-        self.last_assist_now_update = datetime.now() - timedelta(days=1)
+        # Zeitstempel des letzten erfolgreichen AssistNow-Updates
+        self.last_assist_now_update = datetime.now() - timedelta(
+            days=1)  # Initialwert, um Update beim Start zu erzwingen
         self.is_fake_gps = False
         self.route_simulator = None
         self.last_valid_fix_time = 0
         self.last_known_position = None
         # Letzte GGA Statusinformationen
         self.last_gga_info = {'qual': -1 if self.mode == "real" else 0, 'sats': 0, 'timestamp': time.time()}
-        logger.info("GpsHandler initialisiert.") # Log Hinzugefügt
+        logger.info("GpsHandler initialisiert.")  # Log Hinzugefügt
 
     def _connect_serial(self):
         """Versucht, die serielle Verbindung herzustellen oder wiederherzustellen."""
@@ -53,10 +55,12 @@ class GpsHandler:
                 logger.info(f"Versuche, serielle Verbindung zu {self.serial_port} herzustellen...")
                 self.ser_gps = serial.Serial(self.serial_port, self.baudrate, timeout=1)
                 logger.info("Serielle Verbindung erfolgreich hergestellt.")
+                # Status auf "No Fix" setzen, bis der erste GGA kommt
                 self.last_gga_info = {'qual': 0, 'sats': 0, 'timestamp': time.time()}
             except serial.SerialException as e:
                 logger.error(f"Fehler beim Herstellen der seriellen Verbindung: {e}")
                 self.ser_gps = None
+                # Status auf "Connecting" (oder Fehler) setzen
                 self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
             except Exception as e:
                 logger.error(f"Unerwarteter Fehler beim Herstellen der seriellen Verbindung: {e}")
@@ -65,12 +69,23 @@ class GpsHandler:
         else:
             logger.info("Fake-Modus aktiv, keine serielle Verbindung erforderlich.")
             self.ser_gps = None
+            # Im Fake-Modus simulieren wir einen guten Fix
             self.last_gga_info = {'qual': 1, 'sats': 8, 'timestamp': time.time()}
 
     def _reconnect_serial(self):
         """Wrapper für _connect_serial für den Einsatz bei Fehlern."""
         logger.info("Versuche, serielle Verbindung wiederherzustellen...")
         self._connect_serial()
+
+    def close_serial(self):
+        """Schließt die serielle Verbindung sicher."""
+        if self.ser_gps and self.ser_gps.is_open:
+            try:
+                self.ser_gps.close()
+                logger.info("Serielle GPS-Verbindung geschlossen.")
+            except Exception as e:
+                logger.error(f"Fehler beim Schließen der seriellen Verbindung: {e}")
+        self.ser_gps = None
 
     class RouteSimulator:
         def __init__(self, start_lat, start_lon, speed=0.00001, direction=0):
@@ -92,40 +107,75 @@ class GpsHandler:
                 self.lon_bounds[0] <= lon <= self.lon_bounds[1])
 
     def download_assist_now_data(self):
+        """Lädt AssistNow Offline Daten herunter."""
+        if not self.assist_now_token:
+            logger.error("AssistNow Token fehlt in der Konfiguration.")
+            return None
         try:
             headers = {"useragent": "Thingstream Client"}
             params = {
                 "token": self.assist_now_token,
-                "gnss": "gps",
-                "alm": "gps",
-                "days": 7,
-                "resolution": 1
+                "gnss": "gps",  # Nur GPS Daten anfordern (oder anpassen, falls andere Systeme unterstützt werden)
+                "datatype": "alm",  # Almanach Daten anfordern (oder 'eph' für Ephemeriden)
+                "days": 7,  # Gültigkeit der Daten (max. 14 für Offline)
+                # "resolution": 1 # Nicht für Offline relevant
             }
-            response = requests.get(self.assist_now_offline_url, headers=headers, params=params)
-            response.raise_for_status()
+            logger.info(
+                f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}...")
+            response = requests.get(self.assist_now_offline_url, headers=headers, params=params,
+                                    timeout=15)  # Timeout hinzufügen
+            response.raise_for_status()  # Löst HTTPError bei Fehlern aus
+
             if not response.content:
-                logger.warning("Keine AssistNow Offline-Daten erhalten.")
+                logger.warning("Keine AssistNow Offline-Daten erhalten (leere Antwort).")
                 return None
-            logger.info("AssistNow Offline-Daten erfolgreich heruntergeladen.")
+
+            # Prüfen, ob die Antwort Text enthält (Fehlermeldung von u-blox?)
+            try:
+                response_text = response.content.decode('utf-8', errors='ignore')
+                if "error" in response_text.lower() or "invalid token" in response_text.lower():
+                    logger.error(f"Fehler von AssistNow Service erhalten: {response_text}")
+                    return None
+            except UnicodeDecodeError:
+                # Das ist der erwartete Fall bei binären Daten
+                pass
+
+            logger.info(f"AssistNow Offline-Daten erfolgreich heruntergeladen ({len(response.content)} Bytes).")
             return response.content
+        except requests.exceptions.Timeout:
+            logger.error("Timeout beim Herunterladen der AssistNow Offline-Daten.")
+            return None
         except requests.exceptions.RequestException as e:
             logger.error(f"Fehler beim Herunterladen der AssistNow Offline-Daten: {e}")
             return None
+        except Exception as e:
+            logger.error(f"Unerwarteter Fehler beim AssistNow Download: {e}", exc_info=True)
+            return None
 
     def send_assist_now_data(self, data):
+        """Sendet die heruntergeladenen AssistNow Daten an das GPS-Modul."""
         if not self.ser_gps or not self.ser_gps.is_open:
             logger.warning("Kann AssistNow nicht senden: Serielle Verbindung nicht offen.")
-            return
+            return False  # Signalisiert Misserfolg
 
         try:
-            self.ser_gps.write(data)
-            logger.info("AssistNow Offline-Daten erfolgreich gesendet.")
+            bytes_written = self.ser_gps.write(data)
+            self.ser_gps.flush()  # Sicherstellen, dass Daten gesendet werden
+            logger.info(f"AssistNow Offline-Daten ({bytes_written} Bytes) erfolgreich gesendet.")
+            return True  # Signalisiert Erfolg
+        except serial.SerialTimeoutException:
+            logger.error("Timeout beim Senden der AssistNow Offline-Daten.")
+            self._reconnect_serial()  # Versuch, die Verbindung wiederherzustellen
+            return False
         except serial.SerialException as e:
             logger.error(f"Serieller Fehler beim Senden der AssistNow Offline-Daten: {e}")
             self._reconnect_serial()
+            return False
         except Exception as e:
-            logger.error(f"Fehler beim Senden der AssistNow Offline-Daten: {e}")
+            logger.error(f"Unerwarteter Fehler beim Senden der AssistNow Offline-Daten: {e}", exc_info=True)
+            return False
 
+    # --- NEUE/GEÄNDERTE get_gps_data ---
     def get_gps_data(self):
         """
         Liest und parst NMEA-Nachrichten. Versucht, innerhalb eines Timeouts einen GGA-Satz zu finden.
@@ -232,13 +282,25 @@ class GpsHandler:
                 sats = 0
                 # Extrahiere Qualität und Satellitenanzahl sicher
                 try:
-                    qual = int(getattr(gga_msg, 'gps_qual', 0))
+                    # Versuche, gps_qual zu lesen, Standardwert 0
+                    qual_str = getattr(gga_msg, 'gps_qual', '0')
+                    if qual_str:  # Nur konvertieren, wenn nicht leer
+                        qual = int(qual_str)
+                    else:
+                        qual = 0
                 except (ValueError, TypeError):
-                    logger.warning(f"Konnte gps_qual '{getattr(gga_msg, 'gps_qual', 'N/A')}' nicht in int konvertieren.")
+                    logger.warning(f"Konnte gps_qual '{qual_str}' nicht in int konvertieren.")
+                    qual = 0  # Fallback auf 0 bei Fehler
                 try:
-                    sats = int(getattr(gga_msg, 'num_sats', 0))
+                    # Versuche, num_sats zu lesen, Standardwert 0
+                    sats_str = getattr(gga_msg, 'num_sats', '0')
+                    if sats_str:  # Nur konvertieren, wenn nicht leer
+                        sats = int(sats_str)
+                    else:
+                        sats = 0
                 except (ValueError, TypeError):
-                    logger.warning(f"Konnte num_sats '{getattr(gga_msg, 'num_sats', 'N/A')}' nicht in int konvertieren.")
+                    logger.warning(f"Konnte num_sats '{sats_str}' nicht in int konvertieren.")
+                    sats = 0  # Fallback auf 0 bei Fehler
 
                 # Aktualisiere IMMER die letzten GGA-Statusinformationen
                 self.last_gga_info['qual'] = qual
@@ -250,22 +312,27 @@ class GpsHandler:
                     self.last_valid_fix_time = current_time
                     # Aktualisiere die letzte bekannte Position
                     try:
-                        # Stelle sicher, dass Lat/Lon gültige Floats sind
-                        lat = float(gga_msg.latitude)
-                        lon = float(gga_msg.longitude)
-                        self.last_known_position = {
-                            'lat': lat,
-                            'lon': lon,
-                            'timestamp': current_time,
-                            'satellites': sats,
-                            'mode': self.mode
-                        }
-                        logger.debug(f"Gültige GGA-Daten verarbeitet: Qual={qual}, Sats={sats}, Pos=({lat:.6f}, {lon:.6f})")
-                        return self.last_known_position  # Gib die gültige Position zurück
+                        # Stelle sicher, dass Lat/Lon gültige Floats sind und vorhanden
+                        if hasattr(gga_msg, 'latitude') and hasattr(gga_msg, 'longitude') and \
+                                gga_msg.latitude is not None and gga_msg.longitude is not None:
+                            lat = float(gga_msg.latitude)
+                            lon = float(gga_msg.longitude)
+                            self.last_known_position = {
+                                'lat': lat,
+                                'lon': lon,
+                                'timestamp': current_time,
+                                'satellites': sats,
+                                'mode': self.mode
+                            }
+                            logger.debug(
+                                f"Gültige GGA-Daten verarbeitet: Qual={qual}, Sats={sats}, Pos=({lat:.6f}, {lon:.6f})")
+                            return self.last_known_position  # Gib die gültige Position zurück
+                        else:
+                            logger.warning(f"GGA mit Qual={qual} hat keine gültigen Lat/Lon-Attribute: {gga_msg}")
+                            return None  # Obwohl Qual > 0, sind die Daten unbrauchbar
                     except (ValueError, TypeError, AttributeError) as e:
                         logger.error(f"Fehler beim Extrahieren von Lat/Lon aus GGA: {e} - GGA: {gga_msg}")
-                        # Obwohl Qual > 0, sind die Daten unbrauchbar
-                        return None
+                        return None  # Obwohl Qual > 0, sind die Daten unbrauchbar
                 else:
                     # Gültiger GGA, aber kein Fix. Gib keine Position zurück.
                     logger.debug(f"Letzter gelesener GGA hatte keinen gültigen Fix (Qual={qual}).")
@@ -293,8 +360,11 @@ class GpsHandler:
         logger.error("Unerwarteter Fall am Ende von get_gps_data erreicht.")
         return None
 
+    # --- ENDE get_gps_data ---
+
+    # --- GEÄNDERTE get_last_gga_status ---
     def get_last_gga_status(self):
-        """Gibt den letzten bekannten GPS-Status inkl. Position als String zurück."""
+        """Gibt den letzten bekannten GPS-Status inkl. Position und A-GPS Info als String zurück."""
         qual = self.last_gga_info.get('qual', 0)
         sats = self.last_gga_info.get('sats', 0)
         ts = self.last_gga_info.get('timestamp', 0)
@@ -311,10 +381,10 @@ class GpsHandler:
         lon_str = ""
         # Greife auf die zuletzt gespeicherte Position zu
         if self.last_known_position and 'lat' in self.last_known_position and 'lon' in self.last_known_position:
-             # Prüfe, ob die letzte Position aktuell genug ist (z.B. nicht älter als 15s)
-             # oder ob der aktuelle Fix-Status > 0 ist.
-             # Dies verhindert, dass eine alte Position bei "No Fix" angezeigt wird.
-             if qual > 0 or (time.time() - self.last_known_position.get('timestamp', 0) < 15):
+            # Prüfe, ob die letzte Position aktuell genug ist (z.B. nicht älter als 15s)
+            # oder ob der aktuelle Fix-Status > 0 ist.
+            # Dies verhindert, dass eine alte Position bei "No Fix" angezeigt wird.
+            if qual > 0 or (time.time() - self.last_known_position.get('timestamp', 0) < 15):
                 try:
                     # Formatieren mit fester Anzahl Nachkommastellen für Konsistenz
                     lat_str = f"{self.last_known_position['lat']:.8f}"
@@ -323,14 +393,31 @@ class GpsHandler:
                     logger.warning("Konnte letzte Position nicht formatieren.")
                     lat_str = ""
                     lon_str = ""
-
-        # Format: "status,<Beschreibung>,<Satelliten>,<Latitude>,<Longitude>"
-        # Latitude und Longitude sind leer, wenn keine (aktuelle) Position bekannt ist.
-        status_message = f"status,{fix_description},{sats},{lat_str},{lon_str}"
         # --- Ende Positions-Hinzufügung ---
+
+        # --- A-GPS Status hinzufügen ---
+        agps_status_str = ""
+        if self.assist_now_enabled:
+            time_since_agps_update = datetime.now() - self.last_assist_now_update
+            # Prüfen, ob das letzte Update erfolgreich war (könnte man noch detaillierter machen)
+            # Hier gehen wir davon aus, dass last_assist_now_update nur bei Erfolg gesetzt wird.
+            if time_since_agps_update < timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1):  # +1 Tag Puffer
+                hours_ago = time_since_agps_update.total_seconds() / 3600
+                agps_status_str = f",AGPS: OK ({hours_ago:.1f}h ago)"
+            else:
+                agps_status_str = ",AGPS: Stale"
+        else:
+            agps_status_str = ",AGPS: Off"  # Explizit anzeigen, wenn deaktiviert
+        # --- Ende A-GPS Status ---
+
+        # Format: "status,<Beschreibung>,<Satelliten>,<Latitude>,<Longitude><AGPS-Status>"
+        # Latitude und Longitude sind leer, wenn keine (aktuelle) Position bekannt ist.
+        status_message = f"status,{fix_description},{sats},{lat_str},{lon_str}{agps_status_str}"
 
         logger.debug(f"Generierter GPS Status String: {status_message} (Qual={qual}, Sats={sats}, TS={ts})")
         return status_message
+
+    # --- ENDE get_last_gga_status ---
 
     def generate_fake_data(self):
         lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
@@ -347,10 +434,17 @@ class GpsHandler:
 
     def generate_fake_route_data(self):
         if self.route_simulator:
-            if random.random() < 0.1:
+            if random.random() < 0.1:  # Zufällige Richtungsänderung
                 self.route_simulator.change_direction(random.randint(-30, 30))
 
             lat, lon = self.route_simulator.move()
+
+            # Stelle sicher, dass die Route innerhalb der Grenzen bleibt (optional)
+            # if not self.is_inside_boundaries(lat, lon):
+            #     # Kehre um oder ändere Richtung stark
+            #     self.route_simulator.change_direction(180 + random.randint(-10, 10))
+            #     lat, lon = self.route_simulator.move() # Mache einen Schritt zurück
+
             fake_pos = {
                 'lat': lat,
                 'lon': lon,
@@ -363,55 +457,92 @@ class GpsHandler:
             return fake_pos
         else:
             logger.warning("Routenmodus aktiv, aber kein Routensimulator initialisiert.")
-            return self.generate_fake_data() # Fallback
+            return self.generate_fake_data()  # Fallback
 
     def check_assist_now(self):
-        if self.assist_now_enabled and datetime.now() - self.last_assist_now_update >= timedelta(days=1):
-            logger.info("Prüfe auf AssistNow Offline Update...")
+        """Prüft, ob AssistNow Daten aktualisiert werden müssen und führt dies ggf. durch."""
+        # Prüfe nur im Real-Modus und wenn aktiviert
+        if self.mode != "real" or not self.assist_now_enabled:
+            return True  # Nichts zu tun
+
+        # Prüfe, ob das Update-Intervall abgelaufen ist
+        update_interval_days = ASSIST_NOW_CONFIG.get("days", 7) - 1  # Update 1 Tag vor Ablauf
+        if datetime.now() - self.last_assist_now_update >= timedelta(days=update_interval_days):
+            logger.info(
+                f"AssistNow Offline Update erforderlich (letztes Update: {self.last_assist_now_update}, Intervall: {update_interval_days} Tage).")
             data = self.download_assist_now_data()
             if data is not None:
-                self.send_assist_now_data(data)
-                self.last_assist_now_update = datetime.now()
-                logger.info("AssistNow Offline Update erfolgreich durchgeführt.")
+                if self.send_assist_now_data(data):
+                    self.last_assist_now_update = datetime.now()  # Nur bei Erfolg aktualisieren
+                    logger.info("AssistNow Offline Update erfolgreich durchgeführt.")
+                    return True
+                else:
+                    logger.error("AssistNow Offline-Daten konnten nicht an das Modul gesendet werden.")
+                    # Optional: Kurze Pause vor nächstem Versuch in der Hauptschleife
+                    # time.sleep(5)
+                    return False  # Signalisiert Fehler
             else:
-                logger.error("AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in 2 Sekunden.")
-                time.sleep(2)
-                return False
-        return True
+                logger.error("AssistNow Offline-Daten konnten nicht heruntergeladen werden.")
+                # Optional: Kurze Pause vor nächstem Versuch in der Hauptschleife
+                # time.sleep(5)
+                return False  # Signalisiert Fehler
+        else:
+            logger.debug(f"Kein AssistNow Update erforderlich (letztes Update: {self.last_assist_now_update}).")
+            return True  # Kein Update nötig
 
     def change_gps_mode(self, new_mode):
+        """Ändert den Betriebsmodus des GPS-Handlers (real, fake_random, fake_route)."""
         if new_mode == self.mode:
             logger.info(f"GPS-Modus ist bereits '{new_mode}'. Keine Änderung.")
             return True
 
         logger.info(f"Ändere GPS-Modus von '{self.mode}' zu: {new_mode}")
+        previous_mode = self.mode
+        self.mode = new_mode  # Setze den Modus sofort
+
         if new_mode == "fake_route":
-            self.mode = "fake_route"
             self.is_fake_gps = True
             start_lat, start_lon = self.map_center
-            if not self.route_simulator:
+            # Initialisiere Simulator, falls nicht vorhanden oder wenn von 'real' gewechselt wird
+            if not self.route_simulator or previous_mode == "real":
+                # Verwende letzte bekannte Position als Start, falls vorhanden und gültig
+                if self.last_known_position and 'lat' in self.last_known_position:
+                    start_lat = self.last_known_position['lat']
+                    start_lon = self.last_known_position['lon']
+                    logger.info(
+                        f"Starte Routensimulator von letzter bekannter Position ({start_lat:.6f}, {start_lon:.6f}).")
+                else:
+                    logger.info(f"Starte Routensimulator von Kartenmitte ({start_lat:.6f}, {start_lon:.6f}).")
                 self.route_simulator = GpsHandler.RouteSimulator(start_lat, start_lon, direction=random.randint(0, 360))
-            if self.ser_gps and self.ser_gps.is_open:
-                self.ser_gps.close()
-                self.ser_gps = None
-                logger.info("Serielle Verbindung für Fake-Modus geschlossen.")
+
+            # Schließe serielle Verbindung, wenn sie offen war
+            self.close_serial()
+            logger.info("Serielle Verbindung für Fake-Modus geschlossen (falls offen).")
+            # Setze Status auf Simulation
+            self.last_gga_info = {'qual': 8, 'sats': 8, 'timestamp': time.time()}
+
         elif new_mode == "fake_random":
-            self.mode = "fake_random"
             self.is_fake_gps = True
-            self.route_simulator = None
-            if self.ser_gps and self.ser_gps.is_open:
-                self.ser_gps.close()
-                self.ser_gps = None
-                logger.info("Serielle Verbindung für Fake-Modus geschlossen.")
+            self.route_simulator = None  # Deaktiviere Routensimulator
+            # Schließe serielle Verbindung, wenn sie offen war
+            self.close_serial()
+            logger.info("Serielle Verbindung für Fake-Modus geschlossen (falls offen).")
+            # Setze Status auf Simulation
+            self.last_gga_info = {'qual': 8, 'sats': 8, 'timestamp': time.time()}
+
         elif new_mode == "real":
-            self.mode = "real"
             self.is_fake_gps = False
-            self.route_simulator = None
+            self.route_simulator = None  # Deaktiviere Routensimulator
+            # Stelle serielle Verbindung her (oder versuche es)
             self._connect_serial()
+            # Status wird durch _connect_serial gesetzt (Connecting oder No Fix)
+
         else:
             logger.warning(f"Ungültiger GPS-Modus angefordert: {new_mode}")
+            self.mode = previous_mode  # Setze Modus zurück
             return False
 
-        # Reset last_known_position beim Moduswechsel? Optional.
+        # Reset last_known_position beim Moduswechsel? Optional, aber vielleicht sinnvoll.
         # self.last_known_position = None
+        logger.info(f"GPS-Modus erfolgreich auf '{self.mode}' geändert.")
         return True
