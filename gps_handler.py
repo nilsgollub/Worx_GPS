@@ -128,19 +128,26 @@ class GpsHandler:
 
     def get_gps_data(self):
         """
-        Liest und parst eine NMEA-Nachricht. Gibt Positionsdaten nur bei gültigem Fix zurück.
-        Aktualisiert IMMER self.last_gga_info und self.last_known_position.
+        Liest und parst NMEA-Nachrichten. Versucht, innerhalb eines Timeouts einen GGA-Satz zu finden.
+        Gibt Positionsdaten nur bei gültigem Fix zurück.
+        Aktualisiert IMMER self.last_gga_info und self.last_known_position (bei gültigem Fix).
         """
         # --- Fake-Modi ---
         if self.mode == "fake_random":
             fake_pos = self.generate_fake_data()
-            self.last_gga_info = {'qual': 1, 'sats': fake_pos.get('satellites', 0), 'timestamp': fake_pos.get('timestamp', time.time())}
-            self.last_known_position = fake_pos # Wichtig: Auch im Fake-Modus setzen
+            # Aktualisiere Statusinformationen auch im Fake-Modus
+            self.last_gga_info = {'qual': 1, 'sats': fake_pos.get('satellites', 8),
+                                  'timestamp': fake_pos.get('timestamp', time.time())}
+            self.last_known_position = fake_pos  # Wichtig: Auch im Fake-Modus setzen
+            logger.debug(f"Fake Random Data: {fake_pos}")
             return fake_pos
         elif self.mode == "fake_route":
             fake_pos = self.generate_fake_route_data()
-            self.last_gga_info = {'qual': 1, 'sats': fake_pos.get('satellites', 0), 'timestamp': fake_pos.get('timestamp', time.time())}
-            self.last_known_position = fake_pos # Wichtig: Auch im Fake-Modus setzen
+            # Aktualisiere Statusinformationen auch im Fake-Modus
+            self.last_gga_info = {'qual': 1, 'sats': fake_pos.get('satellites', 8),
+                                  'timestamp': fake_pos.get('timestamp', time.time())}
+            self.last_known_position = fake_pos  # Wichtig: Auch im Fake-Modus setzen
+            logger.debug(f"Fake Route Data: {fake_pos}")
             return fake_pos
 
         # --- Real-Modus ---
@@ -148,79 +155,142 @@ class GpsHandler:
             if not self.ser_gps or not self.ser_gps.is_open:
                 logger.warning("Serielle GPS-Verbindung nicht offen.")
                 self._reconnect_serial()
+                # Setze Status auf "Connecting" wenn Verbindung versucht wird
+                if self.last_gga_info.get('qual') != -1:
+                    self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
                 return None
 
-            try:
-                line_bytes = self.ser_gps.readline()
-                if not line_bytes:
-                    logger.debug("Keine Daten von serieller Schnittstelle gelesen (Timeout?).")
-                    if time.time() - self.last_gga_info.get('timestamp', 0) > 15:
-                        if self.last_gga_info.get('qual') != -1:
-                            self.last_gga_info['qual'] = -2
-                            self.last_gga_info['sats'] = 0
-                    return None
-                line = line_bytes.decode('utf-8', errors='ignore').strip()
+            # --- Versuch, mehrere Zeilen zu lesen ---
+            start_time = time.monotonic()
+            # Timeout etwas kürzer als der Serial-Timeout, um Blockaden zu vermeiden
+            # und der Hauptschleife Zeit zu geben.
+            read_timeout = 0.9  # Sekunden
+            gga_msg = None  # Variable für die zuletzt gefundene GGA-Nachricht
 
-                if line.startswith('$'):
-                    try:
-                        msg = pynmea2.parse(line)
-                        if isinstance(msg, pynmea2.types.talker.GGA):
-                            current_time = time.time()
-                            qual = 0
-                            sats = 0
-                            try:
-                                qual = int(getattr(msg, 'gps_qual', 0))
-                            except (ValueError, TypeError):
-                                logger.warning(f"Konnte gps_qual '{getattr(msg, 'gps_qual', 'N/A')}' nicht in int konvertieren.")
-                            try:
-                                sats = int(getattr(msg, 'num_sats', 0))
-                            except (ValueError, TypeError):
-                                logger.warning(f"Konnte num_sats '{getattr(msg, 'num_sats', 'N/A')}' nicht in int konvertieren.")
+            while time.monotonic() - start_time < read_timeout:
+                try:
+                    # Lese eine Zeile von der seriellen Schnittstelle
+                    line_bytes = self.ser_gps.readline()
 
-                            self.last_gga_info['qual'] = qual
-                            self.last_gga_info['sats'] = sats
-                            self.last_gga_info['timestamp'] = current_time
+                    # Wenn nichts gelesen wurde (Timeout der readline-Funktion)
+                    if not line_bytes:
+                        logger.debug("Keine Daten von serieller Schnittstelle gelesen (readline Timeout).")
+                        # Kurze Pause, um CPU zu schonen, wenn ständig nichts kommt
+                        time.sleep(0.05)
+                        continue  # Nächste Lese-Iteration
 
-                            if qual > 0:
-                                self.last_valid_fix_time = current_time
-                                # --- last_known_position IMMER aktualisieren, wenn Fix vorhanden ---
-                                self.last_known_position = {
-                                    'lat': msg.latitude,
-                                    'lon': msg.longitude,
-                                    'timestamp': current_time,
-                                    'satellites': sats,
-                                    'mode': self.mode
-                                }
-                                logger.debug(f"Gültige GGA-Daten empfangen: {self.last_known_position}")
-                                return self.last_known_position # Gib Position zurück
+                    # Dekodiere die Zeile
+                    line = line_bytes.decode('utf-8', errors='ignore').strip()
+                    logger.debug(f"Serielle Zeile empfangen: '{line[:80]}...'")  # Logge empfangene Zeile (gekürzt)
+
+                    # Verarbeite nur NMEA-Sätze (beginnen mit '$')
+                    if line.startswith('$'):
+                        try:
+                            # Parse die NMEA-Nachricht
+                            msg = pynmea2.parse(line)
+
+                            # Prüfen, ob es ein GGA-Satz ist
+                            if isinstance(msg, pynmea2.types.talker.GGA):
+                                gga_msg = msg  # Merke den letzten gefundenen GGA-Satz
+                                logger.debug(
+                                    f"GGA gefunden: Qual={getattr(msg, 'gps_qual', 'N/A')}, Sats={getattr(msg, 'num_sats', 'N/A')}")
+                                # Optional: break, wenn man den *ersten* GGA will
+                                # break
+                                # Aktuell: Lese weiter bis Timeout, um den *letzten* GGA zu bekommen
                             else:
-                                # Kein Fix, aber GGA empfangen. last_known_position nicht ändern.
-                                logger.debug(f"GGA empfangen, aber kein gültiger Fix (Qual={qual}).")
-                                return None # Keine gültige Position zurückgeben
-                        else:
-                            logger.debug(f"Andere NMEA-Nachricht empfangen: {msg.sentence_type}")
-                            return None
-                    except pynmea2.ParseError as e:
-                        logger.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
-                        return None
-                    except AttributeError as e:
-                        logger.error(f"Attributfehler beim Verarbeiten der NMEA-Nachricht: {e} - Nachricht: {msg}")
+                                logger.debug(f"Andere NMEA-Nachricht empfangen: {msg.sentence_type}")
+
+                        except pynmea2.ParseError as e:
+                            logger.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
+                        except AttributeError as e:
+                            # Fängt Fehler ab, wenn pynmea2 ein unerwartetes Format parst
+                            logger.error(f"Attributfehler beim Verarbeiten der NMEA-Nachricht: {e} - Zeile: '{line}'")
+                        # --- Ende inneres Try/Except für Pynmea2 ---
+                    else:
+                        # Ignoriere Zeilen, die keine NMEA-Sätze sind
+                        if line:  # Nur loggen, wenn die Zeile nicht leer ist
+                            logger.debug(f"Ignoriere Zeile ohne '$': '{line[:50]}...'")
+
+                except serial.SerialException as e:
+                    logger.error(f"Serieller Fehler beim Lesen von GPS: {e}")
+                    self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}  # Status: Verbindungsfehler
+                    self._reconnect_serial()
+                    return None  # Bei seriellem Fehler abbrechen
+                except UnicodeDecodeError as e:
+                    logger.warning(f"Fehler beim Dekodieren der seriellen Daten: {e}")
+                    # Hier nicht unbedingt abbrechen, vielleicht ist die nächste Zeile ok
+                except Exception as e:
+                    logger.error(f"Unerwarteter Fehler in get_gps_data Leseschleife: {e}", exc_info=True)
+                    # Bei unerwartetem Fehler ist es sicherer, None zurückzugeben
+                    return None
+            # --- Ende while-Schleife (Lese-Timeout erreicht) ---
+
+            # --- Verarbeitung des zuletzt gefundenen GGA-Satzes (falls vorhanden) ---
+            if gga_msg:
+                current_time = time.time()
+                qual = 0
+                sats = 0
+                # Extrahiere Qualität und Satellitenanzahl sicher
+                try:
+                    qual = int(getattr(gga_msg, 'gps_qual', 0))
+                except (ValueError, TypeError):
+                    logger.warning(f"Konnte gps_qual '{getattr(gga_msg, 'gps_qual', 'N/A')}' nicht in int konvertieren.")
+                try:
+                    sats = int(getattr(gga_msg, 'num_sats', 0))
+                except (ValueError, TypeError):
+                    logger.warning(f"Konnte num_sats '{getattr(gga_msg, 'num_sats', 'N/A')}' nicht in int konvertieren.")
+
+                # Aktualisiere IMMER die letzten GGA-Statusinformationen
+                self.last_gga_info['qual'] = qual
+                self.last_gga_info['sats'] = sats
+                self.last_gga_info['timestamp'] = current_time
+
+                # Prüfe, ob der Fix gültig ist (Qualität > 0)
+                if qual > 0:
+                    self.last_valid_fix_time = current_time
+                    # Aktualisiere die letzte bekannte Position
+                    try:
+                        # Stelle sicher, dass Lat/Lon gültige Floats sind
+                        lat = float(gga_msg.latitude)
+                        lon = float(gga_msg.longitude)
+                        self.last_known_position = {
+                            'lat': lat,
+                            'lon': lon,
+                            'timestamp': current_time,
+                            'satellites': sats,
+                            'mode': self.mode
+                        }
+                        logger.debug(f"Gültige GGA-Daten verarbeitet: Qual={qual}, Sats={sats}, Pos=({lat:.6f}, {lon:.6f})")
+                        return self.last_known_position  # Gib die gültige Position zurück
+                    except (ValueError, TypeError, AttributeError) as e:
+                        logger.error(f"Fehler beim Extrahieren von Lat/Lon aus GGA: {e} - GGA: {gga_msg}")
+                        # Obwohl Qual > 0, sind die Daten unbrauchbar
                         return None
                 else:
-                    logger.debug(f"Ignoriere Zeile ohne '$': '{line[:50]}...'")
+                    # Gültiger GGA, aber kein Fix. Gib keine Position zurück.
+                    logger.debug(f"Letzter gelesener GGA hatte keinen gültigen Fix (Qual={qual}).")
+                    # last_known_position NICHT ändern, behalte die letzte gültige.
                     return None
-            except serial.SerialException as e:
-                logger.error(f"Serieller Fehler beim Lesen von GPS: {e}")
-                self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
-                self._reconnect_serial()
+            else:
+                # Kein GGA-Satz im Lesezeitfenster gefunden
+                logger.debug("Kein GGA-Satz im Lesezeitfenster gefunden.")
+                # Prüfen, ob seit dem letzten *irgendeinem* GGA-Empfang (auch ohne Fix)
+                # oder seit dem letzten Versuch, die Verbindung herzustellen, zu viel Zeit vergangen ist.
+                # Wenn ja, markiere den Status als "No Signal".
+                time_since_last_info = time.time() - self.last_gga_info.get('timestamp', 0)
+                if time_since_last_info > 15:  # z.B. 15 Sekunden ohne jegliche GGA-Info
+                    # Nur ändern, wenn der Status nicht schon "Connecting" oder "No Signal" ist
+                    if self.last_gga_info.get('qual') not in [-1, -2]:
+                        logger.warning(
+                            f"Seit {time_since_last_info:.1f}s keine GGA-Info mehr. Setze Status auf 'No Signal'.")
+                        self.last_gga_info['qual'] = -2  # Markiere als "No Signal"
+                        self.last_gga_info['sats'] = 0
+                        # Timestamp hier NICHT aktualisieren, damit der Timeout weiterhin greift
                 return None
-            except UnicodeDecodeError as e:
-                logger.warning(f"Fehler beim Dekodieren der seriellen Daten: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"Unerwarteter Fehler in get_gps_data: {e}", exc_info=True)
-                return None
-        # Fallback
+            # --- Ende Verarbeitung ---
+
+        # Fallback (sollte eigentlich nicht erreicht werden)
+        logger.error("Unerwarteter Fall am Ende von get_gps_data erreicht.")
         return None
 
     def get_last_gga_status(self):
