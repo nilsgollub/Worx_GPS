@@ -77,7 +77,7 @@ REC_CONFIG = {
     # --- Korrektur: Logik für Boolean ---
     # "True" (case-insensitive) -> True, alles andere -> False
     "test_mode": os.getenv("TEST_MODE", "False").lower() == "true",
-    "storage_interval": 2, # Speicherintervall in Sekunden
+    "storage_interval": 1, # Speicherintervall in Sekunden
     "debug_logging": False  # Setze hier True oder False
 
 
