@@ -6,27 +6,43 @@ import logging
 from pathlib import Path
 from config import GEO_CONFIG, HEATMAP_CONFIG
 import io
-# Importiere Selenium und verwandte Bibliotheken, falls noch nicht geschehen
+import platform  # Importieren
+import os  # Importieren
+import shutil  # Importieren für shutil.which
+
+# Importiere Selenium und verwandte Bibliotheken
 try:
     from selenium import webdriver
-    from selenium.webdriver.firefox.options import Options as FirefoxOptions
-    # from selenium.webdriver.chrome.options import Options as ChromeOptions # Alternative für Chrome
+    # --- Verwende Chrome ---
+    from selenium.webdriver.chrome.options import Options as ChromeOptions
+    from selenium.webdriver.chrome.service import Service as ChromeService
+    # --- ENDE ---
     from PIL import Image
     import time
+
     SELENIUM_AVAILABLE = True
+    # Importiere webdriver-manager, falls vorhanden (für Windows/Fallback)
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+    except ImportError:
+        ChromeDriverManager = None
+        logging.info(
+            "webdriver-manager nicht gefunden. Automatische Treiberinstallation für Chrome deaktiviert (außerhalb von Pi).")
+
 except ImportError:
     SELENIUM_AVAILABLE = False
-    logging.warning("Selenium oder Pillow nicht installiert. PNG-Export ist nicht verfügbar.")
+    logging.warning("Selenium, Pillow oder webdriver-manager nicht installiert. PNG-Export ist nicht verfügbar.")
     logging.warning("Installieren mit: pip install selenium pillow webdriver-manager")
 
-
 logger = logging.getLogger(__name__)
+
 
 class HeatmapGenerator:
     """
     Erstellt und verwaltet Heatmaps basierend auf GPS-Daten.
     Kann interaktive HTML-Heatmaps und statische PNG-Bilder generieren.
     """
+
     def __init__(self, heatmaps_base_dir="heatmaps"):
         """
         Initialisiert den HeatmapGenerator.
@@ -41,7 +57,6 @@ class HeatmapGenerator:
         if not SELENIUM_AVAILABLE:
             logger.warning("PNG-Generierung ist aufgrund fehlender Bibliotheken deaktiviert.")
 
-
     def create_heatmap(self, data, html_file, draw_path, is_multi_session=False):
         """
         Erstellt eine interaktive Heatmap (HTML).
@@ -55,10 +70,7 @@ class HeatmapGenerator:
             is_multi_session (bool): Gibt an, ob 'data' eine Liste von Sessions ist.
         """
         initial_zoom = GEO_CONFIG.get("zoom_start", 22)
-        # Maximalen Zoom definieren
-        # Google Satellite unterstützt oft bis 21 oder 22, OSM bis 19.
-        # Wir wählen hier 21 als oberen Grenzwert.
-        max_zoom_level = GEO_CONFIG.get("max_zoom", 22) # Hole aus Config oder nimm Default 21
+        max_zoom_level = GEO_CONFIG.get("max_zoom", 22)  # Hole aus Config oder nimm Default 22
 
         google_tiles_url = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
         google_attr = 'Google Satellite'
@@ -69,7 +81,6 @@ class HeatmapGenerator:
             tiles=google_tiles_url,
             attr=google_attr,
             control_scale=True,  # Maßstab hinzufügen
-            # max_zoom Parameter hinzufügen
             max_zoom=max_zoom_level
         )
         osm_attr = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -79,8 +90,6 @@ class HeatmapGenerator:
             name='OpenStreetMap',
             overlay=False,  # Basiskarte, nicht Overlay
             control=True,
-            # Optional: max_zoom für OSM explizit setzen (z.B. 19)
-            # max_zoom=19
         ).add_to(map_obj)
 
         all_points_for_bounds = []  # Sammelt alle Punkte für die Kartengrenzen
@@ -90,7 +99,6 @@ class HeatmapGenerator:
             for idx, session_data in enumerate(reversed(data)):
                 session_index = len(data) - 1 - idx
                 layer_name = f"Mähvorgang -{idx + 1}"
-                # Nur neueste Session standardmäßig anzeigen (idx == 0 nach Umkehrung)
                 feature_group = folium.FeatureGroup(name=layer_name, show=(idx == 0))
 
                 session_points = []
@@ -107,10 +115,9 @@ class HeatmapGenerator:
 
                 if session_points:
                     all_points_for_bounds.extend(session_points)
-                    # Finde Radius/Blur dynamisch basierend auf dem Dateinamen
                     config_key = self._find_config_key_by_output(html_file)
-                    radius = HEATMAP_CONFIG.get(config_key, {}).get("radius", 3) # Default-Werte angepasst
-                    blur = HEATMAP_CONFIG.get(config_key, {}).get("blur", 3)   # Default-Werte angepasst
+                    radius = HEATMAP_CONFIG.get(config_key, {}).get("radius", 3)
+                    blur = HEATMAP_CONFIG.get(config_key, {}).get("blur", 3)
 
                     plugins.HeatMap(session_points, radius=radius, blur=blur).add_to(feature_group)
 
@@ -139,13 +146,14 @@ class HeatmapGenerator:
             if single_session_points:
                 all_points_for_bounds = single_session_points
                 config_key = self._find_config_key_by_output(html_file)
-                radius = HEATMAP_CONFIG.get(config_key, {}).get("radius", 3) # Default-Werte angepasst
-                blur = HEATMAP_CONFIG.get(config_key, {}).get("blur", 3)   # Default-Werte angepasst
+                radius = HEATMAP_CONFIG.get(config_key, {}).get("radius", 3)
+                blur = HEATMAP_CONFIG.get(config_key, {}).get("blur", 3)
 
                 plugins.HeatMap(single_session_points, radius=radius, blur=blur, name="Heatmap").add_to(map_obj)
 
                 if draw_path and len(single_path_points) > 1:
-                    folium.PolyLine(single_path_points, color="blue", weight=1.0, opacity=1, name="Pfad").add_to(map_obj)
+                    folium.PolyLine(single_path_points, color="blue", weight=1.0, opacity=1, name="Pfad").add_to(
+                        map_obj)
             else:
                 logger.warning(f"Keine gültigen Punkte zum Erstellen der Heatmap {html_file} gefunden.")
         else:
@@ -170,33 +178,27 @@ class HeatmapGenerator:
                         [min_lat - lat_margin, min_lon - lon_margin],
                         [max_lat + lat_margin, max_lon + lon_margin]
                     ]
-                    # max_zoom auch bei fit_bounds übergeben
                     map_obj.fit_bounds(bounds, max_zoom=max_zoom_level)
                     logger.debug(f"Kartenausschnitt für {html_file} angepasst an Grenzen: {bounds}")
-                else: # Nur ein Punkt oder alle Punkte identisch
+                else:  # Nur ein Punkt oder alle Punkte identisch
                     map_obj.location = [min_lat, min_lon]
-                    # Stelle sicher, dass der Zoom nicht über max_zoom geht
-                    # Nehme einen hohen Zoom (z.B. 18), aber nicht höher als max_zoom_level
                     map_obj.zoom_start = min(max(initial_zoom, 22), max_zoom_level)
                     logger.debug(
                         f"Nur ein Punkt oder identische Punkte in {html_file}, zentriere Karte auf {map_obj.location} mit Zoom {map_obj.zoom_start}")
 
             except Exception as fit_err:
-                logger.error(f"Fehler beim Anpassen des Kartenausschnitts (fit_bounds) für {html_file}: {fit_err}", exc_info=True)
+                logger.error(f"Fehler beim Anpassen des Kartenausschnitts (fit_bounds) für {html_file}: {fit_err}",
+                             exc_info=True)
         else:
-            logger.warning(f"Keine Punkte für Bounds-Anpassung in {html_file} vorhanden. Verwende Standardzentrum und -zoom.")
-            # Verwende die konfigurierten Standardwerte, falls fit_bounds nicht möglich ist
+            logger.warning(
+                f"Keine Punkte für Bounds-Anpassung in {html_file} vorhanden. Verwende Standardzentrum und -zoom.")
             map_obj.location = self.map_center
             map_obj.zoom_start = initial_zoom
 
-
-        # LayerControl hinzufügen (erst nachdem alle Layer hinzugefügt wurden)
-        # collapsed=False zeigt die Ebenensteuerung standardmäßig offen an
         folium.LayerControl(collapsed=False).add_to(map_obj)
 
         # Speichern der HTML-Datei
         try:
-            # Stelle sicher, dass html_file nur der Dateiname ist
             html_path = self.heatmaps_dir / Path(html_file).name
             map_obj.save(str(html_path))
             logger.info(f"Interaktive Heatmap erstellt: {html_path}")
@@ -205,7 +207,7 @@ class HeatmapGenerator:
 
     def _find_config_key_by_output(self, output_filename):
         """Hilfsmethode, um den HEATMAP_CONFIG-Schlüssel anhand des Ausgabedateinamens zu finden."""
-        output_path = Path(output_filename).name # Nur den Dateinamen vergleichen
+        output_path = Path(output_filename).name  # Nur den Dateinamen vergleichen
         for key, config_val in HEATMAP_CONFIG.items():
             if isinstance(config_val, dict):
                 # Vergleiche HTML- oder PNG-Ausgabe
@@ -213,19 +215,18 @@ class HeatmapGenerator:
                         Path(config_val.get("png_output", "")).name == output_path:
                     return key
         logger.warning(f"Kein Konfigurationsschlüssel für Ausgabedatei '{output_filename}' gefunden.")
-        return None # Kein Schlüssel gefunden
+        return None  # Kein Schlüssel gefunden
 
-    def save_html_as_png(self, data, draw_path, png_file, config_key_hint=None, is_multi_session_data=False, width=1024, height=768, delay=5):
+    def save_html_as_png(self, data, draw_path, png_file, config_key_hint=None, is_multi_session_data=False, width=1024,
+                         height=768, delay=5):
         """
-        Erstellt eine PNG-Version einer Heatmap, indem eine temporäre HTML-Datei
-        mit Selenium gerendert und ein Screenshot gemacht wird.
+        Erstellt eine PNG-Version einer Heatmap mit Selenium und Chrome/ChromeDriver.
 
         Args:
             data (list): Datenpunkte (flach oder Liste von Listen).
             draw_path (bool): Ob der Pfad gezeichnet werden soll.
             png_file (str): Der Zieldateiname für die PNG-Datei (relativ zum heatmaps_dir).
-            config_key_hint (str, optional): Ein Hinweis auf den HEATMAP_CONFIG-Schlüssel,
-                                             um Radius/Blur zu bestimmen.
+            config_key_hint (str, optional): Ein Hinweis auf den HEATMAP_CONFIG-Schlüssel.
             is_multi_session_data (bool): Gibt an, ob 'data' eine Liste von Sessions ist.
             width (int): Breite des Browserfensters für den Screenshot.
             height (int): Höhe des Browserfensters für den Screenshot.
@@ -235,16 +236,13 @@ class HeatmapGenerator:
             logger.error("PNG-Export nicht möglich. Selenium/Pillow fehlt.")
             return
 
-        # Temporäre HTML-Datei erstellen (nur für PNG-Generierung)
-        # Verwende nur den Dateinamen für die temporäre Datei
         temp_html_path = self.heatmaps_dir / f"temp_{Path(png_file).stem}.html"
 
         try:
-            # Erstelle die Karte für PNG (ggf. mit anderen Einstellungen als die interaktive)
-            # Wähle einen geeigneten Zoom und Mittelpunkt für das PNG
+            # --- Erstelle temporäre Karte für PNG ---
             initial_zoom_png = GEO_CONFIG.get("zoom_start", 22)
             max_zoom_level_png = GEO_CONFIG.get("max_zoom", 22)
-            google_tiles_url = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}' # Satellit für PNG
+            google_tiles_url = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'  # Satellit für PNG
             google_attr = 'Google Satellite'
 
             png_map_obj = folium.Map(
@@ -252,122 +250,173 @@ class HeatmapGenerator:
                 zoom_start=initial_zoom_png,
                 tiles=google_tiles_url,
                 attr=google_attr,
-                control_scale=False, # Maßstab im PNG oft nicht nötig
+                control_scale=False,  # Maßstab im PNG oft nicht nötig
                 zoom_control=False,  # Zoomsteuerung im PNG nicht nötig
                 max_zoom=max_zoom_level_png
             )
 
-            # Datenpunkte für PNG vorbereiten (immer als flache Liste für eine einzelne Heatmap-Schicht)
+            # --- Datenpunkte für PNG vorbereiten (immer flach) ---
             all_points_for_png = []
             path_points_for_png = []
 
             if is_multi_session_data and isinstance(data, list) and data and isinstance(data[0], list):
-                # Nimm alle Punkte aus allen Sessions für eine kumulative Ansicht im PNG
                 for session in data:
                     for point in session:
                         try:
                             lat, lon = float(point['lat']), float(point['lon'])
                             all_points_for_png.append([lat, lon])
-                            if draw_path: # Hier Pfad als eine Linie für alle Sessions zeichnen? Oder gar nicht?
-                                path_points_for_png.append([lat, lon]) # Optional: Pfad für PNG
+                            if draw_path: path_points_for_png.append([lat, lon])
                         except (ValueError, KeyError, TypeError):
                             continue
             elif isinstance(data, list):
-                # Normale, einzelne Session/Datenmenge
                 for point in data:
                     try:
                         lat, lon = float(point['lat']), float(point['lon'])
                         all_points_for_png.append([lat, lon])
-                        if draw_path:
-                            path_points_for_png.append([lat, lon])
+                        if draw_path: path_points_for_png.append([lat, lon])
                     except (ValueError, KeyError, TypeError):
                         continue
 
             if all_points_for_png:
-                # Radius/Blur für PNG bestimmen (aus Config oder Default)
+                # --- Radius/Blur bestimmen ---
                 config_key = config_key_hint or self._find_config_key_by_output(png_file)
                 radius = HEATMAP_CONFIG.get(config_key, {}).get("radius", 3)
                 blur = HEATMAP_CONFIG.get(config_key, {}).get("blur", 3)
-
                 plugins.HeatMap(all_points_for_png, radius=radius, blur=blur).add_to(png_map_obj)
-
-                # Optional: Pfad im PNG zeichnen
                 if draw_path and len(path_points_for_png) > 1:
                     folium.PolyLine(path_points_for_png, color="blue", weight=1.0, opacity=0.8).add_to(png_map_obj)
 
-
-                # Kartenausschnitt anpassen
+                # --- Kartenausschnitt anpassen ---
                 try:
                     points_array = np.array(all_points_for_png)
                     min_lat, max_lat = points_array[:, 0].min(), points_array[:, 0].max()
                     min_lon, max_lon = points_array[:, 1].min(), points_array[:, 1].max()
                     if min_lat < max_lat or min_lon < max_lon:
                         bounds = [[min_lat, min_lon], [max_lat, max_lon]]
-                        png_map_obj.fit_bounds(bounds, max_zoom=max_zoom_level_png) # max_zoom auch hier
+                        png_map_obj.fit_bounds(bounds, max_zoom=max_zoom_level_png)
                     else:
                         png_map_obj.location = [min_lat, min_lon]
                         png_map_obj.zoom_start = min(max(initial_zoom_png, 22), max_zoom_level_png)
-
                 except Exception as fit_err:
-                    logger.warning(f"Fehler beim Anpassen des PNG-Kartenausschnitts für {png_file}: {fit_err}. Verwende Standard.")
-                    # Fallback auf Standard, falls fit_bounds fehlschlägt
+                    logger.warning(
+                        f"Fehler beim Anpassen des PNG-Kartenausschnitts für {png_file}: {fit_err}. Verwende Standard.")
                     png_map_obj.location = self.map_center
                     png_map_obj.zoom_start = initial_zoom_png
-
-
             else:
                 logger.warning(f"Keine Daten zum Generieren der PNG-Datei {png_file}.")
-                # Speichere leere Karte oder tue nichts? Hier: nichts tun.
-                # png_map_obj.save(str(temp_html_path)) # Speichern, um leeres PNG zu erzeugen?
+                # Hier entscheiden, ob eine leere Karte gespeichert werden soll
 
             # Speichere die temporäre HTML für Selenium
             png_map_obj.save(str(temp_html_path))
 
-            # --- Selenium Screenshot ---
-            # WebDriver Optionen (headless)
-            options = FirefoxOptions()
-            # options = ChromeOptions() # Für Chrome
+            # --- Selenium Screenshot mit Chrome ---
+            options = ChromeOptions()
             options.add_argument("--headless")
-            options.add_argument(f"--width={width}")
-            options.add_argument(f"--height={height}")
-            options.add_argument("--hide-scrollbars") # Verstecke Scrollbalken
+            options.add_argument("--disable-gpu")  # Oft nötig im headless mode
+            options.add_argument("--no-sandbox")  # Wichtig für Linux/Docker
+            options.add_argument("--disable-dev-shm-usage")  # Wichtig für Linux/Docker
+            options.add_argument(f"--window-size={width},{height}")  # Fenstergröße setzen
 
             driver = None
-            try:
-                # Versuche, den WebDriver zu initialisieren
-                # Verwende webdriver-manager oder einen festen Pfad zum Treiber
-                # from selenium.webdriver.firefox.service import Service as FirefoxService
-                # from webdriver_manager.firefox import GeckoDriverManager
-                # service = FirefoxService(GeckoDriverManager().install())
-                # driver = webdriver.Firefox(service=service, options=options)
-                # --- ODER (einfacher, wenn Treiber im PATH ist) ---
-                driver = webdriver.Firefox(options=options)
-                # driver = webdriver.Chrome(options=options) # Für Chrome
+            service = None
+            system_name = platform.system()
+            arch = platform.machine()  # Architektur prüfen
 
-                # HTML-Datei laden
+            try:
+                # --- Plattformspezifische Treiberbehandlung für ChromeDriver ---
+                driver_path = None
+
+                # 1. Prüfe auf Linux (Raspberry Pi)
+                if system_name == "Linux":
+                    # Suche an Standardorten für apt install chromium-chromedriver
+                    system_driver_paths = [
+                        '/usr/lib/chromium-browser/chromedriver',
+                        '/usr/bin/chromedriver'
+                    ]
+                    for path in system_driver_paths:
+                        if os.path.exists(path) and os.access(path, os.X_OK):
+                            driver_path = path
+                            logger.info(f"Verwende System-ChromeDriver (Linux): {driver_path}")
+                            break
+                    if not driver_path:
+                        logger.warning(
+                            "System-ChromeDriver auf Linux nicht gefunden. Versuche webdriver-manager (falls installiert).")
+                        # Fallback zu webdriver-manager, falls auf Pi benötigt und installiert
+                        if ChromeDriverManager:
+                            try:
+                                driver_path = ChromeDriverManager().install()
+                                logger.info(
+                                    f"Verwende ChromeDriver via webdriver-manager (Linux Fallback): {driver_path}")
+                            except Exception as wdm_err:
+                                logger.error(f"Fehler bei webdriver-manager auf Linux: {wdm_err}")
+                                raise FileNotFoundError(
+                                    "ChromeDriver nicht gefunden und webdriver-manager fehlgeschlagen.")
+                        else:
+                            raise FileNotFoundError(
+                                "ChromeDriver auf Linux nicht gefunden und webdriver-manager nicht installiert.")
+
+                # 2. Prüfe auf Windows
+                elif system_name == "Windows":
+                    if ChromeDriverManager:
+                        try:
+                            driver_path = ChromeDriverManager().install()
+                            logger.info(f"Verwende ChromeDriver via webdriver-manager (Windows): {driver_path}")
+                        except Exception as wdm_err:
+                            logger.error(f"Fehler bei webdriver-manager auf Windows: {wdm_err}")
+                            raise FileNotFoundError(
+                                "ChromeDriver konnte via webdriver-manager nicht installiert werden.")
+                    else:
+                        # Alternativ: Prüfen, ob chromedriver.exe im PATH ist
+                        driver_in_path = shutil.which("chromedriver.exe")
+                        if driver_in_path:
+                            driver_path = driver_in_path
+                            logger.info(f"Verwende ChromeDriver aus PATH (Windows): {driver_path}")
+                        else:
+                            raise FileNotFoundError(
+                                "webdriver-manager nicht installiert und chromedriver.exe nicht im PATH gefunden.")
+
+                # 3. Andere Systeme (z.B. macOS)
+                else:
+                    if ChromeDriverManager:
+                        try:
+                            driver_path = ChromeDriverManager().install()
+                            logger.info(f"Verwende ChromeDriver via webdriver-manager ({system_name}): {driver_path}")
+                        except Exception as wdm_err:
+                            logger.error(f"Fehler bei webdriver-manager auf {system_name}: {wdm_err}")
+                            raise FileNotFoundError(
+                                f"ChromeDriver konnte via webdriver-manager für {system_name} nicht installiert werden.")
+                    else:
+                        # Alternativ: Prüfen, ob chromedriver im PATH ist
+                        driver_in_path = shutil.which("chromedriver")
+                        if driver_in_path:
+                            driver_path = driver_in_path
+                            logger.info(f"Verwende ChromeDriver aus PATH ({system_name}): {driver_path}")
+                        else:
+                            raise FileNotFoundError(
+                                f"webdriver-manager nicht installiert und chromedriver nicht im PATH für {system_name} gefunden.")
+
+                # Initialisiere den Service und WebDriver
+                if driver_path:
+                    service = ChromeService(executable_path=driver_path)
+                    driver = webdriver.Chrome(service=service, options=options)
+                else:
+                    # Sollte nicht passieren, wenn die Logik oben greift
+                    raise webdriver.support.wait.WebDriverException("ChromeDriver Pfad konnte nicht ermittelt werden.")
+
+                # --- Rest der Screenshot-Logik ---
                 local_url = temp_html_path.resolve().as_uri()
                 driver.get(local_url)
-
-                # Warten, bis die Karte und Tiles geladen sind
                 logger.debug(f"Warte {delay} Sekunden, bis die Karte '{temp_html_path}' für PNG geladen ist...")
                 time.sleep(delay)
-
-                # Screenshot machen
                 png_data = driver.get_screenshot_as_png()
-
-                # Bild speichern
                 output_path_png = self.heatmaps_dir / Path(png_file).name
                 img = Image.open(io.BytesIO(png_data))
-
-                # Optional: Bild zuschneiden, wenn Ränder stören (experimentell)
-                # img = img.crop((left, top, right, bottom))
-
                 img.save(output_path_png)
                 logger.info(f"PNG-Heatmap erfolgreich gespeichert: {output_path_png}")
 
-            except Exception as e:
+            except (FileNotFoundError, webdriver.support.wait.WebDriverException,
+                    Exception) as e:  # FileNotFoundError hinzugefügt
                 logger.error(f"Fehler beim Erstellen des PNG-Screenshots für {png_file}: {e}", exc_info=True)
-                # Versuche, den Treiber zu schließen, auch im Fehlerfall
             finally:
                 if driver:
                     driver.quit()
@@ -381,15 +430,18 @@ class HeatmapGenerator:
             except OSError as e:
                 logger.error(f"Fehler beim Löschen der temporären HTML-Datei {temp_html_path}: {e}")
 
+
 # Beispiel für die Verwendung (kann entfernt oder in __main__ verschoben werden)
 if __name__ == '__main__':
     # Beispielhafte Konfiguration für Tests
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s] %(message)s')
     GEO_CONFIG["map_center"] = (46.8118, 7.1328)
     GEO_CONFIG["zoom_start"] = 22
-    GEO_CONFIG["max_zoom"] = 22 # Testwert
-    HEATMAP_CONFIG["test_single"] = {"output": "heatmaps/test_single.html", "png_output": "heatmaps/test_single.png", "radius": 5, "blur": 5}
-    HEATMAP_CONFIG["test_multi"] = {"output": "heatmaps/test_multi.html", "png_output": "heatmaps/test_multi.png", "radius": 3, "blur": 3}
+    GEO_CONFIG["max_zoom"] = 22  # Testwert
+    HEATMAP_CONFIG["test_single"] = {"output": "heatmaps/test_single.html", "png_output": "heatmaps/test_single.png",
+                                     "radius": 5, "blur": 5}
+    HEATMAP_CONFIG["test_multi"] = {"output": "heatmaps/test_multi.html", "png_output": "heatmaps/test_multi.png",
+                                    "radius": 3, "blur": 3}
 
     # Beispiel-Datenpunkte
     single_data = [
@@ -399,8 +451,8 @@ if __name__ == '__main__':
         {'lat': 46.81185, 'lon': 7.13285, 'value': 1},
     ]
     multi_data = [
-        [{'lat': 46.8117, 'lon': 7.1327}, {'lat': 46.81175, 'lon': 7.13275}], # Session 1
-        [{'lat': 46.8119, 'lon': 7.1329}, {'lat': 46.81195, 'lon': 7.13295}], # Session 2
+        [{'lat': 46.8117, 'lon': 7.1327}, {'lat': 46.81175, 'lon': 7.13275}],  # Session 1
+        [{'lat': 46.8119, 'lon': 7.1329}, {'lat': 46.81195, 'lon': 7.13295}],  # Session 2
     ]
 
     gen = HeatmapGenerator()
@@ -410,13 +462,15 @@ if __name__ == '__main__':
     gen.create_heatmap(single_data, "heatmaps/test_single.html", draw_path=True, is_multi_session=False)
     if SELENIUM_AVAILABLE:
         logger.info("Teste einzelne Heatmap (PNG)...")
-        gen.save_html_as_png(single_data, draw_path=True, png_file="heatmaps/test_single.png", config_key_hint="test_single")
+        gen.save_html_as_png(single_data, draw_path=True, png_file="heatmaps/test_single.png",
+                             config_key_hint="test_single")
 
     # Teste Multi-Session Heatmap
     logger.info("Teste Multi-Session Heatmap (HTML)...")
     gen.create_heatmap(multi_data, "heatmaps/test_multi.html", draw_path=True, is_multi_session=True)
     if SELENIUM_AVAILABLE:
         logger.info("Teste Multi-Session Heatmap (PNG)...")
-        gen.save_html_as_png(multi_data, draw_path=True, png_file="heatmaps/test_multi.png", config_key_hint="test_multi", is_multi_session_data=True)
+        gen.save_html_as_png(multi_data, draw_path=True, png_file="heatmaps/test_multi.png",
+                             config_key_hint="test_multi", is_multi_session_data=True)
 
     logger.info("Heatmap-Generierungstests abgeschlossen.")
