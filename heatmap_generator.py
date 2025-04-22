@@ -31,6 +31,7 @@ try:
 
 except ImportError:
     SELENIUM_AVAILABLE = False
+    Image = None  # Stelle sicher, dass Image None ist, wenn Pillow fehlt
     logging.warning("Selenium, Pillow oder webdriver-manager nicht installiert. PNG-Export ist nicht verfügbar.")
     logging.warning("Installieren mit: pip install selenium pillow webdriver-manager")
 
@@ -53,9 +54,44 @@ class HeatmapGenerator:
         self.map_center = GEO_CONFIG.get("map_center", (46.811819, 7.132838))
         self.heatmaps_dir = Path(heatmaps_base_dir)
         self.heatmaps_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- Cropping Konfiguration einlesen ---
+        self.crop_enabled = GEO_CONFIG.get("crop_enabled", False)
+        self.crop_center_percentage = GEO_CONFIG.get("crop_center_percentage")
+        self.use_center_crop = False
+        self.crop_pixel_left = GEO_CONFIG.get("crop_pixel_left")
+        self.crop_pixel_top = GEO_CONFIG.get("crop_pixel_top")
+        self.crop_pixel_right = GEO_CONFIG.get("crop_pixel_right")
+        self.crop_pixel_bottom = GEO_CONFIG.get("crop_pixel_bottom")
+
+        if self.crop_enabled:
+            if self.crop_center_percentage is not None and isinstance(self.crop_center_percentage, (int,
+                                                                                                    float)) and 0 < self.crop_center_percentage <= 100:
+                self.use_center_crop = True
+                if self.crop_center_percentage < 100:
+                    logger.info(f"PNG Cropping (Center Percentage) aktiviert: {self.crop_center_percentage}%")
+                else:
+                    logger.info("PNG Cropping (Center Percentage) ist 100%, kein Zuschnitt erfolgt.")
+                    self.crop_enabled = False  # Deaktiviere, wenn 100%
+            else:
+                pixel_values = [self.crop_pixel_left, self.crop_pixel_top, self.crop_pixel_right,
+                                self.crop_pixel_bottom]
+                if all(p is not None and isinstance(p, int) and p >= 0 for p in pixel_values):
+                    self.use_center_crop = False
+                    logger.info(
+                        f"PNG Cropping (Pixel Offsets) aktiviert mit (L,T,R,B): ({self.crop_pixel_left}, {self.crop_pixel_top}, {self.crop_pixel_right}, {self.crop_pixel_bottom})")
+                else:
+                    logger.warning(
+                        "PNG Cropping ist aktiviert, aber weder 'crop_center_percentage' noch 'crop_pixel_*' Werte sind gültig. Cropping wird deaktiviert.")
+                    self.crop_enabled = False
+        # --- Ende Cropping Konfiguration ---
+
         logger.info(f"HeatmapGenerator initialisiert. Karten werden in '{self.heatmaps_dir}' gespeichert.")
         if not SELENIUM_AVAILABLE:
             logger.warning("PNG-Generierung ist aufgrund fehlender Bibliotheken deaktiviert.")
+        elif self.crop_enabled and Image is None:
+            logger.warning("PNG Cropping ist aktiviert, aber Pillow ist nicht installiert. Cropping wird deaktiviert.")
+            self.crop_enabled = False
 
     def create_heatmap(self, data, html_file, draw_path, is_multi_session=False):
         """
@@ -221,6 +257,7 @@ class HeatmapGenerator:
                          height=768, delay=5):
         """
         Erstellt eine PNG-Version einer Heatmap mit Selenium und Chrome/ChromeDriver.
+        Führt optional ein Cropping basierend auf GEO_CONFIG durch.
 
         Args:
             data (list): Datenpunkte (flach oder Liste von Listen).
@@ -237,6 +274,12 @@ class HeatmapGenerator:
             return
 
         temp_html_path = self.heatmaps_dir / f"temp_{Path(png_file).stem}.html"
+        # Definiere den finalen PNG-Pfad
+        output_path_png = self.heatmaps_dir / Path(png_file).name
+        # Temporärer Pfad für Cropping
+        temp_png_path = output_path_png.with_suffix(
+            output_path_png.suffix + ".tmp") if self.crop_enabled else output_path_png
+        final_png_path = output_path_png  # Der endgültige Dateiname
 
         try:
             # --- Erstelle temporäre Karte für PNG ---
@@ -403,23 +446,105 @@ class HeatmapGenerator:
                     # Sollte nicht passieren, wenn die Logik oben greift
                     raise webdriver.support.wait.WebDriverException("ChromeDriver Pfad konnte nicht ermittelt werden.")
 
-                # --- Rest der Screenshot-Logik ---
+                # --- Screenshot-Logik ---
                 local_url = temp_html_path.resolve().as_uri()
                 driver.get(local_url)
                 logger.debug(f"Warte {delay} Sekunden, bis die Karte '{temp_html_path}' für PNG geladen ist...")
                 time.sleep(delay)
-                png_data = driver.get_screenshot_as_png()
-                output_path_png = self.heatmaps_dir / Path(png_file).name
-                img = Image.open(io.BytesIO(png_data))
-                img.save(output_path_png)
-                logger.info(f"PNG-Heatmap erfolgreich gespeichert: {output_path_png}")
+
+                # Mache Screenshot und speichere ihn (ggf. temporär)
+                driver.save_screenshot(str(temp_png_path))
+                logger.info(f"Screenshot erfolgreich erstellt: {temp_png_path}")
 
             except (FileNotFoundError, webdriver.support.wait.WebDriverException,
                     Exception) as e:  # FileNotFoundError hinzugefügt
                 logger.error(f"Fehler beim Erstellen des PNG-Screenshots für {png_file}: {e}", exc_info=True)
+                # Wenn Screenshot fehlschlägt, brauchen wir nicht weiterzumachen
+                if temp_html_path.exists(): temp_html_path.unlink()  # cleanup temp html
+                return  # Beende die Methode hier
             finally:
                 if driver:
                     driver.quit()
+
+            # --- PNG Cropping ---
+            if self.crop_enabled and Image is not None:
+                logger.info(f"Cropping für {final_png_path} wird durchgeführt.")
+                try:
+                    img = Image.open(str(temp_png_path))
+                    img_width, img_height = img.size
+                    crop_box = None
+
+                    if self.use_center_crop:
+                        percentage = self.crop_center_percentage / 100.0
+                        # Nimm die kürzere Seite als Basis für das Quadrat
+                        min_dimension = min(img_width, img_height)
+                        crop_side = int(min_dimension * percentage)
+
+                        if crop_side > 0:
+                            # Berechne Koordinaten für die Mitte
+                            left = int((img_width - crop_side) / 2)
+                            top = int((img_height - crop_side) / 2)
+                            right = left + crop_side
+                            bottom = top + crop_side
+                            crop_box = (left, top, right, bottom)
+                            logger.debug(f"Berechnete Crop-Box (Center %): {crop_box}")
+                        else:
+                            logger.warning("Berechnete Crop-Seitenlänge <= 0. Kein Zuschnitt.")
+                    else:  # Pixel-Offset-Methode
+                        left_px = self.crop_pixel_left
+                        top_px = self.crop_pixel_top
+                        right_px = img_width - self.crop_pixel_right
+                        bottom_px = img_height - self.crop_pixel_bottom
+                        if left_px < right_px and top_px < bottom_px:
+                            crop_box = (left_px, top_px, right_px, bottom_px)
+                            logger.debug(f"Berechnete Crop-Box (Pixel Offset): {crop_box}")
+                        else:
+                            logger.error(
+                                f"Ungültige Pixel-Offset-Werte ergeben ungültige Box: L={left_px}, T={top_px}, R={right_px}, B={bottom_px}")
+
+                    # Führe Crop durch, wenn eine gültige Box berechnet wurde
+                    if crop_box and crop_box[0] < crop_box[2] and crop_box[1] < crop_box[3]:
+                        cropped_img = img.crop(crop_box)
+                        cropped_img.save(str(final_png_path))
+                        logger.info(f"Bild erfolgreich auf {final_png_path} zugeschnitten.")
+                        # Lösche die temporäre (nicht zugeschnittene) Datei
+                        if temp_png_path != final_png_path and temp_png_path.exists():
+                            try:
+                                temp_png_path.unlink()
+                            except OSError as rm_err:
+                                logger.warning(f"Konnte temporäre PNG {temp_png_path} nicht löschen: {rm_err}")
+                    else:
+                        logger.error(f"Ungültige/keine Crop-Box berechnet: {crop_box}. Originalbild wird verwendet.")
+                        # Benenne die temporäre Datei um, wenn sie nicht die finale ist
+                        if temp_png_path != final_png_path and temp_png_path.exists():
+                            try:
+                                if final_png_path.exists(): final_png_path.unlink()  # Lösche altes Zielbild
+                                temp_png_path.rename(final_png_path)
+                                logger.info(f"Temporäres PNG zu {final_png_path} umbenannt (kein Crop).")
+                            except OSError as ren_err:
+                                logger.error(f"Konnte temp PNG nicht zu {final_png_path} umbenennen: {ren_err}")
+                        elif temp_png_path == final_png_path:
+                            logger.info(f"Kein Cropping, {final_png_path} wurde direkt erstellt.")
+
+                except Exception as crop_err:
+                    logger.error(f"Fehler beim Zuschneiden von {temp_png_path}: {crop_err}", exc_info=True)
+                    # Versuche, das Originalbild zu verwenden, falls Cropping fehlschlägt
+                    if temp_png_path != final_png_path and temp_png_path.exists():
+                        try:
+                            if final_png_path.exists(): final_png_path.unlink()
+                            temp_png_path.rename(final_png_path)
+                            logger.info(f"Temporäres PNG zu {final_png_path} umbenannt (Crop fehlgeschlagen).")
+                        except OSError as ren_err:
+                            logger.error(f"Konnte temp PNG nicht zu {final_png_path} umbenennen: {ren_err}")
+            elif temp_png_path != final_png_path and temp_png_path.exists():
+                # Cropping war deaktiviert, aber wir haben eine temporäre Datei erstellt
+                try:
+                    if final_png_path.exists(): final_png_path.unlink()
+                    temp_png_path.rename(final_png_path)
+                    logger.info(f"Temporäres PNG zu {final_png_path} umbenannt (Cropping deaktiviert).")
+                except OSError as ren_err:
+                    logger.error(f"Konnte temp PNG nicht zu {final_png_path} umbenennen: {ren_err}")
+            # --- ENDE PNG Cropping ---
 
         finally:
             # Temporäre HTML-Datei löschen
@@ -435,9 +560,17 @@ class HeatmapGenerator:
 if __name__ == '__main__':
     # Beispielhafte Konfiguration für Tests
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s] %(message)s')
+    # Stelle sicher, dass die GEO_CONFIG Keys für Cropping existieren (ggf. aus deiner config.py kopieren)
     GEO_CONFIG["map_center"] = (46.8118, 7.1328)
     GEO_CONFIG["zoom_start"] = 22
-    GEO_CONFIG["max_zoom"] = 22  # Testwert
+    GEO_CONFIG["max_zoom"] = 22
+    GEO_CONFIG["crop_enabled"] = True  # Zum Testen aktivieren
+    GEO_CONFIG["crop_center_percentage"] = 75  # Beispiel: 75%
+    # GEO_CONFIG["crop_pixel_left"] = 50 # Alternative zum Testen
+    # GEO_CONFIG["crop_pixel_top"] = 50
+    # GEO_CONFIG["crop_pixel_right"] = 50
+    # GEO_CONFIG["crop_pixel_bottom"] = 50
+
     HEATMAP_CONFIG["test_single"] = {"output": "heatmaps/test_single.html", "png_output": "heatmaps/test_single.png",
                                      "radius": 5, "blur": 5}
     HEATMAP_CONFIG["test_multi"] = {"output": "heatmaps/test_multi.html", "png_output": "heatmaps/test_multi.png",
