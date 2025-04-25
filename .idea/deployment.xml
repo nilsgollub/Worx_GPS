@@ -1,32 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="nilsgollub@192.168.1.50:22 password">
+  <component name="PublishConfigData" autoUpload="Always" serverName="nilsgollub@192.168.1.50:22">
     <serverData>
-      <paths name="nilsgollub@192.168.1.173:22">
+      <paths name="nilsgollub@192.168.1.100:22">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/Pycharm_Sync" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
-      <paths name="nilsgollub@192.168.1.173:22 password">
+      <paths name="nilsgollub@192.168.1.50:22">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="nilsgollub@192.168.1.50:22 password">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/home/nilsgollub/Documents/Pycharm_Remote/Worx_GPS" local="$PROJECT_DIR$" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="nilsgollub@192.168.1.60:22 password">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/home/nilsgollub/Pycharm_Sync" local="$PROJECT_DIR$" />
+            <mapping deploy="/Documents/Pycharm_Remote/Worx_GPS" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

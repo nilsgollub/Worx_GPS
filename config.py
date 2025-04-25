@@ -30,8 +30,8 @@ GEO_CONFIG = {
     "map_center": (46.811819, 7.132838),
     "zoom_start": 15,
     "crop_coordinates": ((46.8115, 7.1325), (46.8120, 7.1330)),  # (left-top, right-bottom)
-    "crop_enabled": False,
-    "crop_center_percentage": 100, # Beispiel: Behalte 75% der kleineren Dimension als Quadrat
+    "crop_enabled": True,
+    "crop_center_percentage": 90, # Beispiel: Behalte 75% der kleineren Dimension als Quadrat
     # "crop_pixel_left": 150,  # Pixel vom linken Rand
     # "crop_pixel_top": 100,  # Pixel vom oberen Rand
     # "crop_pixel_right": 150,  # Pixel vom rechten Rand (Abstand, nicht Koordinate!)
