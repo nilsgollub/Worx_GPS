@@ -46,26 +46,26 @@ HEATMAP_CONFIG = {
     "heatmap_aktuell": {
         "output": "heatmaps/heatmap_aktuell.html",
         "png_output": "heatmaps/heatmap_aktuell.png",
-        "radius": 3,
-        "blur": 3
+        "radius": 5,
+        "blur": 10
     },
     "heatmap_10_maehvorgang": {
         "output": "heatmaps/heatmap_10.html",
         "png_output": "heatmaps/heatmap_10.png",
-        "radius": 3,
-        "blur": 3
+        "radius": 5,
+        "blur": 10
     },
     "heatmap_kumuliert": {
         "output": "heatmaps/heatmap_kumuliert.html",
         "png_output": "heatmaps/heatmap_kumuliert.png",
-        "radius": 3,
-        "blur": 3
+        "radius": 5,
+        "blur": 10
     },
     "problemzonen_heatmap": {
         "output": "heatmaps/problemzonen.html",
         "png_output": "heatmaps/problemzonen.png",
         "radius": 5,
-        "blur": 3
+        "blur": 5
     },
 }
 
