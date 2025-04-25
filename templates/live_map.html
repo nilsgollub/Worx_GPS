@@ -13,9 +13,7 @@
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""></script>
     <!-- Leaflet.RotatedMarker Plugin JavaScript (LOKAL) -->
-    <script src="/static/leaflet.rotatedMarker.js"></script> <!-- LOKALE VERSION AKTIVIERT, defer entfernt -->
-    <!-- CDN Version wieder auskommentieren -->
-    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-rotatedmarker/0.2.0/leaflet.rotatedMarker.min.js" ...></script> -->
+    <script src="/static/leaflet.rotatedMarker.js"></script>
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
     <style>
@@ -29,8 +27,6 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', (event) => {
-        // Kompletter bisheriger Inhalt des <script>-Tags kommt HIER rein:
-
         // Daten vom Flask-Template übernehmen
         const initialLat = {{ initial_lat }};
         const initialLon = {{ initial_lon }};
@@ -63,19 +59,6 @@
         };
         L.control.layers(baseMaps).addTo(map);
 
-        // === NEUER TESTBLOCK START ===
-        // Test, ob das Plugin L.Marker erweitert hat
-        try {
-            if (L.Marker.prototype.setRotationAngle) { // Prüfe auf eine der hinzugefügten Methoden
-                console.log("TEST (DOMContentLoaded): L.Marker wurde erfolgreich durch RotatedMarker erweitert.");
-            } else {
-                console.error("TEST (DOMContentLoaded): L.Marker wurde NICHT erweitert. Plugin nicht korrekt geladen/ausgeführt?");
-            }
-        } catch (e) {
-            console.error("TEST (DOMContentLoaded): Fehler beim Prüfen von L.Marker.prototype:", e);
-        }
-        // === NEUER TESTBLOCK ENDE ===
-
         // Marker für die aktuelle Position
         let currentMarker = null;
         let previousLatLng = null;
@@ -105,15 +88,15 @@
         const socket = io();
 
         socket.on('connect', () => {
-            console.log('Verbunden mit WebSocket Server');
+            console.info('Verbunden mit WebSocket Server'); // Info statt log
         });
 
         socket.on('disconnect', () => {
-            console.log('Verbindung zum WebSocket Server getrennt');
+            console.info('Verbindung zum WebSocket Server getrennt'); // Info statt log
         });
 
         socket.on('update_position', (data) => {
-            console.log('Positionsupdate erhalten:', data);
+            // console.log('Positionsupdate erhalten:', data); // Entfernt
             const lat = data.lat;
             const lon = data.lon;
 
@@ -125,29 +108,23 @@
                     // Nur berechnen und rotieren, wenn sich die Position geändert hat
                     if (previousLatLng && (previousLatLng.lat !== newLatLng.lat || previousLatLng.lng !== newLatLng.lng)) {
                         bearing = calculateBearing(previousLatLng.lat, previousLatLng.lng, newLatLng.lat, newLatLng.lng);
-                        console.log(`Berechneter Winkel (Bearing): ${bearing}`);
-                        // Rotation mit Plugin setzen - PRÜFEN OB L.rotatedMarker hier existiert!
-                        if (currentMarker.setRotationAngle) { // Sicherstellen, dass die Methode existiert
+                        // Rotation mit Plugin setzen
+                        if (currentMarker.setRotationAngle) {
                             currentMarker.setRotationAngle(bearing);
                         } else {
-                            console.error("FEHLER: currentMarker.setRotationAngle ist nicht verfügbar!");
+                            console.error("FEHLER: currentMarker.setRotationAngle ist nicht verfügbar!"); // Wichtiger Fehler bleibt
                         }
-                    } else if (previousLatLng) {
-                        console.log("Position hat sich nicht geändert, keine Rotation.");
                     }
                     // Marker-Position aktualisieren
                     currentMarker.setLatLng(newLatLng);
                 } else {
-                     // Ersten Marker mit dem STANDARD L.marker erstellen, aber mit Rotationsoptionen
-                     // Die initiale Rotation ist 0, sie wird im nächsten Update mit berechnetem Winkel angepasst
-                     currentMarker = L.marker(newLatLng, {
-                         icon: mowerIcon,
-                         rotationAngle: 0, // Initialer Winkel (wird bei nächstem Update angepasst)
-                         rotationOrigin: 'center center' // Wichtig für das Plugin
-                     }).addTo(map);
-                     currentMarker.bindPopup("Aktuelle Position");
-                     console.log("Erster Marker (mit Rotationsmöglichkeit) erstellt.");
-                     // Keine Prüfung auf L.rotatedMarker mehr nötig, da L.marker verwendet wird.
+                    // Ersten Marker erstellen
+                    currentMarker = L.marker(newLatLng, {
+                        icon: mowerIcon,
+                        rotationAngle: 0, // Initialer Winkel
+                        rotationOrigin: 'center center'
+                    }).addTo(map);
+                    currentMarker.bindPopup("Aktuelle Position");
                 }
 
                 // Aktuelle Position als vorherige speichern
@@ -158,7 +135,7 @@
                     map.setView(newLatLng);
                 }
             } else {
-                console.warn("Ungültige Positionsdaten empfangen:", data);
+                console.warn("Ungültige Positionsdaten empfangen:", data); // Warnung bleibt sinnvoll
             }
         });
 
