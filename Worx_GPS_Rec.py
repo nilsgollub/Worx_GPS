@@ -164,7 +164,7 @@ class WorxGpsRec:
     def main_loop(self):
         """Die Hauptschleife der Anwendung."""
         # Status-Intervall aus Config oder Standardwert
-        status_interval = MQTT_CONFIG.get("status_interval", 10)
+        status_interval = MQTT_CONFIG.get("status_interval", 5)
         # Stelle sicher, dass beim ersten Durchlauf gesendet wird
         last_status_send = time.monotonic() - status_interval - 1
         logging.info(f"Hauptschleife gestartet. Status wird alle {status_interval}s gesendet.")
