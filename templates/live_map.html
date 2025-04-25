@@ -1,4 +1,4 @@
-<!-- templates/live_map.html -->
+```html
 <!DOCTYPE html>
 <html>
 <head>
@@ -59,16 +59,31 @@
 
     // Marker für die aktuelle Position
     let currentMarker = null;
+    let previousLatLng = null; // Variable zum Speichern der letzten Position
+
+    // Hilfsfunktion zur Berechnung des Winkels (Bearing) zwischen zwei Punkten
+    function calculateBearing(lat1, lon1, lat2, lon2) {
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        lat1 = lat1 * Math.PI / 180;
+        lat2 = lat2 * Math.PI / 180;
+        const y = Math.sin(dLon) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) -
+                  Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+        let brng = Math.atan2(y, x) * 180 / Math.PI;
+        // Winkel in den Bereich 0-360 bringen
+        brng = (brng + 360) % 360;
+        return brng;
+    }
+
     // Optional: eigenes Icon verwenden
-    // const mowerIcon = L.icon({
-    //     iconUrl: '/static/marker-icon.png', // Pfad zu Ihrem Icon in 'static'
-    //     iconSize:     [32, 32], // Größe des Icons
-    //     iconAnchor:   [16, 32], // Punkt des Icons, der zur Marker-Position korrespondiert
-    //     popupAnchor:  [0, -32] // Punkt, von dem Popups relativ zum Icon öffnen
-    // });
+    const mowerIcon = L.icon({
+        iconUrl: '/static/worx.png', // Pfad zu Ihrem Icon in 'static'
+        iconSize:     [25, 32], // Größe des Icons
+        iconAnchor:   [12.5, 16], // Anker auf die Mitte des Icons setzen für korrekte Rotation
+        popupAnchor:  [0, -18]    // Popup-Anker relativ zur Mitte (etwas darüber)
+    });
 
     // Socket.IO Verbindung herstellen
-    // Verbindet sich automatisch mit dem Server, von dem die Seite geladen wurde
     const socket = io();
 
     socket.on('connect', () => {
@@ -86,24 +101,46 @@
 
         if (lat !== undefined && lon !== undefined) {
             const newLatLng = L.latLng(lat, lon);
+            let bearing = 0; // Standard-Richtung
 
             if (currentMarker) {
-                // Marker aktualisieren
+                if (previousLatLng && (previousLatLng.lat !== newLatLng.lat || previousLatLng.lng !== newLatLng.lng)) {
+                    bearing = calculateBearing(previousLatLng.lat, previousLatLng.lng, newLatLng.lat, newLatLng.lng);
+                    console.log(`Berechneter Winkel (Bearing): ${bearing}`); // Log hinzufügen
+
+                    const iconElement = currentMarker.getElement();
+                    if (iconElement) {
+                        console.log("Wende Rotation an:", bearing); // Log hinzufügen
+                        iconElement.style.transformOrigin = 'center center';
+                        iconElement.style.transform = `rotate(${bearing}deg)`;
+                    } else {
+                        console.error("Konnte Icon-Element nicht abrufen!"); // Log hinzufügen
+                    }
+                } else if (previousLatLng) {
+                     console.log("Position hat sich nicht geändert, keine Rotation."); // Log hinzufügen
+                }
                 currentMarker.setLatLng(newLatLng);
             } else {
-                // Ersten Marker erstellen
-                currentMarker = L.marker(newLatLng/*, {icon: mowerIcon} */).addTo(map); // Optional: eigenes Icon
+               // Ersten Marker erstellen (noch ohne Drehung)
+                currentMarker = L.marker(newLatLng, {icon: mowerIcon}).addTo(map);
                 currentMarker.bindPopup("Aktuelle Position");
+                // Beim ersten Marker den Ursprung für spätere Transformationen setzen
+                 const iconElement = currentMarker.getElement();
+                 if (iconElement) {
+                     iconElement.style.transformOrigin = 'center center';
+                 }
+               console.log("Erster Marker erstellt, noch keine Rotation."); // Log hinzufügen
+               // ...
             }
 
-            // Optional: Karte auf die neue Position zentrieren, wenn sie sich außerhalb des aktuellen Blickfelds befindet
-            // oder immer zentrieren: map.setView(newLatLng);
-            // oder sanft verschieben: map.panTo(newLatLng);
+            // Aktuelle Position als vorherige für den nächsten Schritt speichern
+            console.log("Setze previousLatLng auf:", newLatLng); // Log hinzufügen
+            previousLatLng = newLatLng;
 
-            // Beispiel: Zentriere nur, wenn der Marker das erste Mal gesetzt wird
+            // Optional: Karte auf die neue Position zentrieren
             if (!map.getBounds().contains(newLatLng)) {
                  // map.panTo(newLatLng); // Sanftes Verschieben
-                 map.setView(newLatLng); // Direkt springen (ggf. besser bei großen Sprüngen)
+                 map.setView(newLatLng); // Direkt springen
             }
         } else {
             console.warn("Ungültige Positionsdaten empfangen:", data);
@@ -111,6 +148,21 @@
     });
 
 </script>
+    ```
 
-</body>
-</html>
+4.  **CSS-Konflikte/Spezifität:** Es ist unwahrscheinlich, aber möglich, dass eine andere CSS-Regel (vielleicht von Leaflet selbst) die `transform`-Eigenschaft überschreibt.
+    *   **Überprüfung:** Nutzen Sie die Entwicklerwerkzeuge ("Element untersuchen" oder "Inspect Element"), klicken Sie auf das Marker-Icon auf der Karte und schauen Sie sich im "Styles"- oder "Computed"-Tab an, welche `transform`- und `transform-origin`-Werte tatsächlich angewendet werden. Sehen Sie dort Ihre `rotate(...)`-Regel? Wird sie vielleicht durchgestrichen (überschrieben)?
+
+**Vorgehensweise zur Fehlersuche:**
+
+1.  Öffnen Sie die Entwicklerkonsole (F12) in Ihrem Browser auf der Seite mit der Karte.
+2.  Lassen Sie neue Positionsdaten vom Server senden (bewegen Sie die GPS-Quelle, wenn möglich).
+3.  Beobachten Sie die Konsolenausgaben:
+    *   Sehen Sie die "Positionsupdate erhalten"-Logs?
+    *   Sehen Sie die "Berechneter Winkel"-Logs? Welchen Wert hat `bearing`?
+    *   Sehen Sie die "Wende Rotation an"-Logs?
+    *   Sehen Sie die "Position hat sich nicht geändert"-Logs?
+    *   Gibt es Fehlermeldungen?
+4.  Wenn die Rotation angewendet werden sollte (Sie sehen "Wende Rotation an"), untersuchen Sie das Icon-Element (`<img>`-Tag) mit den Entwicklerwerkzeugen und prüfen Sie dessen `style`-Attribut und die berechneten CSS-Werte.
+
+Basierend auf den Beobachtungen in der Konsole können Sie das Problem weiter eingrenzen.
