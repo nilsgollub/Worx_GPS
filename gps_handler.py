@@ -502,6 +502,15 @@ class GpsHandler:
                     self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
                 return None
 
+            # --- NEU: Eingangspuffer leeren ---
+            try:
+                logger.debug("Leere seriellen Eingangspuffer...")
+                self.ser_gps.reset_input_buffer()
+            except Exception as e:
+                logger.error(f"Fehler beim Leeren des Eingangspuffers: {e}")
+                # Hier nicht unbedingt abbrechen, Leseversuch trotzdem starten
+            # --- ENDE NEU ---
+
             # --- Versuch, mehrere Zeilen zu lesen ---
             start_time = time.monotonic()
             # Timeout etwas kürzer als der Serial-Timeout, um Blockaden zu vermeiden
