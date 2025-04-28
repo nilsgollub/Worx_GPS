@@ -143,7 +143,7 @@ class GpsHandler:
             start_write = time.monotonic()  # For timeout duration logging
             self.ser_gps.write(msg.serialize())
             # --- NEU: Increased sleep time ---
-            time.sleep(0.5)  # Increased from 0.1
+            time.sleep(2)  # Increased from 0.1
             # --- ENDE NEU ---
             # Optional: Auf ACK/NAK warten
             return True
