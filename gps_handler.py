@@ -120,34 +120,50 @@ class GpsHandler:
         self.ser_gps = None
 
     # --- NEUE HILFSMETHODE zum Senden von UBX-Nachrichten ---
+
     def _send_ubx_config(self, msg):
         """Hilfsfunktion zum Senden einer UBX Konfigurationsnachricht."""
         if not PYUBX2_AVAILABLE:
             logger.error("Kann UBX nicht senden: pyubx2 nicht verfügbar.")
             return False
-        if self.ser_gps and self.ser_gps.is_open:
-            try:
-                logger.debug(f"Sende UBX Konfiguration: {msg}")
-                self.ser_gps.write(msg.serialize())
-                time.sleep(0.1)  # Kurze Pause nach dem Senden
-                # Optional: Auf ACK/NAK warten (komplexer, erfordert Lesen)
-                # response = self._read_ubx_response(msg.identity)
-                # if response == 'ACK': return True
-                # else: return False
-                return True
-            except serial.SerialTimeoutException:
-                logger.error(f"Timeout beim Senden der UBX Nachricht {msg.identity}.")
-                self._reconnect_serial()  # Versuch wiederherzustellen
-                return False
-            except serial.SerialException as e:
-                logger.error(f"Serieller Fehler beim Senden der UBX Nachricht {msg.identity}: {e}")
-                self._reconnect_serial()  # Versuch wiederherzustellen
-                return False
-            except Exception as e:
-                logger.error(f"Unerwarteter Fehler beim Senden der UBX Nachricht {msg.identity}: {e}", exc_info=True)
-                return False
-        else:
-            logger.warning("Kann UBX Konfiguration nicht senden, Port nicht offen.")
+        # --- NEU: Check connection *before* trying to use self.ser_gps ---
+        if self.ser_gps is None or not self.ser_gps.is_open:
+            logger.warning(f"Kann UBX Konfiguration nicht senden, Port nicht offen oder None ({self.ser_gps}).")
+            # Attempt reconnect if port was previously open but now closed unexpectedly
+            if self.ser_gps is not None and not self.ser_gps.is_open:
+                self._reconnect_serial()
+            return False
+        # --- ENDE NEU ---
+
+        try:
+            logger.debug(f"Sende UBX Konfiguration: {msg}")
+            # --- NEU: Reset output buffer before writing ---
+            self.ser_gps.reset_output_buffer()
+            # --- ENDE NEU ---
+            start_write = time.monotonic()  # For timeout duration logging
+            self.ser_gps.write(msg.serialize())
+            # --- NEU: Increased sleep time ---
+            time.sleep(0.5)  # Increased from 0.1
+            # --- ENDE NEU ---
+            # Optional: Auf ACK/NAK warten
+            return True
+        except serial.SerialTimeoutException:
+            # --- NEU: Log duration ---
+            duration_timeout = time.monotonic() - start_write
+            write_timeout_val = getattr(self.ser_gps, 'write_timeout', 'N/A')
+            logger.error(
+                f"Timeout ({write_timeout_val}s) beim Senden der UBX Nachricht {msg.identity} nach {duration_timeout:.2f}s.")
+            self._reconnect_serial()
+            return False
+        except serial.SerialException as e:
+            logger.error(f"Serieller Fehler beim Senden der UBX Nachricht {msg.identity}: {e}",
+                         exc_info=True)  # Added exc_info
+            self._reconnect_serial()
+            return False
+        except Exception as e:
+            logger.error(f"Unerwarteter Fehler beim Senden der UBX Nachricht {msg.identity}: {e}", exc_info=True)
+            # Consider if reconnect is appropriate here too, but might cause loops
+            # self._reconnect_serial()
             return False
 
     # --- ENDE NEUE HILFSMETHODE ---
