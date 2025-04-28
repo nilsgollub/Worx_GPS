@@ -173,6 +173,7 @@ class GpsHandler:
     # --- ENDE NEUE HILFSMETHODE ---
 
     # --- NEUE METHODE zur U-BLOX Konfiguration ---
+    # --- NEUE METHODE zur U-BLOX Konfiguration ---
     def _configure_ublox(self):
         """Sendet Konfigurationsbefehle an das U-BLOX Modul via pyubx2."""
         if not PYUBX2_AVAILABLE:
@@ -296,6 +297,8 @@ class GpsHandler:
             logger.info("U-BLOX Konfiguration (Minimal: GGA + Port + Save) erfolgreich abgeschlossen.")
         else:
             logger.warning("U-BLOX Konfiguration (Minimal: GGA + Port + Save) mit Fehlern abgeschlossen.")
+
+    # --- ENDE NEUE METHODE ---
 
     # --- ENDE NEUE METHODE ---
 
