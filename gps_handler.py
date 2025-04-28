@@ -81,7 +81,11 @@ class GpsHandler:
 
                 # --- NEU: U-BLOX Konfiguration nach erfolgreicher Verbindung ---
                 if PYUBX2_AVAILABLE:
-                    self._configure_ublox()
+                    self._configure_ublox()  # This now includes the save attempt
+                    # --- Kurze Pause nach der Konfiguration (und potentiellem Speichern) ---
+                    logger.debug("Warte kurz nach U-BLOX Konfiguration/Speichern...")
+                    time.sleep(1.5)  # Slightly longer pause after potential save
+                    # --- ENDE ---
                 else:
                     logger.warning("pyubx2 nicht verfügbar, U-BLOX Konfiguration übersprungen.")
                 # --- ENDE NEU ---
@@ -175,7 +179,7 @@ class GpsHandler:
             logger.warning("pyubx2 nicht verfügbar, Konfiguration übersprungen.")
             return
 
-        logger.info("Starte U-BLOX Konfiguration (Minimal: GGA + Port)...")
+        logger.info("Starte U-BLOX Konfiguration (Minimal: GGA + Port + Save)...")  # Log angepasst
         config_success = True
         save_needed = False  # Flag, ob Konfiguration gespeichert werden muss
 
@@ -247,15 +251,51 @@ class GpsHandler:
                 logger.error(f"Fehler beim Erstellen/Senden von CFG-PRT: {e}")
                 config_success = False
 
-        # --- 3. Speichern (CFG-CFG) --- (IMMER NOCH AUSKOMMENTIERT LASSEN!)
-        # if save_needed and config_success:
-        #     logger.info("Speichere Konfiguration im U-BLOX Modul...")
-        #     # ... (Code für CFG-CFG) ...
+        # --- 3. Speichern (CFG-CFG) --- # AKTIVIERT!
+        if save_needed and config_success:
+            logger.info("Speichere Konfiguration im U-BLOX Modul (BBR)...")
+            try:
+                # saveMask: Bitmask for layers to save
+                # 0x0001 = I/O Port config
+                # 0x0002 = Message config
+                # 0x0004 = INF message config
+                # -> 0x0007 should cover Port and Message config
+                clear_mask = 0x0000  # Don't clear anything
+                save_mask = 0x0007  # Save IO, MSG, INF config
+                load_mask = 0x0000  # Don't load anything
+                dev_mask = 0x04  # Save to BBR only
 
+                payload_save = clear_mask.to_bytes(4, 'little') + \
+                               save_mask.to_bytes(4, 'little') + \
+                               load_mask.to_bytes(4, 'little') + \
+                               dev_mask.to_bytes(1, 'little') + b'\x00' * 3  # Padding
+
+                msg_save = UBXMessage('CFG', 'CFG-CFG', SET, payload=payload_save)
+
+                # Use the existing send function which includes delays and error handling
+                if self._send_ubx_config(msg_save):
+                    logger.info("CFG-CFG: Konfiguration erfolgreich zum Speichern in BBR angewiesen.")
+                    # Note: Success here only means the command was sent.
+                    # The module might take time to actually save.
+                else:
+                    # Error already logged in _send_ubx_config
+                    config_success = False  # Mark overall config as failed if save fails
+                    logger.error("Fehler beim Senden des Speicherbefehls (CFG-CFG).")
+
+            except Exception as e:
+                logger.error(f"Fehler beim Erstellen/Senden von CFG-CFG: {e}", exc_info=True)
+                config_success = False
+        elif not config_success:
+            logger.warning("Konfiguration wird nicht gespeichert, da vorherige Schritte fehlschlugen.")
+        elif not save_needed:
+            logger.info("Keine Änderungen zum Speichern vorhanden (save_needed=False).")
+        # --- ENDE CFG-CFG Block ---
+
+        # Update final log message to reflect saving attempt
         if config_success:
-            logger.info("U-BLOX Konfiguration (Minimal: GGA + Port) erfolgreich abgeschlossen.")
+            logger.info("U-BLOX Konfiguration (Minimal: GGA + Port + Save) erfolgreich abgeschlossen.")
         else:
-            logger.warning("U-BLOX Konfiguration (Minimal: GGA + Port) mit Fehlern abgeschlossen.")
+            logger.warning("U-BLOX Konfiguration (Minimal: GGA + Port + Save) mit Fehlern abgeschlossen.")
 
     # --- ENDE NEUE METHODE ---
 
