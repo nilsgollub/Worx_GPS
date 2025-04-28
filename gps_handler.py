@@ -227,44 +227,44 @@ class GpsHandler:
         #     logger.error(f"Fehler beim Erstellen/Senden von CFG-SBAS: {e}")
         #     config_success = False
         #
-        # # --- 3. NMEA Nachrichten konfigurieren (CFG-MSG) ---
-        # # Deaktiviere unnötige Nachrichten, setze Rate für GGA/GSA
-        # # Raten sind pro Navigationslösung (z.B. 1 = jede Lösung, 5 = jede 5. Lösung)
-        # # Annahme: UART1 wird verwendet (portID=1)
-        # # NMEA IDs: GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05
-        # nmea_msgs_to_configure = {
-        #     0xF0: {  # NMEA Standard Talker ID
-        #         0x00: 1,  # GGA: Jede Navigationslösung (z.B. 1Hz wenn Rate 1Hz ist)
-        #         0x02: 5,  # GSA: Jede 5. Navigationslösung
-        #         0x04: 0,  # RMC: Deaktivieren
-        #         0x05: 0,  # VTG: Deaktivieren
-        #         0x03: 0,  # GSV: Deaktivieren (kann viele Nachrichten erzeugen)
-        #         0x01: 0  # GLL: Deaktivieren
-        #         # Füge hier weitere hinzu, falls nötig (z.B. ZDA deaktivieren: 0x08)
-        #     }
-        # }
-        # try:
-        #     for msgClass, ids_rates in nmea_msgs_to_configure.items():
-        #         for msgID, rate in ids_rates.items():
-        #             # Payload: msgClass (1), msgID (1), ratePort0..5 (6 bytes)
-        #             # Wir setzen nur UART1 (Index 1 in der Liste)
-        #             rates = [0] * 6  # Default: alle Ports 0
-        #             rates[1] = rate  # Setze Rate für UART1
-        #             payload_msg = bytes([msgClass, msgID]) + bytes(rates)
-        #             msg_cfg = UBXMessage('CFG', 'CFG-MSG', SET, payload=payload_msg)
-        #             if self._send_ubx_config(msg_cfg):
-        #                 action = "gesetzt auf Rate" if rate > 0 else "deaktiviert"
-        #                 logger.info(
-        #                     f"CFG-MSG: NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}) {action} {rate if rate > 0 else ''}.")
-        #                 save_needed = True  # Änderung gemacht
-        #             else:
-        #                 config_success = False
-        #                 logger.error(
-        #                     f"Fehler beim Konfigurieren von NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}).")
-        # except Exception as e:
-        #     logger.error(f"Fehler beim Erstellen/Senden von CFG-MSG: {e}")
-        #     config_success = False
-        #
+        # --- 3. NMEA Nachrichten konfigurieren (CFG-MSG) ---
+        # Deaktiviere unnötige Nachrichten, setze Rate für GGA/GSA
+        # Raten sind pro Navigationslösung (z.B. 1 = jede Lösung, 5 = jede 5. Lösung)
+        # Annahme: UART1 wird verwendet (portID=1)
+        # NMEA IDs: GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05
+        nmea_msgs_to_configure = {
+            0xF0: {  # NMEA Standard Talker ID
+                0x00: 1,  # GGA: Jede Navigationslösung (z.B. 1Hz wenn Rate 1Hz ist)
+                0x02: 5,  # GSA: Jede 5. Navigationslösung
+                0x04: 0,  # RMC: Deaktivieren
+                0x05: 0,  # VTG: Deaktivieren
+                0x03: 0,  # GSV: Deaktivieren (kann viele Nachrichten erzeugen)
+                0x01: 0  # GLL: Deaktivieren
+                # Füge hier weitere hinzu, falls nötig (z.B. ZDA deaktivieren: 0x08)
+            }
+        }
+        try:
+            for msgClass, ids_rates in nmea_msgs_to_configure.items():
+                for msgID, rate in ids_rates.items():
+                    # Payload: msgClass (1), msgID (1), ratePort0..5 (6 bytes)
+                    # Wir setzen nur UART1 (Index 1 in der Liste)
+                    rates = [0] * 6  # Default: alle Ports 0
+                    rates[1] = rate  # Setze Rate für UART1
+                    payload_msg = bytes([msgClass, msgID]) + bytes(rates)
+                    msg_cfg = UBXMessage('CFG', 'CFG-MSG', SET, payload=payload_msg)
+                    if self._send_ubx_config(msg_cfg):
+                        action = "gesetzt auf Rate" if rate > 0 else "deaktiviert"
+                        logger.info(
+                            f"CFG-MSG: NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}) {action} {rate if rate > 0 else ''}.")
+                        save_needed = True  # Änderung gemacht
+                    else:
+                        config_success = False
+                        logger.error(
+                            f"Fehler beim Konfigurieren von NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}).")
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen/Senden von CFG-MSG: {e}")
+            config_success = False
+
         # # --- 4. Navigationsrate setzen (CFG-RATE) --- (Optional, Standard ist 1Hz)
         # # Beispiel: 1Hz (measRate=1000ms)
         # # measRate: Millisekunden zwischen Messungen
