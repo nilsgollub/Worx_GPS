@@ -171,92 +171,38 @@ class GpsHandler:
     # --- NEUE METHODE zur U-BLOX Konfiguration ---
     def _configure_ublox(self):
         """Sendet Konfigurationsbefehle an das U-BLOX Modul via pyubx2."""
-        # if not PYUBX2_AVAILABLE:
-        #     logger.warning("pyubx2 nicht verfügbar, Konfiguration übersprungen.")
-        #     return
-        #
-        # logger.info("Starte U-BLOX Konfiguration...")
-        # config_success = True
-        # save_needed = False  # Flag, ob Konfiguration gespeichert werden muss
-        #
-        # # --- 1. Dynamic Platform Model (CFG-NAV5) ---
-        # # Pedestrian = 2, Portable = 0 (Default). Pedestrian (2) oder Automotive (4) könnten passen.
-        # # Maske 'dyn': Bit 0 muss gesetzt sein (0x0001)
-        # # Siehe u-blox Protokoll Spezifikation für Details zu CFG-NAV5 Payload.
-        # # pyubx2 < 1.2.15: UBXMessage('CFG', 'CFG-NAV5', SET, mask=1, dynModel=2)
-        # # pyubx2 >= 1.2.15: UBXMessage('CFG', 'CFG-NAV5', SET, payload=b'\x01\x00\x02\x00\x00\x00\x00\x00' + b'\x00'*28) # mask=1, dynModel=2
-        #
-        # # Sicherer: CFG-VALSET verwenden (wenn vom Modul unterstützt, NEO-7M sollte es)
-        # # Key ID für dynModel: 0x20110021 (siehe u-blox Doku oder pyubx2.ubx_cfgval)
-        # try:
-        #     # Alternative mit CFG-VALSET (empfohlen für neuere Module/Firmware)
-        #     # key_id = 0x20110021 # CFG-NAVSPG-DYNMODEL
-        #     # value = b'\x02' # Pedestrian
-        #     # msg_nav5 = UBXMessage.config_set(layers=UBX_CONFIG_DATABASE.RAM, transaction=0, cfgData=[(key_id, value)])
-        #
-        #     # Klassisch mit CFG-NAV5 (prüfe pyubx2 Version!)
-        #     # Annahme: pyubx2 >= 1.2.15
-        #     payload_nav5 = b'\x01\x00' + b'\x02' + b'\x00' * 33  # mask=1 (dyn), dynModel=2 (Pedestrian)
-        #     msg_nav5 = UBXMessage('CFG', 'CFG-NAV5', SET, payload=payload_nav5)
-        #
-        #     if self._send_ubx_config(msg_nav5):
-        #         logger.info("CFG-NAV5: Dynamic Model auf 'Pedestrian' (2) gesetzt.")
-        #         save_needed = True
-        #     else:
-        #         config_success = False
-        #         logger.error("Fehler beim Setzen von CFG-NAV5.")
-        # except Exception as e:
-        #     logger.error(f"Fehler beim Erstellen/Senden von CFG-NAV5: {e}")
-        #     config_success = False
-        #
-        # # --- 2. SBAS (EGNOS) aktivieren (CFG-SBAS) ---
-        # # mode=1 (Enabled), usage=0x07 (Range, DiffCorr, Integrity)
-        # # Siehe u-blox Protokoll Spezifikation für Details zu CFG-SBAS Payload.
-        # # pyubx2 < 1.2.15: UBXMessage('CFG', 'CFG-SBAS', SET, mode=1, usage=7, maxSBAS=1, scanmode2=0, scanmode1=0) # Beispiel
-        # # pyubx2 >= 1.2.15: payload muss manuell erstellt werden
-        # try:
-        #     payload_sbas = b'\x01' + b'\x07' + b'\x01' + b'\x00\x00\x00\x00\x00'  # mode=1, usage=7, maxSBAS=1, rest=0
-        #     msg_sbas = UBXMessage('CFG', 'CFG-SBAS', SET, payload=payload_sbas)
-        #     if self._send_ubx_config(msg_sbas):
-        #         logger.info("CFG-SBAS: SBAS aktiviert (Mode=1, Usage=7).")
-        #         save_needed = True
-        #     else:
-        #         config_success = False
-        #         logger.error("Fehler beim Setzen von CFG-SBAS.")
-        # except Exception as e:
-        #     logger.error(f"Fehler beim Erstellen/Senden von CFG-SBAS: {e}")
-        #     config_success = False
-        #
-        # --- 3. NMEA Nachrichten konfigurieren (CFG-MSG) ---
-        # Deaktiviere unnötige Nachrichten, setze Rate für GGA/GSA
-        # Raten sind pro Navigationslösung (z.B. 1 = jede Lösung, 5 = jede 5. Lösung)
-        # Annahme: UART1 wird verwendet (portID=1)
-        # NMEA IDs: GGA=0x00, GLL=0x01, GSA=0x02, GSV=0x03, RMC=0x04, VTG=0x05
+        if not PYUBX2_AVAILABLE:
+            logger.warning("pyubx2 nicht verfügbar, Konfiguration übersprungen.")
+            return
+
+        logger.info("Starte U-BLOX Konfiguration (Minimal: GGA + Port)...")
+        config_success = True
+        save_needed = False  # Flag, ob Konfiguration gespeichert werden muss
+
+        # --- 1. NMEA Nachrichten konfigurieren (CFG-MSG) ---
+        # Nur GGA aktivieren, Rest explizit deaktivieren
         nmea_msgs_to_configure = {
             0xF0: {  # NMEA Standard Talker ID
-                0x00: 1,  # GGA: Jede Navigationslösung (z.B. 1Hz wenn Rate 1Hz ist)
-                0x02: 5,  # GSA: Jede 5. Navigationslösung
-                0x04: 0,  # RMC: Deaktivieren
-                0x05: 0,  # VTG: Deaktivieren
-                0x03: 0,  # GSV: Deaktivieren (kann viele Nachrichten erzeugen)
-                0x01: 0  # GLL: Deaktivieren
-                # Füge hier weitere hinzu, falls nötig (z.B. ZDA deaktivieren: 0x08)
+                0x00: 1,  # GGA: Rate 1
+                0x02: 0,  # GSA: Rate 0
+                0x04: 0,  # RMC: Rate 0
+                0x05: 0,  # VTG: Rate 0
+                0x03: 0,  # GSV: Rate 0
+                0x01: 0  # GLL: Rate 0
             }
         }
         try:
             for msgClass, ids_rates in nmea_msgs_to_configure.items():
                 for msgID, rate in ids_rates.items():
-                    # Payload: msgClass (1), msgID (1), ratePort0..5 (6 bytes)
-                    # Wir setzen nur UART1 (Index 1 in der Liste)
-                    rates = [0] * 6  # Default: alle Ports 0
-                    rates[1] = rate  # Setze Rate für UART1
+                    rates = [0] * 6
+                    rates[1] = rate  # Nur UART1
                     payload_msg = bytes([msgClass, msgID]) + bytes(rates)
                     msg_cfg = UBXMessage('CFG', 'CFG-MSG', SET, payload=payload_msg)
                     if self._send_ubx_config(msg_cfg):
                         action = "gesetzt auf Rate" if rate > 0 else "deaktiviert"
                         logger.info(
                             f"CFG-MSG: NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}) {action} {rate if rate > 0 else ''}.")
-                        save_needed = True  # Änderung gemacht
+                        save_needed = True
                     else:
                         config_success = False
                         logger.error(
@@ -265,69 +211,51 @@ class GpsHandler:
             logger.error(f"Fehler beim Erstellen/Senden von CFG-MSG: {e}")
             config_success = False
 
-        # # --- 4. Navigationsrate setzen (CFG-RATE) --- (Optional, Standard ist 1Hz)
-        # # Beispiel: 1Hz (measRate=1000ms)
-        # # measRate: Millisekunden zwischen Messungen
-        # # navRate: Anzahl Messungen pro Navigationslösung (1 = jede Messung ergibt eine Lösung)
-        # # timeRef: 0=UTC, 1=GPS, 2=GLONASS etc. (1 für GPS Zeit ist oft gut)
-        # try:
-        #     meas_rate_ms = 1000  # 1 Hz
-        #     nav_rate_cycles = 1
-        #     time_ref = 1  # GPS time
-        #     payload_rate = meas_rate_ms.to_bytes(2, 'little') + \
-        #                    nav_rate_cycles.to_bytes(2, 'little') + \
-        #                    time_ref.to_bytes(2, 'little')
-        #     msg_rate = UBXMessage('CFG', 'CFG-RATE', SET, payload=payload_rate)
-        #     if self._send_ubx_config(msg_rate):
-        #         logger.info(f"CFG-RATE: Messrate auf {1000 / meas_rate_ms:.1f}Hz ({meas_rate_ms}ms) gesetzt.")
-        #         save_needed = True
-        #     else:
-        #         config_success = False
-        #         logger.error("Fehler beim Setzen von CFG-RATE.")
-        # except Exception as e:
-        #     logger.error(f"Fehler beim Erstellen/Senden von CFG-RATE: {e}")
-        #     config_success = False
-        #
-        # # --- 5. Konfiguration speichern (CFG-CFG) ---
-        # # WICHTIG, damit die Einstellungen bleiben! Nur speichern, wenn Änderungen gemacht wurden.
-        # if save_needed and config_success:  # Nur speichern, wenn bisher alles ok war und Änderungen gemacht wurden
+        # --- 2. Port-Konfiguration sicherstellen (CFG-PRT) ---
+        # Setze UART1 explizit auf 9600 Baud, 8N1, NMEA Input/Output
+        if config_success:  # Nur wenn CFG-MSG ok war
+            try:
+                portID = 1  # UART1
+                reserved0 = 0
+                txReady = 0  # Pins nicht verwendet
+                mode = 0x08D0  # 8N1 -> 0b1000 1101 0000
+                baudRate = 9600
+                inProtoMask = 0x02  # Nur NMEA
+                outProtoMask = 0x02  # Nur NMEA
+                flags = 0  # Keine Flags
+                reserved1 = 0
+
+                payload_prt = portID.to_bytes(1, 'little') + \
+                              reserved0.to_bytes(1, 'little') + \
+                              txReady.to_bytes(2, 'little') + \
+                              mode.to_bytes(4, 'little') + \
+                              baudRate.to_bytes(4, 'little') + \
+                              inProtoMask.to_bytes(2, 'little') + \
+                              outProtoMask.to_bytes(2, 'little') + \
+                              flags.to_bytes(2, 'little') + \
+                              reserved1.to_bytes(2, 'little')
+
+                msg_prt = UBXMessage('CFG', 'CFG-PRT', SET, payload=payload_prt)
+
+                if self._send_ubx_config(msg_prt):
+                    logger.info(f"CFG-PRT: UART1 ({portID}) auf {baudRate} Baud, 8N1, NMEA In/Out gesetzt.")
+                    save_needed = True
+                else:
+                    config_success = False
+                    logger.error("Fehler beim Setzen von CFG-PRT.")
+            except Exception as e:
+                logger.error(f"Fehler beim Erstellen/Senden von CFG-PRT: {e}")
+                config_success = False
+
+        # --- 3. Speichern (CFG-CFG) --- (IMMER NOCH AUSKOMMENTIERT LASSEN!)
+        # if save_needed and config_success:
         #     logger.info("Speichere Konfiguration im U-BLOX Modul...")
-        #     # saveMask: Welche Konfigurationsbereiche speichern (0x001F = IO, MSG, INF, NAV, RXM)
-        #     # deviceMask: Wohin speichern (0x04=BBR, 0x02=Flash, 0x01=I2C EEPROM)
-        #     # Für NEO-7M ist BBR (Battery Backed RAM) relevant. Flash oft nicht vorhanden.
-        #     # Maske 0x04 (BBR) oder 0x07 (BBR+Flash+EEPROM) probieren.
-        #     try:
-        #         save_mask = 0x001F  # IO, MSG, INF, NAV, RXM
-        #         dev_mask = 0x04  # Nur BBR
-        #         payload_save = save_mask.to_bytes(4, 'little') + b'\x00' * 4 + dev_mask.to_bytes(4,
-        #                                                                                          'little')  # clearMask=0, loadMask=0
-        #         msg_save = UBXMessage('CFG', 'CFG-CFG', SET, payload=payload_save)
-        #         if self._send_ubx_config(msg_save):
-        #             logger.info("CFG-CFG: Konfiguration erfolgreich zum Speichern in BBR angewiesen.")
-        #         else:
-        #             config_success = False
-        #             logger.error("Fehler beim Senden des CFG-CFG Speicherbefehls.")
-        #     except Exception as e:
-        #         logger.error(f"Fehler beim Erstellen/Senden von CFG-CFG: {e}")
-        #         config_success = False
-        # elif not save_needed:
-        #     logger.info("Keine Änderungen an der U-BLOX Konfiguration vorgenommen, Speichern übersprungen.")
-        # elif not config_success:
-        #     logger.warning("Fehler während der U-BLOX Konfiguration aufgetreten, Speichern übersprungen.")
-        #
-        # if config_success:
-        #     logger.info("U-BLOX Konfiguration erfolgreich abgeschlossen (oder keine Änderungen nötig).")
-        # else:
-        #     logger.warning("U-BLOX Konfiguration mit Fehlern abgeschlossen.")
-        #
-        # # Optional: Konfiguration zurücklesen (POLL) und prüfen (z.B. CFG-MSG für GGA)
-        # # try:
-        # #     msg_poll = UBXMessage('CFG', 'CFG-MSG', POLL, payload=b'\xF0\x00') # Poll GGA config
-        # #     if self._send_ubx_config(msg_poll):
-        # #         # Hier müsste man auf die Antwort warten und sie parsen
-        # #         logger.info("CFG-MSG POLL für GGA gesendet. Antwort muss manuell gelesen werden.")
-        # # except Exception as e:
-        # #     logger.error(f"Fehler beim Senden von CFG-MSG POLL: {e}")
+        #     # ... (Code für CFG-CFG) ...
+
+        if config_success:
+            logger.info("U-BLOX Konfiguration (Minimal: GGA + Port) erfolgreich abgeschlossen.")
+        else:
+            logger.warning("U-BLOX Konfiguration (Minimal: GGA + Port) mit Fehlern abgeschlossen.")
 
     # --- ENDE NEUE METHODE ---
 
@@ -494,15 +422,24 @@ class GpsHandler:
 
         # --- Real-Modus ---
         elif self.mode == "real":
-            if not self.ser_gps or not self.ser_gps.is_open:
-                logger.warning("Serielle GPS-Verbindung nicht offen.")
+            # --- Connection Check with more logging ---
+            connection_ok = True
+            if self.ser_gps is None:
+                logger.warning("GPS-Verbindung ist None in get_gps_data.")
+                connection_ok = False
+            elif not self.ser_gps.is_open:
+                logger.warning(f"GPS-Verbindung {self.ser_gps.name} ist nicht offen in get_gps_data.")
+                connection_ok = False
+
+            if not connection_ok:
+                logger.info("-> get_gps_data löst _reconnect_serial aus.")  # <-- NEUES LOGGING
                 self._reconnect_serial()
-                # Setze Status auf "Connecting" wenn Verbindung versucht wird
                 if self.last_gga_info.get('qual') != -1:
                     self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
                 return None
+            # --- End Connection Check ---
 
-            # --- NEU: Eingangspuffer leeren ---
+            # --- Eingangspuffer leeren ---
             try:
                 logger.debug("Leere seriellen Eingangspuffer...")
                 self.ser_gps.reset_input_buffer()
