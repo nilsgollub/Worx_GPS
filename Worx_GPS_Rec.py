@@ -96,8 +96,9 @@ class WorxGpsRec:
         else:
             logging.warning("Aufnahme läuft bereits, 'start'-Befehl ignoriert.")
 
+    # --- GEÄNDERTE stop_recording ---
     def stop_recording(self):
-        """Stoppt den Aufnahmeprozess und sendet die Daten."""
+        """Stoppt den Aufnahmeprozess, sendet die Daten und stößt AssistNow Update an."""
         if self.is_recording:
             self.is_recording = False
             logging.info("Aufnahme gestoppt. Sende gepufferte Daten...")
@@ -105,8 +106,35 @@ class WorxGpsRec:
             # oder die Nachricht ggf. verwerfen/später versuchen
             self.data_recorder.send_buffer_data()
             self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "recording stopped")
+
+            # --- NEU: AssistNow Update nach Mähvorgang anstoßen ---
+            logging.info("Stoße AssistNow Update nach Mähvorgang an.")
+            if self.gps_handler:
+                try:
+                    # Rufe check_assist_now mit force_update=True auf
+                    # Die Methode gibt True zurück, wenn alles ok ist (auch wenn kein Update nötig war)
+                    # und False, wenn ein Update versucht wurde und fehlschlug.
+                    success = self.gps_handler.check_assist_now(force_update=True)
+                    if success:
+                        logging.info("Manuelles AssistNow Update erfolgreich (oder nicht nötig).")
+                    else:
+                        # Fehler wurde bereits im GpsHandler geloggt
+                        logging.warning("Manuelles AssistNow Update fehlgeschlagen (siehe vorherige Logs).")
+                except AttributeError:
+                    # Falls die Methode aus irgendeinem Grund nicht existiert
+                    logging.warning(
+                        "GpsHandler hat keine Methode 'check_assist_now' oder unterstützt 'force_update' nicht.")
+                except Exception as e:
+                    # Fängt andere unerwartete Fehler während des Updates ab
+                    logging.error(f"Unerwarteter Fehler beim Anstoßen des AssistNow Updates: {e}", exc_info=True)
+            else:
+                logging.warning("Kein GpsHandler verfügbar, um AssistNow Update anzustoßen.")
+            # --- Ende NEU ---
+
         else:
             logging.warning("Aufnahme war nicht aktiv, 'stop'-Befehl ignoriert.")
+
+    # --- ENDE GEÄNDERTE stop_recording ---
 
     def send_problem_message(self):
         """Sendet die letzte bekannte Position als 'Problem'-Nachricht."""
@@ -223,11 +251,13 @@ class WorxGpsRec:
                     last_status_send = current_time
                 # --- Ende Status senden ---
 
-                # --- AssistNow prüfen ---
+                # --- AssistNow prüfen (periodisch) ---
                 # check_assist_now sollte intern Fehler behandeln
-                logging.debug("Prüfe AssistNow...")
+                logging.debug("Prüfe AssistNow (periodisch)...")
+                # Rufe ohne force_update auf, um die zeitbasierte Prüfung zu nutzen
                 self.gps_handler.check_assist_now()
-                logging.debug("AssistNow Prüfung beendet.")
+                logging.debug("Periodische AssistNow Prüfung beendet.")
+                # --- Ende AssistNow prüfen ---
 
                 # --- Warten ---
                 sleep_interval = REC_CONFIG.get("storage_interval", 1)
