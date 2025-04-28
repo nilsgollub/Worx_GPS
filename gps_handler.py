@@ -755,7 +755,6 @@ class GpsHandler:
             logger.warning("Routenmodus aktiv, aber kein Routensimulator initialisiert.")
             return self.generate_fake_data()  # Fallback
 
-    # --- GEÄNDERTE check_assist_now ---
     def check_assist_now(self, force_update=False):
         """
         Prüft, ob AssistNow Daten aktualisiert werden müssen (zeitbasiert oder erzwungen)
