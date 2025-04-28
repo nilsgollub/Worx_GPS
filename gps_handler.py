@@ -322,23 +322,43 @@ class GpsHandler:
                 self.lon_bounds[0] <= lon <= self.lon_bounds[1])
 
     def download_assist_now_data(self):
-        """Lädt AssistNow Offline Daten herunter."""
+        """Lädt AssistNow Offline Daten herunter (für u-blox 7 optimiert)."""
         if not self.assist_now_token:
             logger.error("AssistNow Token fehlt in der Konfiguration.")
             return None
         try:
             headers = {"useragent": "Thingstream Client"}
+
+            # --- Angepasste Parameter (basierend auf Doku für u-blox 7) ---
+            # Hole die gewünschte Anzahl Tage aus der Config, prüfe ob gültig für u7
+            requested_days = ASSIST_NOW_CONFIG.get("days", 7)  # Standard 7 Tage aus Config holen
+            valid_u7_days = [1, 2, 3, 5, 7, 10, 14]
+            if requested_days not in valid_u7_days:
+                logger.warning(
+                    f"Ungültiger Wert für 'days' ({requested_days}) in ASSIST_NOW_CONFIG für u-blox 7. Verwende Standardwert 7.")
+                effective_days = 7  # Fallback auf einen gültigen Wert
+            else:
+                effective_days = requested_days
+
             params = {
                 "token": self.assist_now_token,
-                "gnss": "gps",  # Nur GPS Daten anfordern (oder anpassen, falls andere Systeme unterstützt werden)
-                "datatype": "alm",  # Almanach Daten anfordern (oder 'eph' für Ephemeriden)
-                "days": ASSIST_NOW_CONFIG.get("days", 7),  # Gültigkeit der Daten aus Config
+                "gnss": "gps",
+                "format": "aid",  # Korrekt für u-blox 7
+                "days": effective_days  # Korrekt für u-blox 7, Wert validiert
+                # "period": 1,         # Falsch für u-blox 7
+                # "resolution": 1      # Falsch für u-blox 7
+                # "alm": "gps",        # Falsch für format=aid
+                # "datatype": "alm",   # Falsch für u-blox 7
             }
+            # --- Ende Anpassung ---
+
             logger.info(
-                f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}...")
+                f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}... (Params: {params})")  # Logge die Parameter
             response = requests.get(self.assist_now_offline_url, headers=headers, params=params,
-                                    timeout=15)  # Timeout hinzufügen
-            response.raise_for_status()  # Löst HTTPError bei Fehlern aus
+                                    timeout=15)
+            response.raise_for_status()  # Löst HTTPError bei Fehlern aus (wie 400 Bad Request)
+
+            # ... (Rest der Methode bleibt gleich: Prüfung auf leeren Inhalt, Textfehler, Rückgabe) ...
 
             if not response.content:
                 logger.warning("Keine AssistNow Offline-Daten erhalten (leere Antwort).")
@@ -347,7 +367,8 @@ class GpsHandler:
             # Prüfen, ob die Antwort Text enthält (Fehlermeldung von u-blox?)
             try:
                 response_text = response.content.decode('utf-8', errors='ignore')
-                if "error" in response_text.lower() or "invalid token" in response_text.lower():
+                # Suche nach typischen Fehlermeldungen
+                if "error" in response_text.lower() or "invalid token" in response_text.lower() or "bad request" in response_text.lower():
                     logger.error(f"Fehler von AssistNow Service erhalten: {response_text}")
                     return None
             except UnicodeDecodeError:
@@ -356,11 +377,16 @@ class GpsHandler:
 
             logger.info(f"AssistNow Offline-Daten erfolgreich heruntergeladen ({len(response.content)} Bytes).")
             return response.content
+
         except requests.exceptions.Timeout:
             logger.error("Timeout beim Herunterladen der AssistNow Offline-Daten.")
             return None
         except requests.exceptions.RequestException as e:
-            logger.error(f"Fehler beim Herunterladen der AssistNow Offline-Daten: {e}")
+            # Logge den Statuscode und die URL, falls verfügbar
+            status_code = e.response.status_code if e.response is not None else "N/A"
+            req_url = e.request.url if e.request is not None else "N/A"
+            logger.error(
+                f"Fehler beim Herunterladen der AssistNow Offline-Daten (Status: {status_code}) für URL {req_url}: {e}")
             return None
         except Exception as e:
             logger.error(f"Unerwarteter Fehler beim AssistNow Download: {e}", exc_info=True)

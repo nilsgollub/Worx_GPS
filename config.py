@@ -96,7 +96,10 @@ ASSIST_NOW_CONFIG = {
     # --- Korrektur: Logik für Boolean ---
     "assist_now_enabled": os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true",
     "assist_now_offline_url": "https://offline-live1.services.u-blox.com/GetOfflineData.ashx",
-    "assist_now_token": os.getenv("ASSIST_NOW_TOKEN")
+    "assist_now_token": os.getenv("ASSIST_NOW_TOKEN"),
+    # --- NEU: Gültigkeitsdauer für Offline-Daten (u-blox 7) ---
+    # Gültige Werte für u-blox 7: 1, 2, 3, 5, 7, 10, 14
+    "days": 7
 }
 
 # --- NEU: Nachverarbeitung (Auswertung) ---
