@@ -3,6 +3,8 @@ import logging
 from mqtt_handler import MqttHandler
 from heatmap_generator import HeatmapGenerator
 from data_manager import DataManager
+from config import HEATMAP_CONFIG, REC_CONFIG, POST_PROCESSING_CONFIG # Importiere neue Config
+from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed
 from utils import read_gps_data_from_csv_string
 from config import HEATMAP_CONFIG, REC_CONFIG
 import time
@@ -96,7 +98,7 @@ class WorxGps:
             logger.error(f"Fehler in on_mqtt_message: {e}", exc_info=True)
 
     def handle_gps_data(self, csv_data):
-        """Verarbeitet empfangene GPS-Daten (CSV-Format)."""
+        """Verarbeitet empfangene GPS-Daten (CSV-Format), führt Filterung durch."""
         logger.debug(f"handle_gps_data called with data preview: {csv_data[:100]}...")
 
         if csv_data != "-1":
@@ -106,43 +108,85 @@ class WorxGps:
         else:
             logger.info("End-Marker für GPS-Daten empfangen, verarbeite Puffer...")
             logging.debug(f"Processing buffer content (first 200 chars): {self.gps_data_buffer[:200]}...")
-            gps_data = read_gps_data_from_csv_string(self.gps_data_buffer)
-            if gps_data:
-                logger.info(f"{len(gps_data)} GPS-Punkte aus Puffer gelesen.")
 
-                # Daten speichern und hinzufügen
-                self.maehvorgang_data.append(gps_data)
-                self.alle_maehvorgang_data.append(gps_data)
+            # Schritt 1: Daten aus CSV lesen
+            raw_gps_data = read_gps_data_from_csv_string(self.gps_data_buffer)
+            self.gps_data_buffer = ""  # Puffer sofort leeren
 
-                filename = self.data_manager.get_next_mow_filename()
-                # Stelle sicher, dass der Pfad korrekt übergeben wird (DataManager verwendet jetzt pathlib)
-                self.data_manager.save_gps_data(gps_data, filename)  # Nur Dateiname übergeben
-
-                logger.info("Starte Heatmap-Aktualisierung nach neuem Mähvorgang...")
-                # Aktueller Mähvorgang
-                self.update_single_heatmap("heatmap_aktuell", gps_data, draw_path=True, is_multi=False)
-
-                # --- Letzte 10 Mähvorgänge (Interaktiv) ---
-                # Übergebe die Liste der Sessions (deque -> list)
-                self.update_single_heatmap("heatmap_10_maehvorgang", list(self.maehvorgang_data), draw_path=True,
-                                           is_multi=True)
-
-                # --- Kumulierte Daten (Alle Sessions kombiniert) ---
-                flat_all_data = [point for mow_session in self.alle_maehvorgang_data for point in mow_session]
-                self.update_single_heatmap("heatmap_kumuliert", flat_all_data, draw_path=False, is_multi=False)
-
-                # Problemzonen (bleibt gleich)
-                self.update_single_heatmap("problemzonen_heatmap", self.problemzonen_data, draw_path=False,
-                                           is_multi=False)
-
-                logging.info("Heatmap-Aktualisierung abgeschlossen.")
-
-            else:
+            if not raw_gps_data:
                 logger.error("Fehler: Konnte keine GPS-Daten aus dem Puffer lesen oder Puffer war leer.")
-                self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_gps")
+                self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_gps_parsing")
+                return  # Verarbeitung hier beenden
 
-            self.gps_data_buffer = ""
-            logging.debug("GPS-Datenpuffer geleert.")
+            logger.info(f"{len(raw_gps_data)} GPS-Punkte aus Puffer gelesen.")
+            original_point_count = len(raw_gps_data)
+            processed_data = raw_gps_data  # Startpunkt für die Verarbeitungskette
+
+            # Schritt 2: Ausreißererkennung (falls aktiviert)
+            outlier_config = POST_PROCESSING_CONFIG.get("outlier_detection", {})
+            if outlier_config.get("enable", True):
+                max_speed = outlier_config.get("max_speed_mps", 1.5)
+                logger.info(f"Anwendung: Ausreißererkennung (max_speed={max_speed} m/s)...")
+                processed_data = remove_outliers_by_speed(processed_data, max_speed_mps=max_speed)
+                logger.info(f"{len(processed_data)} Punkte nach Ausreißererkennung verblieben.")
+                if not processed_data:
+                    logger.warning("Nach Ausreißererkennung sind keine GPS-Daten mehr übrig.")
+                    # Optional: Fehler an MQTT senden oder einfach keine Heatmap erstellen
+                    return  # Verarbeitung hier beenden
+
+            # Schritt 3: Filterung/Glättung (basierend auf Konfiguration)
+            method = POST_PROCESSING_CONFIG.get("method", "none").lower()
+
+            if method == "moving_average":
+                window = POST_PROCESSING_CONFIG.get("moving_average_window", 5)
+                logger.info(f"Anwendung: Gleitender Durchschnitt (Fenster={window})...")
+                processed_data = apply_moving_average(processed_data, window)
+
+            elif method == "kalman":
+                logger.info("Anwendung: Kalman Filter...")
+                r_noise = POST_PROCESSING_CONFIG.get("kalman_measurement_noise", 5.0)
+                q_noise = POST_PROCESSING_CONFIG.get("kalman_process_noise", 0.05)
+                # Stelle sicher, dass die Funktion die Konfigurationsparameter erhält
+                processed_data = apply_kalman_filter(processed_data, measurement_noise=r_noise, process_noise=q_noise)
+
+            elif method != "none":
+                logger.warning(f"Unbekannte Post-Processing Methode '{method}' in Config. Überspringe Filterung.")
+
+            if not processed_data:
+                logger.warning("Nach Filterung/Glättung sind keine GPS-Daten mehr übrig.")
+                return  # Verarbeitung hier beenden
+
+            logger.info(
+                f"Verarbeitung abgeschlossen. {len(processed_data)} Punkte werden verwendet (ursprünglich {original_point_count}).")
+
+            # Schritt 4: Verarbeitete Daten speichern und für Heatmaps verwenden
+            self.maehvorgang_data.append(processed_data)
+            self.alle_maehvorgang_data.append(processed_data)
+
+            filename = self.data_manager.get_next_mow_filename()
+            self.data_manager.save_gps_data(processed_data, filename)
+
+            logger.info("Starte Heatmap-Aktualisierung nach neuem Mähvorgang...")
+            # Aktueller Mähvorgang (mit den *verarbeiteten* Daten)
+            self.update_single_heatmap("heatmap_aktuell", processed_data, draw_path=True, is_multi=False)
+
+            # Letzte 10 Mähvorgänge (verwenden die bereits verarbeiteten Daten im deque)
+            self.update_single_heatmap("heatmap_10_maehvorgang", list(self.maehvorgang_data), draw_path=True,
+                                       is_multi=True)
+
+            # Kumulierte Daten (alle *verarbeiteten* Sessions kombinieren)
+            flat_all_data = [point for session in self.alle_maehvorgang_data for point in session]
+            self.update_single_heatmap("heatmap_kumuliert", flat_all_data, draw_path=False, is_multi=False)
+
+            # Problemzonen (bleibt gleich, verwendet separate Datenquelle)
+            self.update_single_heatmap("problemzonen_heatmap", self.problemzonen_data, draw_path=False, is_multi=False)
+
+            logging.info("Heatmap-Aktualisierung abgeschlossen.")
+
+            # Puffer wurde bereits oben geleert
+            # logging.debug("GPS-Datenpuffer geleert.") # Nicht mehr nötig hier
+
+    # --- ENDE GEÄNDERTE handle_gps_data ---
 
     def handle_status_data(self, csv_data):
         """Verarbeitet empfangene Status-Nachrichten."""

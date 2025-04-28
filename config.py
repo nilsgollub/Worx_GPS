@@ -99,6 +99,24 @@ ASSIST_NOW_CONFIG = {
     "assist_now_token": os.getenv("ASSIST_NOW_TOKEN")
 }
 
+# --- NEU: Nachverarbeitung (Auswertung) ---
+POST_PROCESSING_CONFIG = {
+    # Methode: "none", "moving_average", "kalman"
+    "method": "moving_average",
+
+    # Einstellungen für Gleitenden Durchschnitt
+    "moving_average_window": 5,  # Anzahl der Punkte für den Durchschnitt
+
+    # Einstellungen für Kalman-Filter (Experimentelle Werte!)
+    "kalman_measurement_noise": 5.0,  # Unsicherheit der GPS-Messung (größer = mehr Glättung)
+    "kalman_process_noise": 0.05,     # Unsicherheit der Bewegung (größer = schnellere Reaktion)
+
+    # Einstellungen für Ausreißererkennung
+    "outlier_detection": {
+        "enable": True,             # Aktivieren/Deaktivieren
+        "max_speed_mps": 1.5        # Maximale plausible Geschwindigkeit in m/s
+    }
+}
 
 # --- Validierung (Optional, aber hilfreich) ---
 def validate_config():
