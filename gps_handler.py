@@ -81,10 +81,10 @@ class GpsHandler:
 
                 # --- NEU: U-BLOX Konfiguration nach erfolgreicher Verbindung ---
                 if PYUBX2_AVAILABLE:
-                    self._configure_ublox()  # This now includes the save attempt
-                    # --- Kurze Pause nach der Konfiguration (und potentiellem Speichern) ---
-                    logger.debug("Warte kurz nach U-BLOX Konfiguration/Speichern...")
-                    time.sleep(1.5)  # Slightly longer pause after potential save
+                    # self._configure_ublox()  # This now includes the save attempt
+                    # # --- Kurze Pause nach der Konfiguration (und potentiellem Speichern) ---
+                    # logger.debug("Warte kurz nach U-BLOX Konfiguration/Speichern...")
+                    # time.sleep(1.5)  # Slightly longer pause after potential save
                     # --- ENDE ---
                 else:
                     logger.warning("pyubx2 nicht verfügbar, U-BLOX Konfiguration übersprungen.")
