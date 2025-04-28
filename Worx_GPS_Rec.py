@@ -230,7 +230,7 @@ class WorxGpsRec:
                 logging.debug("AssistNow Prüfung beendet.")
 
                 # --- Warten ---
-                sleep_interval = REC_CONFIG.get("storage_interval", 2)
+                sleep_interval = REC_CONFIG.get("storage_interval", 1)
                 logging.debug(f"Warte für {sleep_interval:.2f} Sekunden...")
                 time.sleep(sleep_interval)
                 logging.debug(f"--- Ende Hauptschleife Iteration {loop_counter} ---")

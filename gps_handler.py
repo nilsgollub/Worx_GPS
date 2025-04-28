@@ -30,15 +30,17 @@ class GpsHandler:
         self._connect_serial()
 
         # Zeitstempel des letzten erfolgreichen AssistNow-Updates
-        self.last_assist_now_update = datetime.now() - timedelta(
-            days=1)  # Initialwert, um Update beim Start zu erzwingen
+        # Initialwert, um Update beim Start zu erzwingen (oder nach langer Pause)
+        # Setze es weit genug zurück, damit das Intervall sicher überschritten ist
+        self.last_assist_now_update = datetime.now() - timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1)
+
         self.is_fake_gps = False
         self.route_simulator = None
         self.last_valid_fix_time = 0
         self.last_known_position = None
         # Letzte GGA Statusinformationen
         self.last_gga_info = {'qual': -1 if self.mode == "real" else 0, 'sats': 0, 'timestamp': time.time()}
-        logger.info("GpsHandler initialisiert.")  # Log Hinzugefügt
+        logger.info("GpsHandler initialisiert.")
 
     def _connect_serial(self):
         """Versucht, die serielle Verbindung herzustellen oder wiederherzustellen."""
@@ -117,8 +119,7 @@ class GpsHandler:
                 "token": self.assist_now_token,
                 "gnss": "gps",  # Nur GPS Daten anfordern (oder anpassen, falls andere Systeme unterstützt werden)
                 "datatype": "alm",  # Almanach Daten anfordern (oder 'eph' für Ephemeriden)
-                "days": 7,  # Gültigkeit der Daten (max. 14 für Offline)
-                # "resolution": 1 # Nicht für Offline relevant
+                "days": ASSIST_NOW_CONFIG.get("days", 7),  # Gültigkeit der Daten aus Config
             }
             logger.info(
                 f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}...")
@@ -175,7 +176,6 @@ class GpsHandler:
             logger.error(f"Unerwarteter Fehler beim Senden der AssistNow Offline-Daten: {e}", exc_info=True)
             return False
 
-    # --- NEUE/GEÄNDERTE get_gps_data ---
     def get_gps_data(self):
         """
         Liest und parst NMEA-Nachrichten. Versucht, innerhalb eines Timeouts einen GGA-Satz zu finden.
@@ -360,9 +360,6 @@ class GpsHandler:
         logger.error("Unerwarteter Fall am Ende von get_gps_data erreicht.")
         return None
 
-    # --- ENDE get_gps_data ---
-
-    # --- GEÄNDERTE get_last_gga_status ---
     def get_last_gga_status(self):
         """Gibt den letzten bekannten GPS-Status inkl. Position und A-GPS Info als String zurück."""
         qual = self.last_gga_info.get('qual', 0)
@@ -417,8 +414,6 @@ class GpsHandler:
         logger.debug(f"Generierter GPS Status String: {status_message} (Qual={qual}, Sats={sats}, TS={ts})")
         return status_message
 
-    # --- ENDE get_last_gga_status ---
-
     def generate_fake_data(self):
         lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
         fake_pos = {
@@ -459,36 +454,58 @@ class GpsHandler:
             logger.warning("Routenmodus aktiv, aber kein Routensimulator initialisiert.")
             return self.generate_fake_data()  # Fallback
 
-    def check_assist_now(self):
-        """Prüft, ob AssistNow Daten aktualisiert werden müssen und führt dies ggf. durch."""
+    # --- GEÄNDERTE check_assist_now ---
+    def check_assist_now(self, force_update=False):
+        """
+        Prüft, ob AssistNow Daten aktualisiert werden müssen (zeitbasiert oder erzwungen)
+        und führt dies ggf. durch.
+
+        Args:
+            force_update (bool): Wenn True, wird das Update unabhängig vom Zeitintervall versucht.
+
+        Returns:
+            bool: True, wenn kein Update nötig war oder das Update erfolgreich war.
+                  False, wenn ein Update versucht wurde, aber fehlschlug.
+        """
         # Prüfe nur im Real-Modus und wenn aktiviert
         if self.mode != "real" or not self.assist_now_enabled:
+            logger.debug("AssistNow nicht aktiv oder nicht im Real-Modus.")
             return True  # Nichts zu tun
 
         # Prüfe, ob das Update-Intervall abgelaufen ist
         update_interval_days = ASSIST_NOW_CONFIG.get("days", 7) - 1  # Update 1 Tag vor Ablauf
-        if datetime.now() - self.last_assist_now_update >= timedelta(days=update_interval_days):
-            logger.info(
-                f"AssistNow Offline Update erforderlich (letztes Update: {self.last_assist_now_update}, Intervall: {update_interval_days} Tage).")
+        time_since_last = datetime.now() - self.last_assist_now_update
+        interval_elapsed = time_since_last >= timedelta(days=update_interval_days)
+
+        # --- NEUE Bedingung: Update wenn erzwungen ODER Intervall abgelaufen ---
+        if force_update or interval_elapsed:
+            if force_update:
+                logger.info("AssistNow Offline Update manuell angestoßen.")
+            else:
+                logger.info(
+                    f"AssistNow Offline Update erforderlich (letztes Update: {self.last_assist_now_update}, Intervall: {update_interval_days} Tage).")
+
+            # --- Download und Senden ---
             data = self.download_assist_now_data()
             if data is not None:
                 if self.send_assist_now_data(data):
                     self.last_assist_now_update = datetime.now()  # Nur bei Erfolg aktualisieren
                     logger.info("AssistNow Offline Update erfolgreich durchgeführt.")
-                    return True
+                    return True  # Erfolg
                 else:
                     logger.error("AssistNow Offline-Daten konnten nicht an das Modul gesendet werden.")
-                    # Optional: Kurze Pause vor nächstem Versuch in der Hauptschleife
-                    # time.sleep(5)
-                    return False  # Signalisiert Fehler
+                    # Optional: Kurze Pause vor nächstem Versuch in der Hauptschleife? Eher nicht hier.
+                    return False  # Signalisiert Fehler beim Senden
             else:
                 logger.error("AssistNow Offline-Daten konnten nicht heruntergeladen werden.")
-                # Optional: Kurze Pause vor nächstem Versuch in der Hauptschleife
-                # time.sleep(5)
-                return False  # Signalisiert Fehler
+                # Optional: Kurze Pause? Eher nicht hier.
+                return False  # Signalisiert Fehler beim Download
+            # --- Ende Download und Senden ---
         else:
             logger.debug(f"Kein AssistNow Update erforderlich (letztes Update: {self.last_assist_now_update}).")
-            return True  # Kein Update nötig
+            return True  # Kein Update nötig, also "Erfolg" im Sinne von "kein Fehler"
+
+    # --- ENDE GEÄNDERTE check_assist_now ---
 
     def change_gps_mode(self, new_mode):
         """Ändert den Betriebsmodus des GPS-Handlers (real, fake_random, fake_route)."""
