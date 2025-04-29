@@ -2,129 +2,162 @@
 import csv
 import logging
 import io
-from typing import List, Dict, Any, Union, Optional # Optional und Type Hinting hinzugefügt
+from typing import List, Dict, Any, Union, Optional, Tuple  # Tuple hinzugefügt
+import math  # NEU: Für Distanzberechnung
 
-logger = logging.getLogger(__name__) # Logger am Anfang definieren
-
-# Logging konfigurieren (sollte idealerweise zentral in der Hauptdatei erfolgen)
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] %(message)s')
+logger = logging.getLogger(__name__)
 
 
-def read_gps_data_from_csv_string(csv_string):
+# ... (read_gps_data_from_csv_string und flatten_data bleiben unverändert) ...
+def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, Any]]:
     """
     Liest GPS-Daten aus einem CSV-String und gibt sie als Liste von Dictionaries zurück.
-
     Args:
-        csv_string: Der CSV-String mit den GPS-Daten.
-
+        csv_string: Der CSV-String mit den GPS-Daten. Kann None sein.
     Returns:
         Eine Liste von Dictionaries, wobei jedes Dictionary einen GPS-Punkt repräsentiert.
-        Format: [{"lat": float, "lon": float, "timestamp": float, "satellites": float}, ...]
-        Gibt eine leere Liste zurück, wenn beim Lesen ein Fehler auftritt oder der String leer ist.
+        Format: [{"lat": float, "lon": float, "timestamp": float, "satellites": Optional[int]}, ...]
+        Gibt eine leere Liste zurück, wenn beim Lesen ein Fehler auftritt oder der String leer/None ist.
     """
-    data = []
+    data: List[Dict[str, Any]] = []
     if not csv_string:
-        logging.warning("read_gps_data_from_csv_string: Leerer Eingabe-String erhalten.")
-        return data  # Leere Liste bei leerem String
+        logging.info("read_gps_data_from_csv_string: Leerer oder None Eingabe-String erhalten.")
+        return data
 
-    # Verwende StringIO, um den String wie eine Datei zu behandeln
     csvfile = io.StringIO(csv_string)
-
     try:
-        # Lese den CSV-String mit DictReader
-        # Wichtig: fieldnames müssen mit den erwarteten Spalten übereinstimmen
-        #          (oder die erste Zeile des Strings enthält die Header)
-        # Hier gehen wir davon aus, dass keine Header-Zeile vorhanden ist.
         reader = csv.DictReader(csvfile, fieldnames=["lat", "lon", "timestamp", "satellites"])
-
-        for row in reader:
-            # Überspringe den End-Marker, falls vorhanden
+        for i, row in enumerate(reader):
             if row.get("lat") == "-1":
                 logging.debug("End-Marker (-1) in CSV-Daten gefunden, Verarbeitung beendet.")
-                break  # Beende die Schleife beim End-Marker
-
+                break
             try:
-                # Versuche, alle Werte in float umzuwandeln.
-                # Verwende .get() mit Default None, um fehlende Keys abzufangen.
                 lat_str = row.get("lat")
                 lon_str = row.get("lon")
                 ts_str = row.get("timestamp")
                 sat_str = row.get("satellites")
 
-                # Prüfe, ob alle Werte vorhanden sind, bevor konvertiert wird
-                if lat_str is None or lon_str is None or ts_str is None or sat_str is None:
-                    # --- KORREKTUR: Verwende logging statt print ---
-                    # print(f"Fehler: Fehlende Werte in Zeile: {row}") # ALT
-                    logging.error(f"Fehler: Fehlende Werte in Zeile: {row}")  # NEU
-                    continue  # Überspringe diese Zeile
+                if lat_str is None or lon_str is None or ts_str is None:
+                    logging.warning(
+                        f"Zeile {i + 1}: Fehlende notwendige Werte (lat/lon/timestamp): {row}. Überspringe.")
+                    continue
 
                 lat = float(lat_str)
                 lon = float(lon_str)
                 timestamp = float(ts_str)
-                # Satelliten können auch Ganzzahlen sein, float ist aber flexibler
-                satellites = float(sat_str)
+
+                satellites: Optional[int] = None
+                if sat_str is not None and sat_str.strip():
+                    try:
+                        satellites = int(float(sat_str))
+                    except (ValueError, TypeError):
+                        logging.warning(
+                            f"Zeile {i + 1}: Ungültiger Satellitenwert '{sat_str}'. Wird als None behandelt.")
 
                 data.append({"lat": lat, "lon": lon, "timestamp": timestamp, "satellites": satellites})
-
-            except (ValueError, TypeError) as e:  # Fange spezifischere Fehler ab
-                # --- KORREKTUR: Verwende logging statt print ---
-                # print(f"Fehler: Ungültige Werte in Zeile: {row} - {e}") # ALT
-                logging.error(f"Fehler: Ungültige Werte in Zeile: {row} - {e}")  # NEU
-                continue  # Überspringe diese Zeile bei Konvertierungsfehler
-
-    except csv.Error as e:  # Fange Fehler vom csv-Modul selbst ab
-        # --- KORREKTUR: Verwende logging statt print ---
-        # print(f"Fehler beim Lesen der CSV-Daten (csv.Error): {e}") # ALT
-        logging.error(f"Fehler beim Lesen der CSV-Daten (csv.Error): {e}")  # NEU
-        return []  # Leere Liste bei grundlegendem CSV-Fehler
+            except (ValueError, TypeError) as e:
+                logging.warning(f"Zeile {i + 1}: Fehler bei Wertkonvertierung: {e} - Zeile: {row}. Überspringe.")
+                continue
+    except csv.Error as e:
+        logging.error(f"Fehler beim Lesen der CSV-Daten (csv.Error): {e}")
+        return []
     except Exception as e:
-        # --- KORREKTUR: Verwende logging statt print ---
-        # print(f"Unerwarteter Fehler beim Lesen der CSV-Daten: {e}") # ALT
-        logging.error(f"Unerwarteter Fehler beim Lesen der CSV-Daten: {e}", exc_info=True)  # NEU
-        return []  # Leere Liste bei unerwartetem Fehler
-
+        logging.error(f"Unerwarteter Fehler beim Lesen der CSV-Daten: {e}", exc_info=True)
+        return []
     return data
+
 
 def flatten_data(data: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]]) -> List[Dict[str, Any]]:
     """
     Wandelt eine Liste von Sessions (Liste von Listen von Punkten)
     oder eine einzelne Session (Liste von Punkten) in eine flache Liste von Punkten um.
-
     Args:
         data: Die Eingabedaten, entweder eine Liste von Punkten oder eine Liste von Listen von Punkten.
-
     Returns:
         Eine einzelne, flache Liste aller Punkte.
     """
     flat_list: List[Dict[str, Any]] = []
     if not data:
         return flat_list
-
-    # Prüfen, ob das erste Element eine Liste ist (Indikator für Multi-Session)
-    # Zusätzliche Prüfung: Sicherstellen, dass 'data' selbst eine Liste ist
     if isinstance(data, list) and data and isinstance(data[0], list):
-        # Es ist eine Liste von Listen (Multi-Session)
         for session in data:
             if isinstance(session, list):
-                # Stelle sicher, dass die Session Dictionaries enthält (optional, aber robuster)
                 if all(isinstance(point, dict) for point in session):
                     flat_list.extend(session)
                 else:
-                    logging.warning(f"Session in Multi-Session-Daten enthält ungültige Elemente: {session}. Überspringe.")
+                    logging.warning(
+                        f"Session in Multi-Session-Daten enthält ungültige Elemente: {session}. Überspringe.")
             else:
-                # Dies sollte nicht passieren, wenn die Struktur konsistent ist
                 logging.warning(f"Unerwartetes Element in Multi-Session-Daten gefunden: {type(session)}. Überspringe.")
     elif isinstance(data, list) and data and isinstance(data[0], dict):
-        # Es ist bereits eine flache Liste (Single-Session)
-        # Stelle sicher, dass alle Elemente Dictionaries sind (optional)
         if all(isinstance(point, dict) for point in data):
             flat_list = data
         else:
-             logging.warning(f"Single-Session-Daten enthalten ungültige Elemente. Filtere Dictionaries.")
-             flat_list = [point for point in data if isinstance(point, dict)]
-    elif isinstance(data, list) and not data: # Leere Liste ist okay
-        pass # flat_list ist bereits leer
+            logging.warning(f"Single-Session-Daten enthalten ungültige Elemente. Filtere Dictionaries.")
+            flat_list = [point for point in data if isinstance(point, dict)]
+    elif isinstance(data, list) and not data:
+        pass
     else:
-        logger.error(f"Unbekannte oder inkonsistente Datenstruktur in flatten_data: Typ des ersten Elements ist {type(data[0]) if data else 'N/A'}. Gebe leere Liste zurück.")
-
+        logger.error(
+            f"Unbekannte oder inkonsistente Datenstruktur in flatten_data: Typ des ersten Elements ist {type(data[0]) if data else 'N/A'}. Gebe leere Liste zurück.")
     return flat_list
+
+
+# --- NEUE FUNKTION: calculate_distance ---
+def calculate_distance(point1: Dict[str, Any], point2: Dict[str, Any]) -> float:
+    """
+    Berechnet die Haversine-Distanz zwischen zwei GPS-Punkten in Metern.
+
+    Args:
+        point1: Dictionary des ersten Punktes mit 'lat' und 'lon'.
+        point2: Dictionary des zweiten Punktes mit 'lat' und 'lon'.
+
+    Returns:
+        Die Distanz in Metern oder 0.0 bei ungültigen Eingaben.
+    """
+    try:
+        lat1, lon1 = math.radians(float(point1['lat'])), math.radians(float(point1['lon']))
+        lat2, lon2 = math.radians(float(point2['lat'])), math.radians(float(point2['lon']))
+    except (KeyError, ValueError, TypeError):
+        logger.warning(f"Ungültige Koordinaten für Distanzberechnung: {point1}, {point2}")
+        return 0.0
+
+    # Erdradius in Metern
+    R = 6371000
+
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    distance = R * c
+    return distance
+
+
+# --- ENDE calculate_distance ---
+
+# --- NEUE FUNKTION: format_duration ---
+def format_duration(seconds: float) -> str:
+    """
+    Formatiert eine Dauer in Sekunden in einen String (HH:MM:SS oder MM:SS).
+
+    Args:
+        seconds: Die Dauer in Sekunden.
+
+    Returns:
+        Ein formatierter String.
+    """
+    if seconds < 0:
+        return "N/A"
+    try:
+        total_seconds = int(seconds)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        else:
+            return f"{minutes:02d}:{secs:02d}"
+    except (ValueError, TypeError):
+        return "N/A"
+# --- ENDE format_duration ---

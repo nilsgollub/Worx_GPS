@@ -10,8 +10,9 @@ import platform
 import os
 import shutil
 from datetime import datetime
-from utils import flatten_data
-import branca.colormap as cm  # NEU: Import für Colormap
+# NEUE IMPORTE aus utils
+from utils import flatten_data, calculate_distance, format_duration
+import branca.colormap as cm
 
 # Selenium Imports (unverändert)
 try:
@@ -126,15 +127,15 @@ class HeatmapGenerator:
         use_satellite_weight_heatmap = map_config.get("use_satellite_weight", False)
         use_time_heatmap = map_config.get("use_heatmap_with_time", False)
 
-        # Daten vorbereiten (flach für Bounds, original für Iteration)
-        # Wichtig: 'data' für Multi-Session-Iteration verwenden, 'flat_data_list' nur für Bounds/Single-Path
+        # Daten vorbereiten
         flat_data_list = flatten_data(data)
         sessions_to_draw = data if is_multi_session and isinstance(data, list) and data and isinstance(data[0],
                                                                                                        list) else [
-            data]  # Stellt sicher, dass es immer eine Liste von Sessions ist
+            data]
 
-        if not flat_data_list:  # Prüfe, ob überhaupt Daten da sind
+        if not flat_data_list:
             logger.warning(f"Keine Datenpunkte für Karte {html_file} vorhanden.")
+            # Leere Karte speichern
             plugins.MeasureControl(position='topleft', primary_length_unit='meters').add_to(map_obj)
             folium.LayerControl(collapsed=True).add_to(map_obj)
             map_obj.save(str(self.heatmaps_dir / Path(html_file).name))
@@ -142,15 +143,13 @@ class HeatmapGenerator:
 
         # --- Logik für Kartentyp ---
         if visualize_quality_path:
-            # --- Farbkodierten Pfad zeichnen (jetzt mit Multi-Session Support) ---
+            # --- Farbkodierten Pfad zeichnen (Multi-Session Support) ---
             logger.info(f"Zeichne farbkodierten Qualitätspfad für {html_file}.")
-
-            # Colormap-Setup (nur einmal benötigt)
+            # Colormap-Setup
             colors = map_config.get('quality_colormap_colors', ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
             index = map_config.get('quality_colormap_index', [4, 6, 8, 10])
             caption = map_config.get('quality_legend_caption', 'GPS Qualität (Satelliten)')
             default_color = 'grey'
-
             sat_values = [p.get('satellites') for p in flat_data_list if p.get('satellites') is not None]
             min_sats_data = min(sat_values) if sat_values else min(index) if index else 0
             max_sats_data = max(sat_values) if sat_values else max(index) if index else 12
@@ -158,18 +157,31 @@ class HeatmapGenerator:
             colormap = cm.StepColormap(colors, index=full_index, vmin=min_sats_data, vmax=max_sats_data,
                                        caption=caption)
 
-            path_groups = []  # Liste für die FeatureGroups der Sessions
-
-            # Iteriere durch die Sessions (auch wenn es nur eine ist)
+            path_groups = []
             for idx, session_data in enumerate(reversed(sessions_to_draw)):
-                if not session_data: continue  # Leere Session überspringen
+                if not session_data or len(session_data) < 2: continue  # Mindestens 2 Punkte für Pfad/Dauer
 
-                session_index_display = len(sessions_to_draw) - idx  # Für Anzeige (1-basiert, neueste zuerst)
+                session_index_display = len(sessions_to_draw) - idx
                 path_layer_name = f"Qualität Pfad -{session_index_display}"
-                show_layer = (idx == 0)  # Nur die neueste Session standardmäßig anzeigen
+                show_layer = (idx == 0)
                 path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
+                session_points_coords = []
 
-                session_points_coords = []  # Für Marker
+                # --- NEU: Distanz und Zeit berechnen ---
+                total_distance_m = 0.0
+                start_time_ts = None
+                end_time_ts = None
+                try:
+                    start_time_ts = float(session_data[0].get('timestamp'))
+                    end_time_ts = float(session_data[-1].get('timestamp'))
+                except (ValueError, TypeError, KeyError, IndexError):
+                    logger.warning(f"Konnte Start-/Endzeit für Session {session_index_display} nicht ermitteln.")
+                    start_time_ts = None
+                    end_time_ts = None
+
+                duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
+                duration_str = format_duration(duration_seconds)  # utils.format_duration verwenden
+                # --- ENDE NEU ---
 
                 # Zeichne die Segmente für diese Session
                 for i in range(len(session_data) - 1):
@@ -180,10 +192,14 @@ class HeatmapGenerator:
                         lat2, lon2 = float(p2['lat']), float(p2['lon'])
                         sats = p1.get('satellites')
 
+                        # Distanz hinzufügen
+                        total_distance_m += calculate_distance(p1, p2)  # utils.calculate_distance verwenden
+
                         # Koordinaten für Marker sammeln
                         if i == 0: session_points_coords.append([lat1, lon1])
                         session_points_coords.append([lat2, lon2])
 
+                        # Farbe bestimmen
                         if sats is not None:
                             try:
                                 segment_color = colormap(int(sats))
@@ -197,48 +213,54 @@ class HeatmapGenerator:
                         else:
                             segment_color = default_color
 
+                        # Segment zeichnen
                         locations = [(lat1, lon1), (lat2, lon2)]
                         folium.PolyLine(locations=locations, color=segment_color, weight=path_weight,
-                                        opacity=path_opacity).add_to(path_feature_group)  # Zum Gruppenlayer hinzufügen
+                                        opacity=path_opacity).add_to(path_feature_group)
 
                     except (ValueError, KeyError, TypeError) as e:
                         logger.warning(f"Überspringe Pfadsegment in Session {session_index_display} wegen Fehler: {e}")
                         continue
 
-                # Start-/Endmarker für die Session hinzufügen (falls gewünscht und Punkte vorhanden)
+                # --- NEU: Distanz formatieren ---
+                distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
+                # --- ENDE NEU ---
+
+                # Start-/Endmarker für die Session hinzufügen (mit Distanz/Zeit)
                 if show_markers and len(session_points_coords) > 1:
-                    start_point_data = session_data[0]
-                    end_point_data = session_data[-1]
-                    start_ts = start_point_data.get('timestamp')
-                    end_ts = end_point_data.get('timestamp')
-                    start_popup = f"Start Session {session_index_display}<br>Zeit: {self._format_timestamp(start_ts)}"
-                    end_popup = f"Ende Session {session_index_display}<br>Zeit: {self._format_timestamp(end_ts)}"
-                    # Verwende eine neutrale Farbe für Marker, da der Pfad schon bunt ist
+                    start_ts = session_data[0].get('timestamp')
+                    end_ts = session_data[-1].get('timestamp')
+                    # --- NEU: Popup-Text anpassen ---
+                    start_popup = (f"<b>Start Session {session_index_display}</b><br>"
+                                   f"Zeit: {self._format_timestamp(start_ts)}<br>"
+                                   f"Dauer: {duration_str}<br>"
+                                   f"Strecke: {distance_str}")
+                    end_popup = (f"<b>Ende Session {session_index_display}</b><br>"
+                                 f"Zeit: {self._format_timestamp(end_ts)}<br>"
+                                 f"Dauer: {duration_str}<br>"
+                                 f"Strecke: {distance_str}")
+                    # --- ENDE NEU ---
                     marker_color = 'darkblue'
                     folium.CircleMarker(location=session_points_coords[0], radius=3, color=marker_color,
                                         fill=True, fill_color=marker_color, fill_opacity=0.9,
-                                        popup=start_popup).add_to(path_feature_group)
+                                        popup=folium.Popup(start_popup, max_width=200)).add_to(
+                        path_feature_group)  # Popup-Objekt verwenden
                     folium.CircleMarker(location=session_points_coords[-1], radius=3, color=marker_color,
                                         fill=True, fill_color=marker_color, fill_opacity=0.9,
-                                        popup=end_popup).add_to(path_feature_group)
+                                        popup=folium.Popup(end_popup, max_width=200)).add_to(
+                        path_feature_group)  # Popup-Objekt verwenden
 
-                path_groups.append(path_feature_group)  # Füge die fertige Gruppe zur Liste hinzu
+                path_groups.append(path_feature_group)
 
-            # Füge alle Session-Gruppen zur Karte hinzu
-            for pg in path_groups:
-                pg.add_to(map_obj)
-
-            # Füge die Colormap-Legende hinzu (nur einmal)
+            for pg in path_groups: pg.add_to(map_obj)
             colormap.add_to(map_obj)
-
-            # Punkte für Bounds (aus allen flachen Daten)
             all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                      'lat' in p and 'lon' in p]
 
         else:
             # --- Bisherige Logik für Heatmap und normale Pfade ---
-            # (Dieser Teil bleibt weitgehend unverändert, nur die Datenquelle für Bounds wird ggf. angepasst)
             logger.info(f"Erstelle Standard-Karte (Heatmap/Pfad) für {html_file}.")
+            # Heatmap hinzufügen
             heat_data = []
             if use_satellite_weight_heatmap:
                 logger.warning(f"'use_satellite_weight' für Heatmap aktiv, aber ignoriert.")
@@ -250,67 +272,132 @@ class HeatmapGenerator:
                 heatmap_radius = map_config.get("radius", 3)
                 heatmap_blur = map_config.get("blur", 3)
                 if use_time_heatmap:
-                    logger.warning(
-                        f"'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap.")
-                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(
-                        map_obj)
+                    logger.warning(f"'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap.")
+                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(map_obj)
                 else:
-                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(
-                        map_obj)
+                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(map_obj)
                 all_points_for_bounds = heat_data
             else:
                 logger.warning(f"Keine gültigen Heatmap-Daten für {html_file} gefunden.")
                 all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                          'lat' in p and 'lon' in p]
 
+            # Normalen Pfad zeichnen (wenn draw_path=True)
             if draw_path:
-                if is_multi_session:  # Hier 'is_multi_session' verwenden, da 'sessions_to_draw' oben definiert wurde
+                if is_multi_session:
+                    # --- Multi-Session Pfadzeichnung (angepasst) ---
                     logger.info(f"Zeichne Pfade für Multi-Session Karte {html_file}.")
                     path_groups = []
-                    for idx, session_data in enumerate(
-                            reversed(sessions_to_draw)):  # sessions_to_draw verwenden
-                        if not session_data: continue
+                    for idx, session_data in enumerate(reversed(sessions_to_draw)):
+                        if not session_data or len(session_data) < 2: continue  # Mindestens 2 Punkte
+
                         session_index_display = len(sessions_to_draw) - idx
                         path_layer_name = f"Pfad -{session_index_display}"
                         show_layer = (idx == 0)
+                        path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
                         path_points_coords = []
-                        session_points_full = []
-                        for point in session_data:
-                            try:
-                                path_points_coords.append([float(point['lat']), float(point['lon'])])
-                                session_points_full.append(point)
-                            except (ValueError, KeyError, TypeError):
-                                continue
+                        session_points_full = []  # Wird für Zeit/Distanz benötigt
+
+                        # --- NEU: Distanz und Zeit berechnen ---
+                        total_distance_m = 0.0
+                        start_time_ts = None
+                        end_time_ts = None
+                        try:
+                            # Sammle Punkte und berechne Distanz gleichzeitig
+                            for i in range(len(session_data)):
+                                point = session_data[i]
+                                try:
+                                    coord = [float(point['lat']), float(point['lon'])]
+                                    path_points_coords.append(coord)
+                                    session_points_full.append(point)  # Ganzen Punkt speichern
+                                    if i > 0:
+                                        total_distance_m += calculate_distance(session_data[i - 1], point)
+                                except (ValueError, KeyError, TypeError):
+                                    logger.warning(
+                                        f"Ungültiger Punkt in Session {session_index_display} übersprungen: {point}")
+                                    continue
+                            if session_points_full:
+                                start_time_ts = float(session_points_full[0].get('timestamp'))
+                                end_time_ts = float(session_points_full[-1].get('timestamp'))
+                        except (ValueError, TypeError, KeyError, IndexError):
+                            logger.warning(
+                                f"Konnte Start-/Endzeit/Distanz für Session {session_index_display} nicht ermitteln.")
+                            start_time_ts = None
+                            end_time_ts = None
+                            total_distance_m = 0.0
+
+                        duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
+                        duration_str = format_duration(duration_seconds)
+                        distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
+                        # --- ENDE NEU ---
 
                         if len(path_points_coords) > 1:
-                            path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
                             current_path_color = path_colors_list[idx % len(path_colors_list)]
                             folium.PolyLine(path_points_coords, color=current_path_color, weight=path_weight,
                                             opacity=path_opacity).add_to(path_feature_group)
                             if show_markers:
                                 start_ts = session_points_full[0].get('timestamp')
                                 end_ts = session_points_full[-1].get('timestamp')
-                                start_popup = f"Start Session {session_index_display}<br>Zeit: {self._format_timestamp(start_ts)}"
-                                end_popup = f"Ende Session {session_index_display}<br>Zeit: {self._format_timestamp(end_ts)}"
+                                # --- NEU: Popup-Text anpassen ---
+                                start_popup = (f"<b>Start Session {session_index_display}</b><br>"
+                                               f"Zeit: {self._format_timestamp(start_ts)}<br>"
+                                               f"Dauer: {duration_str}<br>"
+                                               f"Strecke: {distance_str}")
+                                end_popup = (f"<b>Ende Session {session_index_display}</b><br>"
+                                             f"Zeit: {self._format_timestamp(end_ts)}<br>"
+                                             f"Dauer: {duration_str}<br>"
+                                             f"Strecke: {distance_str}")
+                                # --- ENDE NEU ---
                                 folium.CircleMarker(location=path_points_coords[0], radius=3,
                                                     color=current_path_color, fill=True, fill_color=current_path_color,
-                                                    fill_opacity=0.9, popup=start_popup).add_to(path_feature_group)
+                                                    fill_opacity=0.9,
+                                                    popup=folium.Popup(start_popup, max_width=200)).add_to(
+                                    path_feature_group)
                                 folium.CircleMarker(location=path_points_coords[-1], radius=3,
                                                     color=current_path_color, fill=True, fill_color=current_path_color,
-                                                    fill_opacity=0.9, popup=end_popup).add_to(path_feature_group)
+                                                    fill_opacity=0.9,
+                                                    popup=folium.Popup(end_popup, max_width=200)).add_to(
+                                    path_feature_group)
                             path_groups.append(path_feature_group)
                     for pg in path_groups: pg.add_to(map_obj)
-                else:  # Single Session
+                    # --- ENDE Multi-Session ---
+                else:
+                    # --- Single-Session Pfadzeichnung (angepasst) ---
                     logger.info(f"Zeichne Pfad für Single-Session Karte {html_file}.")
                     single_path_points_coords = []
-                    single_session_points_full = []
-                    # Hier sessions_to_draw[0] verwenden, da es nur eine Session gibt
-                    for point in sessions_to_draw[0]:
-                        try:
-                            single_path_points_coords.append([float(point['lat']), float(point['lon'])])
-                            single_session_points_full.append(point)
-                        except (ValueError, KeyError, TypeError):
-                            continue
+                    single_session_points_full = []  # Für Zeit/Distanz
+
+                    # --- NEU: Distanz und Zeit berechnen ---
+                    total_distance_m = 0.0
+                    start_time_ts = None
+                    end_time_ts = None
+                    session_data_single = sessions_to_draw[0]  # Die einzige Session
+                    try:
+                        if session_data_single and len(session_data_single) >= 2:
+                            for i in range(len(session_data_single)):
+                                point = session_data_single[i]
+                                try:
+                                    coord = [float(point['lat']), float(point['lon'])]
+                                    single_path_points_coords.append(coord)
+                                    single_session_points_full.append(point)
+                                    if i > 0:
+                                        total_distance_m += calculate_distance(session_data_single[i - 1], point)
+                                except (ValueError, KeyError, TypeError):
+                                    logger.warning(f"Ungültiger Punkt in Single-Session übersprungen: {point}")
+                                    continue
+                            if single_session_points_full:
+                                start_time_ts = float(single_session_points_full[0].get('timestamp'))
+                                end_time_ts = float(single_session_points_full[-1].get('timestamp'))
+                    except (ValueError, TypeError, KeyError, IndexError):
+                        logger.warning(f"Konnte Start-/Endzeit/Distanz für Single-Session nicht ermitteln.")
+                        start_time_ts = None
+                        end_time_ts = None
+                        total_distance_m = 0.0
+
+                    duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
+                    duration_str = format_duration(duration_seconds)
+                    distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
+                    # --- ENDE NEU ---
 
                     if len(single_path_points_coords) > 1:
                         path_group = folium.FeatureGroup(name="Pfad", show=True)
@@ -320,17 +407,29 @@ class HeatmapGenerator:
                         if show_markers:
                             start_ts_single = single_session_points_full[0].get('timestamp')
                             end_ts_single = single_session_points_full[-1].get('timestamp')
-                            start_popup_single = f"Start<br>Zeit: {self._format_timestamp(start_ts_single)}"
-                            end_popup_single = f"Ende<br>Zeit: {self._format_timestamp(end_ts_single)}"
+                            # --- NEU: Popup-Text anpassen ---
+                            start_popup_single = (f"<b>Start</b><br>"
+                                                  f"Zeit: {self._format_timestamp(start_ts_single)}<br>"
+                                                  f"Dauer: {duration_str}<br>"
+                                                  f"Strecke: {distance_str}")
+                            end_popup_single = (f"<b>Ende</b><br>"
+                                                f"Zeit: {self._format_timestamp(end_ts_single)}<br>"
+                                                f"Dauer: {duration_str}<br>"
+                                                f"Strecke: {distance_str}")
+                            # --- ENDE NEU ---
                             folium.CircleMarker(location=single_path_points_coords[0], radius=3,
                                                 color=current_path_color, fill=True, fill_color=current_path_color,
-                                                fill_opacity=0.9, popup=start_popup_single).add_to(path_group)
+                                                fill_opacity=0.9,
+                                                popup=folium.Popup(start_popup_single, max_width=200)).add_to(
+                                path_group)
                             folium.CircleMarker(location=single_path_points_coords[-1], radius=3,
                                                 color=current_path_color, fill=True, fill_color=current_path_color,
-                                                fill_opacity=0.9, popup=end_popup_single).add_to(path_group)
+                                                fill_opacity=0.9,
+                                                popup=folium.Popup(end_popup_single, max_width=200)).add_to(path_group)
                         path_group.add_to(map_obj)
+                    # --- ENDE Single-Session ---
 
-            # Falls keine Bounds aus Heatmap, nimm sie aus Pfadpunkten (jetzt aus flat_data_list)
+            # Bounds setzen (Code wie vorher)
             if not all_points_for_bounds:
                 all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                          'lat' in p and 'lon' in p]
@@ -397,8 +496,9 @@ class HeatmapGenerator:
         logger.warning(f"Kein Konfigurationsschlüssel für Ausgabedatei '{output_filename}' gefunden.")
         return None
 
-    # --- save_html_as_png angepasst ---
-    # Muss ebenfalls Multi-Session für Qualitätspfade behandeln, wenn PNGs dafür aktiviert werden
+    # --- save_html_as_png (unverändert) ---
+    # Die Anzeige von Distanz/Zeit ist nur im HTML-Popup relevant,
+    # daher muss diese Funktion nicht angepasst werden.
     def save_html_as_png(self, data, draw_path, png_file, config_key_hint=None, is_multi_session_data=False, width=1024,
                          height=768, delay=5):
         if not SELENIUM_AVAILABLE: logger.error("PNG-Export nicht möglich. Selenium/Pillow fehlt."); return
@@ -759,10 +859,27 @@ if __name__ == '__main__':
         "use_satellite_weight": False,
     }
 
+    # Hinzufügen einer Test-Config für heatmap_10
+    HEATMAP_CONFIG["test_heatmap_10"] = {
+        "output": "heatmaps/test_heatmap_10.html",
+        "png_output": "heatmaps/test_heatmap_10.png",
+        "generate_png": False,
+        "radius": 5,
+        "blur": 10,
+        "path_weight": 1.0,
+        "path_opacity": 0.8,
+        "show_start_end_markers": True,
+        "use_heatmap_with_time": False,
+        "use_satellite_weight": False,
+        "visualize_quality_path": False,
+    }
+
     gen = HeatmapGenerator()
 
     logger.info("Teste Qualitäts-Pfadkarte für 10 Sessions (HTML)...")
-    # Wichtig: draw_path=True und is_multi=True übergeben!
     gen.create_heatmap(multi_data_sats, "heatmaps/test_quality_path_10.html", draw_path=True, is_multi_session=True)
+
+    logger.info("Teste Heatmap für 10 Sessions (HTML)...")
+    gen.create_heatmap(multi_data_sats, "heatmaps/test_heatmap_10.html", draw_path=True, is_multi_session=True)
 
     logger.info("Heatmap-Generierungstests abgeschlossen.")
