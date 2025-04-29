@@ -38,7 +38,7 @@ HEATMAP_CONFIG = {
     "heatmap_aktuell": {
         "output": "heatmaps/heatmap_aktuell.html",
         "png_output": "heatmaps/heatmap_aktuell.png",
-        "generate_png": True,  # NEU: PNG-Generierung steuern
+        "generate_png": False,  # NEU: PNG-Generierung steuern
         "radius": 5,
         "blur": 10,
         "path_weight": 2.0,
@@ -51,7 +51,7 @@ HEATMAP_CONFIG = {
     "heatmap_10_maehvorgang": {
         "output": "heatmaps/heatmap_10.html",
         "png_output": "heatmaps/heatmap_10.png",
-        "generate_png": True,  # NEU: PNG-Generierung steuern
+        "generate_png": False,  # NEU: PNG-Generierung steuern
         "radius": 5,
         "blur": 10,
         "path_weight": 1.0,
@@ -63,7 +63,7 @@ HEATMAP_CONFIG = {
     "heatmap_kumuliert": {
         "output": "heatmaps/heatmap_kumuliert.html",
         "png_output": "heatmaps/heatmap_kumuliert.png",
-        "generate_png": True,  # NEU: PNG-Generierung steuern
+        "generate_png": False,  # NEU: PNG-Generierung steuern
         "radius": 5,
         "blur": 10,
         "path_weight": 1.0,
@@ -74,7 +74,7 @@ HEATMAP_CONFIG = {
     "problemzonen_heatmap": {
         "output": "heatmaps/problemzonen.html",
         "png_output": "heatmaps/problemzonen.png",
-        "generate_png": True,  # NEU: PNG-Generierung steuern
+        "generate_png": False,  # NEU: PNG-Generierung steuern
         "radius": 5,
         "blur": 5,
         "use_satellite_weight": False,
@@ -83,7 +83,7 @@ HEATMAP_CONFIG = {
     "heatmap_quality_cumulative": {
         "output": "heatmaps/heatmap_quality_cumulative.html",
         "png_output": "heatmaps/heatmap_quality_cumulative.png",
-        "generate_png": True,  # NEU: PNG-Generierung steuern
+        "generate_png": False,  # NEU: PNG-Generierung steuern
         "radius": 7,  # Ggf. anpassen für gewichtete Heatmap
         "blur": 12,  # Ggf. anpassen für gewichtete Heatmap
         "show_start_end_markers": False,  # Keine Pfade, keine Marker
