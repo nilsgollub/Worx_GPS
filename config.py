@@ -67,7 +67,7 @@ HEATMAP_CONFIG = {
         "path_weight": 1.0,
         "path_opacity": 0.8,
         "show_start_end_markers": True,
-        "use_heatmap_with_time": True,
+        "use_heatmap_with_time": False,
         # "path_colors": [...] # Optional: Eigene Liste von Farben, sonst werden Defaults verwendet
         # --- ENDE NEU ---
     },
