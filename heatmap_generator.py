@@ -141,14 +141,12 @@ class HeatmapGenerator:
         path_opacity = map_config.get("path_opacity", 0.8)
         show_markers = map_config.get("show_start_end_markers", True)
         path_colors_list = map_config.get("path_colors", DEFAULT_PATH_COLORS)
-        # Heatmap Parameter (werden jetzt pro Session verwendet)
+        # Heatmap Parameter
         heatmap_radius = map_config.get("radius", 3)
         heatmap_blur = map_config.get("blur", 3)
 
         # Spezifische Flags
         visualize_quality_path = map_config.get("visualize_quality_path", False)
-        # use_satellite_weight_heatmap = map_config.get("use_satellite_weight", False) # Nicht mehr relevant für diese Logik
-        # use_time_heatmap = map_config.get("use_heatmap_with_time", False) # Nicht mehr relevant für diese Logik
 
         # Daten vorbereiten
         flat_data_list = flatten_data(data)  # Wird nur noch für Bounds benötigt
@@ -168,7 +166,7 @@ class HeatmapGenerator:
         if visualize_quality_path:
             # --- Farbkodierten Pfad zeichnen (Multi-Session Support) ---
             # Diese Logik bleibt unverändert, da sie bereits pro Session arbeitet
-            # ... (Code für Qualitätspfade wie in der vorherigen Version) ...
+            # und keine separaten Heatmaps benötigt.
             logger.info(f"Zeichne farbkodierten Qualitätspfad für {html_file}.")
             colors = map_config.get('quality_colormap_colors', ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
             index = map_config.get('quality_colormap_index', [4, 6, 8, 10])
@@ -261,24 +259,19 @@ class HeatmapGenerator:
                                      'lat' in p and 'lon' in p]
 
         else:
-            # --- ANGEPASSTE Logik für separate Heatmaps und Pfade ---
-            logger.info(f"Erstelle Karte mit separaten Heatmaps/Pfaden für {html_file}.")
+            # --- Logik für separate Heatmaps UND separate Pfade ---
+            logger.info(f"Erstelle Karte mit separaten Heatmaps UND Pfaden für {html_file}.")
 
-            # Keine kumulative Heatmap mehr hier erstellen!
-
-            path_or_heatmap_groups = []  # Umbenannt, da es jetzt beides enthält
+            # Listen für die separaten Layer
+            heatmap_layers = []
+            path_layers = []
 
             for idx, session_data in enumerate(reversed(sessions_to_draw)):
                 if not session_data: continue  # Leere Session überspringen
 
                 session_index_display = len(sessions_to_draw) - idx
                 session_date_str = self._get_session_date_str(session_data, session_index_display)
-
-                # --- FeatureGroup für DIESE Session (enthält Pfad UND Heatmap) ---
-                # Der Name der Gruppe bestimmt den Eintrag im LayerControl
-                group_layer_name = f"Sitzung {session_date_str}"  # Kombinierter Name
                 show_layer = (idx == 0)  # Nur die neueste standardmäßig anzeigen
-                session_feature_group = folium.FeatureGroup(name=group_layer_name, show=show_layer)
 
                 session_points_coords = []
                 session_points_full = []
@@ -321,25 +314,32 @@ class HeatmapGenerator:
                 duration_str = format_duration(duration_seconds)
                 distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
 
-                # --- 1. Heatmap für DIESE Session zur Gruppe hinzufügen ---
+                # --- 1. Separate Heatmap erstellen und zur Karte hinzufügen ---
                 if session_heat_data:
-                    logger.debug(f"Adding Heatmap for session {session_date_str} to group '{group_layer_name}'")
-                    # WICHTIG: Die Heatmap selbst braucht keinen 'name', da sie Teil der Gruppe ist
-                    plugins.HeatMap(session_heat_data, radius=heatmap_radius, blur=heatmap_blur).add_to(
-                        session_feature_group)
+                    heatmap_layer_name = f"Heatmap {session_date_str}"
+                    logger.debug(f"Creating Heatmap layer '{heatmap_layer_name}'")
+                    heatmap_layer = plugins.HeatMap(session_heat_data,
+                                                    name=heatmap_layer_name,
+                                                    radius=heatmap_radius,
+                                                    blur=heatmap_blur,
+                                                    show=show_layer)  # show steuert Sichtbarkeit
+                    heatmap_layer.add_to(map_obj)  # Direkt zur Karte hinzufügen
+                    heatmap_layers.append(heatmap_layer)  # Optional: Liste behalten falls später benötigt
                 else:
                     logger.warning(f"Keine Heatmap-Daten für Session {session_date_str}.")
 
-                # --- 2. Pfad für DIESE Session zur Gruppe hinzufügen (wenn draw_path=True) ---
-                # (draw_path wird hier angenommen, da es für heatmap_10 Sinn ergibt)
+                # --- 2. Separaten Pfad (als FeatureGroup) erstellen und zur Karte hinzufügen ---
                 if draw_path and len(session_points_coords) > 1:
-                    logger.debug(f"Adding Path for session {session_date_str} to group '{group_layer_name}'")
+                    path_layer_name = f"Pfad {session_date_str}"
+                    logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
+                    path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
+
                     current_path_color = path_colors_list[idx % len(path_colors_list)]
                     # Pfad zur Gruppe hinzufügen
                     folium.PolyLine(session_points_coords, color=current_path_color, weight=path_weight,
-                                    opacity=path_opacity).add_to(session_feature_group)
+                                    opacity=path_opacity).add_to(path_feature_group)
 
-                    # --- 3. Marker für DIESE Session zur Gruppe hinzufügen (wenn show_markers=True) ---
+                    # Marker zur Gruppe hinzufügen (wenn show_markers=True)
                     if show_markers:
                         start_ts = session_points_full[0].get('timestamp')
                         end_ts = session_points_full[-1].get('timestamp')
@@ -351,39 +351,34 @@ class HeatmapGenerator:
                                      f"Zeit: {self._format_timestamp(end_ts)}<br>"
                                      f"Dauer: {duration_str}<br>"
                                      f"Strecke: {distance_str}")
-                        # Marker zur Gruppe hinzufügen
                         folium.CircleMarker(location=session_points_coords[0], radius=3,
                                             color=current_path_color, fill=True, fill_color=current_path_color,
                                             fill_opacity=0.9, popup=folium.Popup(start_popup, max_width=200)).add_to(
-                            session_feature_group)
+                            path_feature_group)
                         folium.CircleMarker(location=session_points_coords[-1], radius=3,
                                             color=current_path_color, fill=True, fill_color=current_path_color,
                                             fill_opacity=0.9, popup=folium.Popup(end_popup, max_width=200)).add_to(
-                            session_feature_group)
-                # --- Ende Pfad/Marker ---
+                            path_feature_group)
 
-                # Füge die komplette Gruppe (Heatmap + Pfad + Marker) zur Liste hinzu
-                path_or_heatmap_groups.append(session_feature_group)
+                    # Füge die Pfad-Gruppe direkt zur Karte hinzu
+                    path_feature_group.add_to(map_obj)
+                    path_layers.append(path_feature_group)  # Optional: Liste behalten
+                # --- Ende Pfad ---
             # --- Ende der Session-Schleife ---
-
-            # Füge alle Session-Gruppen zur Karte hinzu
-            for group in path_or_heatmap_groups:
-                group.add_to(map_obj)
 
             # Bounds werden immer aus allen Punkten berechnet (aus flat_data_list)
             all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                      'lat' in p and 'lon' in p]
-            if not all_points_for_bounds:  # Fallback falls flat_data_list leer war aber sessions_to_draw nicht
+            if not all_points_for_bounds:  # Fallback
                 logger.warning(f"Keine Punkte für Bounds aus flat_data_list, versuche aus session_points_coords.")
-                # Versuche, Koordinaten aus den PolyLines zu extrahieren (kann unvollständig sein)
                 try:
-                    all_points_for_bounds = [coord for group in path_or_heatmap_groups
+                    all_points_for_bounds = [coord for group in path_layers  # Verwende path_layers für Fallback
                                              for child in group._children.values()
                                              if isinstance(child, folium.vector_layers.PolyLine)
                                              for coord in child.locations]
                 except Exception as e:
                     logger.error(f"Fehler beim Extrahieren von Bounds aus PolyLines: {e}")
-                    all_points_for_bounds = []  # Sicherstellen, dass es eine Liste bleibt
+                    all_points_for_bounds = []
 
         # --- Gemeinsame Elemente für alle Kartentypen ---
         # Kartengrenzen anpassen (fit_bounds) - (unverändert)
@@ -391,7 +386,7 @@ class HeatmapGenerator:
             try:
                 points_array = np.array(all_points_for_bounds)
                 if points_array.size > 0 and points_array.ndim == 2 and points_array.shape[1] == 2:
-                    # Check for NaN or Inf values that might come from empty sessions or calculation errors
+                    # Check for NaN or Inf values
                     if np.isnan(points_array).any() or np.isinf(points_array).any():
                         logger.warning(f"Ungültige Werte (NaN/Inf) in Bounds-Daten für {html_file}. Filtere...")
                         points_array = points_array[~np.isnan(points_array).any(axis=1)]
@@ -438,6 +433,7 @@ class HeatmapGenerator:
                                primary_area_unit='sqmeters', secondary_area_unit='hectares').add_to(map_obj)
 
         # LayerControl hinzufügen (unverändert)
+        # Dieser listet jetzt alle benannten HeatMap-Layer und FeatureGroup-Layer auf
         folium.LayerControl(collapsed=True).add_to(map_obj)
 
         # Speichern der HTML-Datei (unverändert)
@@ -544,6 +540,8 @@ class HeatmapGenerator:
                 # --- ENDE Farbkodierter Pfad PNG ---
             else:
                 # --- Heatmap / Normaler Pfad für PNG (unverändert) ---
+                # Für PNG wird weiterhin eine kumulative Heatmap und ein einzelner Pfad gezeichnet,
+                # da die Layer-Steuerung hier nicht funktioniert.
                 heat_data_for_png = []
                 path_points_for_png = []
                 use_satellite_weight_png = map_config.get("use_satellite_weight", False)
