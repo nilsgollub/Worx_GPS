@@ -9,10 +9,11 @@ import io
 import platform
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta  # timedelta hinzugefügt
 # NEUE IMPORTE aus utils
 from utils import flatten_data, calculate_distance, format_duration
 import branca.colormap as cm
+from collections import defaultdict  # defaultdict hinzugefügt
 
 # Selenium Imports (unverändert)
 try:
@@ -84,19 +85,19 @@ class HeatmapGenerator:
     def _format_timestamp(self, timestamp):
         if timestamp is None: return "N/A"
         try:
+            # Versuche zuerst, es als Unix-Timestamp zu behandeln
             dt_object = datetime.fromtimestamp(float(timestamp))
             return dt_object.strftime('%Y-%m-%d %H:%M:%S')
         except (ValueError, TypeError):
             try:
-                ts_str = str(timestamp).split('+')[0].split('Z')[0]
-                if '.' in ts_str:
-                    dt_object = datetime.fromisoformat(ts_str.split('.')[0])
-                else:
-                    dt_object = datetime.fromisoformat(ts_str)
+                # Wenn das fehlschlägt, versuche ISO-Format (flexibler)
+                # Entferne mögliche Zeitzonen-Infos und Mikrosekunden für breitere Kompatibilität
+                ts_str = str(timestamp).split('+')[0].split('Z')[0].split('.')[0]
+                dt_object = datetime.fromisoformat(ts_str)
                 return dt_object.strftime('%Y-%m-%d %H:%M:%S')
             except (ValueError, TypeError):
                 logger.warning(f"Konnte Zeitstempel nicht formatieren: {timestamp}")
-                return str(timestamp)
+                return str(timestamp)  # Gib den Originalstring zurück, wenn alles fehlschlägt
 
     # --- Hilfsmethode für Datums/Zeit-String ---
     def _get_session_date_str(self, session_data, fallback_index):
@@ -144,7 +145,7 @@ class HeatmapGenerator:
         # Heatmap Parameter
         heatmap_radius = map_config.get("radius", 3)
         heatmap_blur = map_config.get("blur", 3)
-        # Flag für Zeit-Heatmap (wird nur für Warnung verwendet)
+        # Flag für Zeit-Heatmap
         use_time_heatmap = map_config.get("use_heatmap_with_time", False)
 
         # Spezifische Flags
@@ -313,9 +314,10 @@ class HeatmapGenerator:
                     if session_heat_data:
                         heatmap_layer_name = f"Heatmap {session_date_str}"
                         logger.debug(f"Creating Heatmap layer '{heatmap_layer_name}'")
-                        if use_time_heatmap:  # Nur für die Warnung
+                        # Für Multi-Session verwenden wir *keine* HeatMapWithTime, da es zu komplex wird
+                        if use_time_heatmap:
                             logger.warning(
-                                f"[{html_file}] 'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap für {heatmap_layer_name}.")
+                                f"[{html_file}] 'use_heatmap_with_time' ist für Multi-Session nicht implementiert. Zeige normale Heatmap für {heatmap_layer_name}.")
                         heatmap_layer = plugins.HeatMap(session_heat_data, name=heatmap_layer_name,
                                                         radius=heatmap_radius, blur=heatmap_blur, show=show_layer)
                         heatmap_layer.add_to(map_obj)
@@ -364,13 +366,19 @@ class HeatmapGenerator:
 
                     single_points_coords = []
                     single_points_full = []
-                    single_heat_data = []
+                    single_heat_data = []  # Für normale Heatmap
 
                     # Daten sammeln und Distanz/Zeit berechnen
                     total_distance_m = 0.0
                     start_time_ts = None
                     end_time_ts = None
                     try:
+                        # Finde min/max Timestamp für die Session
+                        timestamps = [float(p['timestamp']) for p in session_data_single if 'timestamp' in p]
+                        if not timestamps: raise ValueError("Keine gültigen Zeitstempel gefunden.")
+                        start_time_ts = min(timestamps)
+                        end_time_ts = max(timestamps)
+
                         for i in range(len(session_data_single)):
                             point = session_data_single[i]
                             try:
@@ -378,39 +386,110 @@ class HeatmapGenerator:
                                 lon = float(point['lon'])
                                 coord = [lat, lon]
                                 single_points_coords.append(coord)
-                                single_heat_data.append(coord)
-                                single_points_full.append(point)
+                                single_heat_data.append(coord)  # Für Fallback Heatmap
+                                single_points_full.append(point)  # Beinhaltet Timestamps etc.
                                 if i > 0: total_distance_m += calculate_distance(session_data_single[i - 1], point)
                             except (ValueError, KeyError, TypeError):
                                 logger.warning(f"Ungültiger Punkt in Single-Session übersprungen: {point}")
                                 continue
-                        if single_points_full:
-                            start_time_ts = float(single_points_full[0].get('timestamp'))
-                            end_time_ts = float(single_points_full[-1].get('timestamp'))
-                    except (ValueError, TypeError, KeyError, IndexError):
-                        logger.warning(f"Konnte Start-/Endzeit/Distanz für Single-Session nicht ermitteln.")
+                    except (ValueError, TypeError, KeyError, IndexError) as e:
+                        logger.error(f"Fehler beim Verarbeiten der Single-Session Daten: {e}", exc_info=True)
                         start_time_ts = None;
                         end_time_ts = None;
                         total_distance_m = 0.0
+                        single_points_full = []  # Leeren, um Fehler zu vermeiden
+
                     duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
                     duration_str = format_duration(duration_seconds)
                     distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
 
-                    # 1. Separate Heatmap erstellen
-                    if single_heat_data:
-                        heatmap_layer_name = f"Heatmap {session_date_str_single}"
-                        logger.debug(f"Creating Heatmap layer '{heatmap_layer_name}'")
-                        if use_time_heatmap:  # Nur für die Warnung
-                            logger.warning(
-                                f"[{html_file}] 'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap für {heatmap_layer_name}.")
-                        heatmap_layer = plugins.HeatMap(single_heat_data, name=heatmap_layer_name,
-                                                        radius=heatmap_radius, blur=heatmap_blur, show=show_layer)
-                        heatmap_layer.add_to(map_obj)
-                        heatmap_layers.append(heatmap_layer)
-                    else:
-                        logger.warning(f"Keine Heatmap-Daten für Single-Session.")
+                    # --- 1. Heatmap erstellen (Normal oder Mit Zeit) ---
+                    heatmap_added = False
+                    if use_time_heatmap and start_time_ts and end_time_ts and single_points_full:
+                        logger.info(f"[{html_file}] Versuche HeatMapWithTime zu erstellen...")
+                        try:
+                            # Daten für HeatMapWithTime vorbereiten
+                            time_indexed_data = defaultdict(list)
+                            # Zeitindex erstellen (z.B. sekundengenau)
+                            time_index = []
+                            current_ts = start_time_ts
+                            while current_ts <= end_time_ts:
+                                time_index.append(datetime.fromtimestamp(current_ts))
+                                current_ts += 1  # Intervall: 1 Sekunde
 
-                    # 2. Separaten Pfad erstellen
+                            # Punkte den Zeitindizes zuordnen
+                            for point in single_points_full:
+                                try:
+                                    ts = float(point['timestamp'])
+                                    lat = float(point['lat'])
+                                    lon = float(point['lon'])
+                                    # Finde den passenden Zeitindex (die Sekunde, in die der Punkt fällt)
+                                    point_dt = datetime.fromtimestamp(ts)
+                                    # Runden auf die Sekunde für den Index
+                                    index_dt = point_dt.replace(microsecond=0)
+                                    time_indexed_data[index_dt].append([lat, lon, 1.0])  # Gewicht 1.0
+                                except (ValueError, KeyError, TypeError):
+                                    continue  # Ungültige Punkte überspringen
+
+                            # Datenstruktur für HeatMapWithTime erstellen (Liste von Listen)
+                            hmt_data = []
+                            accumulated_points = []  # Punkte akkumulieren für bessere Visualisierung
+                            for dt_index in time_index:
+                                points_in_step = time_indexed_data.get(dt_index, [])
+                                accumulated_points.extend(points_in_step)
+                                # Kopie der akkumulierten Punkte für diesen Schritt verwenden
+                                hmt_data.append(list(accumulated_points))
+
+                            # Zeitindex formatieren für die Anzeige
+                            time_index_str = [dt.strftime('%H:%M:%S') for dt in time_index]
+
+                            if hmt_data and time_index_str:
+                                heatmap_layer_name = f"Heatmap Zeitverlauf {session_date_str_single}"
+                                logger.debug(f"Creating HeatMapWithTime layer '{heatmap_layer_name}'")
+                                heatmap_layer = plugins.HeatMapWithTime(
+                                    data=hmt_data,
+                                    index=time_index_str,
+                                    name=heatmap_layer_name,
+                                    radius=heatmap_radius,
+                                    # Weitere Optionen nach Bedarf:
+                                    # gradient={0.2: 'blue', 0.4: 'lime', 0.6: 'orange', 1: 'red'},
+                                    min_opacity=0.2,
+                                    max_opacity=0.8,
+                                    use_local_extrema=False,
+                                    auto_play=False,
+                                    display_index=True,
+                                    show=show_layer
+                                )
+                                heatmap_layer.add_to(map_obj)
+                                heatmap_layers.append(heatmap_layer)
+                                heatmap_added = True
+                                logger.info(f"HeatMapWithTime für {html_file} erfolgreich hinzugefügt.")
+                            else:
+                                logger.warning(
+                                    f"Konnte keine Daten oder Zeitindex für HeatMapWithTime erstellen für {html_file}.")
+
+                        except Exception as hmt_err:
+                            logger.error(f"Fehler beim Erstellen von HeatMapWithTime für {html_file}: {hmt_err}",
+                                         exc_info=True)
+                            # Fallback zur normalen Heatmap, wenn HMT fehlschlägt
+
+                    # Fallback oder wenn use_time_heatmap=False
+                    if not heatmap_added:
+                        if single_heat_data:
+                            heatmap_layer_name = f"Heatmap {session_date_str_single}"
+                            if use_time_heatmap:  # Hinweis, dass Fallback genutzt wird
+                                logger.warning(
+                                    f"[{html_file}] Fallback zur normalen Heatmap für {heatmap_layer_name}, da HeatMapWithTime nicht erstellt werden konnte oder deaktiviert war.")
+                            logger.debug(f"Creating standard Heatmap layer '{heatmap_layer_name}'")
+                            heatmap_layer = plugins.HeatMap(single_heat_data, name=heatmap_layer_name,
+                                                            radius=heatmap_radius, blur=heatmap_blur, show=show_layer)
+                            heatmap_layer.add_to(map_obj)
+                            heatmap_layers.append(heatmap_layer)
+                        else:
+                            logger.warning(f"Keine Heatmap-Daten für Single-Session.")
+                    # --- Ende Heatmap Erstellung ---
+
+                    # 2. Separaten Pfad erstellen (unverändert)
                     if draw_path and len(single_points_coords) > 1:
                         path_layer_name = f"Pfad {session_date_str_single}"
                         logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
@@ -419,7 +498,7 @@ class HeatmapGenerator:
                             0] if path_colors_list else "blue"  # Erste Farbe für Single-Session
                         folium.PolyLine(single_points_coords, color=current_path_color, weight=path_weight,
                                         opacity=path_opacity).add_to(path_feature_group)
-                        if show_markers:
+                        if show_markers and single_points_full:  # Prüfe ob single_points_full existiert
                             start_ts_single = single_points_full[0].get('timestamp')
                             end_ts_single = single_points_full[-1].get('timestamp')
                             start_popup_single = (f"<b>Start {session_date_str_single}</b><br>"
@@ -460,7 +539,16 @@ class HeatmapGenerator:
                                                        if isinstance(child, folium.vector_layers.PolyLine)
                                                        for coord in child.locations])
                     elif heatmap_layers:  # Wenn keine Pfade, aber Heatmaps da sind
-                        bounds_fallback_points.extend([point for hm_layer in heatmap_layers for point in hm_layer.data])
+                        # Vorsicht: HeatMapWithTime hat Daten anders strukturiert
+                        for hm_layer in heatmap_layers:
+                            if isinstance(hm_layer, plugins.HeatMapWithTime):
+                                # Extrahiere alle Punkte aus allen Zeitschritten
+                                all_hmt_points = [point[:2] for step_data in hm_layer.data for point in step_data]
+                                # Entferne Duplikate, falls gewünscht (optional)
+                                unique_points = list({tuple(p) for p in all_hmt_points})
+                                bounds_fallback_points.extend(unique_points)
+                            elif isinstance(hm_layer, plugins.HeatMap):
+                                bounds_fallback_points.extend(hm_layer.data)
 
                     all_points_for_bounds = bounds_fallback_points
                 except Exception as e:
@@ -472,7 +560,12 @@ class HeatmapGenerator:
         # Kartengrenzen anpassen (fit_bounds) - (unverändert)
         if all_points_for_bounds:
             try:
-                points_array = np.array(all_points_for_bounds)
+                # Stelle sicher, dass es eine Liste von Listen/Tupeln ist
+                valid_bounds_points = [p for p in all_points_for_bounds if isinstance(p, (list, tuple)) and len(p) == 2]
+                if not valid_bounds_points:
+                    raise ValueError("Keine gültigen Punkte für Bounds gefunden nach Filterung.")
+
+                points_array = np.array(valid_bounds_points)
                 if points_array.size > 0 and points_array.ndim == 2 and points_array.shape[1] == 2:
                     # Check for NaN or Inf values
                     if np.isnan(points_array).any() or np.isinf(points_array).any():
@@ -892,12 +985,15 @@ if __name__ == '__main__':
             {'lat': 46.81195, 'lon': 7.13285, 'satellites': 4, 'timestamp': ts_now - 60 * 5 + 2},
         ]
     ]
-    # Einzelne Session für heatmap_aktuell Test
-    single_session_data = [
-        {'lat': 46.8118, 'lon': 7.1328, 'satellites': 8, 'timestamp': ts_now - 10},
-        {'lat': 46.81182, 'lon': 7.13285, 'satellites': 9, 'timestamp': ts_now - 9},
-        {'lat': 46.81184, 'lon': 7.1329, 'satellites': 10, 'timestamp': ts_now - 8},
-    ]
+    # Einzelne Session für heatmap_aktuell Test (etwas länger für Zeit-Heatmap)
+    single_session_data = []
+    start_single_ts = ts_now - 60  # Vor 1 Minute starten
+    for i in range(60):  # 60 Punkte über 60 Sekunden
+        ts = start_single_ts + i
+        lat = 46.8118 + i * 0.000002
+        lon = 7.1328 + i * 0.0000015
+        sats = 8 + (i % 5)  # Wechselnde Satellitenzahl
+        single_session_data.append({'lat': lat, 'lon': lon, 'satellites': sats, 'timestamp': ts})
 
     HEATMAP_CONFIG["test_quality_path_10"] = {
         "output": "heatmaps/test_quality_path_10.html",
@@ -924,7 +1020,7 @@ if __name__ == '__main__':
         "path_weight": 1.0,
         "path_opacity": 0.8,
         "show_start_end_markers": True,
-        "use_heatmap_with_time": False,
+        "use_heatmap_with_time": False,  # Hier nicht verwenden
         "use_satellite_weight": False,
         "visualize_quality_path": False,  # Wichtig: Dies steuert, welcher Block ausgeführt wird
     }
@@ -933,13 +1029,13 @@ if __name__ == '__main__':
         "output": "heatmaps/test_heatmap_aktuell.html",
         "png_output": "heatmaps/test_heatmap_aktuell.png",
         "generate_png": False,
-        "radius": 5,
-        "blur": 10,
+        "radius": 8,  # Etwas größer für Zeit-Heatmap
+        "blur": 12,
         "path_weight": 2.0,
         "path_opacity": 1.0,
         "show_start_end_markers": True,
         "path_colors": ["#3388ff"],
-        "use_heatmap_with_time": True,  # Bleibt drin, wird aber ignoriert (mit Warnung)
+        "use_heatmap_with_time": True,  # HIER AKTIVIEREN
         "use_satellite_weight": False,
         "visualize_quality_path": False,
     }
@@ -953,7 +1049,7 @@ if __name__ == '__main__':
     gen.create_heatmap(multi_data_sats, HEATMAP_CONFIG["test_heatmap_10"]["output"], draw_path=True,
                        is_multi_session=True)
 
-    logger.info("Teste Heatmap für aktuelle Session (HTML) - Separate Layer...")
+    logger.info("Teste Heatmap für aktuelle Session (HTML) - Mit Zeitverlauf...")
     gen.create_heatmap(single_session_data, HEATMAP_CONFIG["test_heatmap_aktuell"]["output"], draw_path=True,
                        is_multi_session=False)
 
