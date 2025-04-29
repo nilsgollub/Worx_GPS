@@ -11,17 +11,7 @@ from datetime import datetime, timedelta
 from config import GEO_CONFIG, ASSIST_NOW_CONFIG, REC_CONFIG
 import math
 
-# --- NEU: Importiere pyubx2 ---
-try:
-    from pyubx2 import UBXMessage, SET, POLL, UBX_CONFIG_DATABASE, protocol
-
-    PYUBX2_AVAILABLE = True
-    # Schlüssel-IDs für CFG-VALSET/GET (optional, aber nützlich)
-    # Beispiel: from pyubx2.ubx_cfgval import UBX_CFGVAL_KEYS
-except ImportError:
-    PYUBX2_AVAILABLE = False
-    logging.warning("pyubx2 nicht gefunden. UBX-Konfiguration ist nicht möglich.")
-# --- ENDE NEU ---
+# --- pyubx2 Import entfernt ---
 
 # Hole den Logger, anstatt basicConfig hier aufzurufen
 logger = logging.getLogger(__name__)
@@ -39,7 +29,7 @@ class GpsHandler:
         self.baudrate = REC_CONFIG["baudrate"]
         self.ser_gps = None
         self.mode = "real"
-        # --- Geändert: _connect_serial ruft jetzt _configure_ublox auf ---
+        # --- Aufruf von _configure_ublox entfernt ---
         self._connect_serial()
 
         # Zeitstempel des letzten erfolgreichen AssistNow-Updates
@@ -49,6 +39,7 @@ class GpsHandler:
         self.route_simulator = None
         self.last_valid_fix_time = 0
         self.last_known_position = None
+        # --- Initialer Status auf -1 (Connecting) gesetzt, wird durch erste GGA-Nachricht aktualisiert ---
         self.last_gga_info = {'qual': -1 if self.mode == "real" else 0, 'sats': 0, 'timestamp': time.time()}
         logger.info("GpsHandler initialisiert.")
 
@@ -66,38 +57,27 @@ class GpsHandler:
             try:
                 logger.info(
                     f"Versuche, serielle Verbindung zu {self.serial_port} mit Baudrate {self.baudrate} herzustellen...")
-                # --- NEU: write_timeout hinzufügen ---
+                # --- write_timeout bleibt sinnvoll für AssistNow ---
                 self.ser_gps = serial.Serial(
                     self.serial_port,
                     self.baudrate,
                     timeout=1,  # Read timeout
-                    write_timeout=60  # Write timeout (z.B. 60 Sekunden)
+                    write_timeout=60  # Write timeout
                 )
-                # --- Wichtiger Log direkt nach Erfolg ---
                 logger.info(f"Serielle Verbindung zu {self.ser_gps.name} erfolgreich hergestellt.")
 
-                # Status auf "No Fix" setzen, bis der erste GGA kommt
-                self.last_gga_info = {'qual': 0, 'sats': 0, 'timestamp': time.time()}
+                # --- Status auf -1 (Connecting) setzen, bis der erste GGA kommt ---
+                # Wird jetzt in __init__ gesetzt und hier ggf. zurückgesetzt
+                self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
 
-                # --- NEU: U-BLOX Konfiguration nach erfolgreicher Verbindung ---
-                # if PYUBX2_AVAILABLE:
-                #     self._configure_ublox()  # This now includes the save attempt
-                #     # --- Kurze Pause nach der Konfiguration (und potentiellem Speichern) ---
-                #     logger.debug("Warte kurz nach U-BLOX Konfiguration/Speichern...")
-                #     time.sleep(1.5)  # Slightly longer pause after potential save
-                #     --- ENDE ---
-                # else:
-                #     logger.warning("pyubx2 nicht verfügbar, U-BLOX Konfiguration übersprungen.")
-                # --- ENDE NEU ---
+                # --- Block für U-BLOX Konfiguration entfernt ---
 
             except serial.SerialException as ser_e:
-                # --- Detaillierteres Logging ---
                 logger.error(f"Serieller Fehler beim Herstellen der Verbindung zu {self.serial_port}: {ser_e}",
                              exc_info=True)
                 self.ser_gps = None
                 self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
             except Exception as e:
-                # --- Detaillierteres Logging ---
                 logger.error(f"Unerwarteter Fehler beim Herstellen der seriellen Verbindung zu {self.serial_port}: {e}",
                              exc_info=True)
                 self.ser_gps = None
@@ -105,12 +85,12 @@ class GpsHandler:
         else:
             logger.info("Fake-Modus aktiv, keine serielle Verbindung erforderlich.")
             self.ser_gps = None
-            self.last_gga_info = {'qual': 1, 'sats': 8, 'timestamp': time.time()}
+            self.last_gga_info = {'qual': 1, 'sats': 8, 'timestamp': time.time()}  # Fake GPS hat sofort Fix
 
     def _reconnect_serial(self):
         """Wrapper für _connect_serial für den Einsatz bei Fehlern."""
         logger.info("Versuche, serielle Verbindung wiederherzustellen...")
-        # _connect_serial enthält bereits den Aufruf für _configure_ublox
+        # _connect_serial ruft KEINE Konfiguration mehr auf
         self._connect_serial()
 
     def close_serial(self):
@@ -123,185 +103,11 @@ class GpsHandler:
                 logger.error(f"Fehler beim Schließen der seriellen Verbindung: {e}")
         self.ser_gps = None
 
-    # --- NEUE HILFSMETHODE zum Senden von UBX-Nachrichten ---
+    # --- Methode _send_ubx_config entfernt ---
 
-    def _send_ubx_config(self, msg):
-        """Hilfsfunktion zum Senden einer UBX Konfigurationsnachricht."""
-        if not PYUBX2_AVAILABLE:
-            logger.error("Kann UBX nicht senden: pyubx2 nicht verfügbar.")
-            return False
-        # --- NEU: Check connection *before* trying to use self.ser_gps ---
-        if self.ser_gps is None or not self.ser_gps.is_open:
-            logger.warning(f"Kann UBX Konfiguration nicht senden, Port nicht offen oder None ({self.ser_gps}).")
-            # Attempt reconnect if port was previously open but now closed unexpectedly
-            if self.ser_gps is not None and not self.ser_gps.is_open:
-                self._reconnect_serial()
-            return False
-        # --- ENDE NEU ---
+    # --- Methode _configure_ublox entfernt ---
 
-        try:
-            logger.debug(f"Sende UBX Konfiguration: {msg}")
-            # --- NEU: Reset output buffer before writing ---
-            self.ser_gps.reset_output_buffer()
-            # --- ENDE NEU ---
-            start_write = time.monotonic()  # For timeout duration logging
-            self.ser_gps.write(msg.serialize())
-            # --- NEU: Increased sleep time ---
-            time.sleep(2)  # Increased from 0.1
-            # --- ENDE NEU ---
-            # Optional: Auf ACK/NAK warten
-            return True
-        except serial.SerialTimeoutException:
-            # --- NEU: Log duration ---
-            duration_timeout = time.monotonic() - start_write
-            write_timeout_val = getattr(self.ser_gps, 'write_timeout', 'N/A')
-            logger.error(
-                f"Timeout ({write_timeout_val}s) beim Senden der UBX Nachricht {msg.identity} nach {duration_timeout:.2f}s.")
-            self._reconnect_serial()
-            return False
-        except serial.SerialException as e:
-            logger.error(f"Serieller Fehler beim Senden der UBX Nachricht {msg.identity}: {e}",
-                         exc_info=True)  # Added exc_info
-            self._reconnect_serial()
-            return False
-        except Exception as e:
-            logger.error(f"Unerwarteter Fehler beim Senden der UBX Nachricht {msg.identity}: {e}", exc_info=True)
-            # Consider if reconnect is appropriate here too, but might cause loops
-            # self._reconnect_serial()
-            return False
-
-    # --- ENDE NEUE HILFSMETHODE ---
-
-    # --- NEUE METHODE zur U-BLOX Konfiguration ---
-    # --- NEUE METHODE zur U-BLOX Konfiguration ---
-    def _configure_ublox(self):
-        """Sendet Konfigurationsbefehle an das U-BLOX Modul via pyubx2."""
-        if not PYUBX2_AVAILABLE:
-            logger.warning("pyubx2 nicht verfügbar, Konfiguration übersprungen.")
-            return
-
-        logger.info("Starte U-BLOX Konfiguration (Minimal: GGA + Port + Save)...")  # Log angepasst
-        config_success = True
-        save_needed = False  # Flag, ob Konfiguration gespeichert werden muss
-
-        # --- 1. NMEA Nachrichten konfigurieren (CFG-MSG) ---
-        # Nur GGA aktivieren, Rest explizit deaktivieren
-        nmea_msgs_to_configure = {
-            0xF0: {  # NMEA Standard Talker ID
-                0x00: 1,  # GGA: Rate 1
-                0x02: 0,  # GSA: Rate 0
-                0x04: 0,  # RMC: Rate 0
-                0x05: 0,  # VTG: Rate 0
-                0x03: 0,  # GSV: Rate 0
-                0x01: 0  # GLL: Rate 0
-            }
-        }
-        try:
-            for msgClass, ids_rates in nmea_msgs_to_configure.items():
-                for msgID, rate in ids_rates.items():
-                    rates = [0] * 6
-                    rates[1] = rate  # Nur UART1
-                    payload_msg = bytes([msgClass, msgID]) + bytes(rates)
-                    msg_cfg = UBXMessage('CFG', 'CFG-MSG', SET, payload=payload_msg)
-                    if self._send_ubx_config(msg_cfg):
-                        action = "gesetzt auf Rate" if rate > 0 else "deaktiviert"
-                        logger.info(
-                            f"CFG-MSG: NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}) {action} {rate if rate > 0 else ''}.")
-                        save_needed = True
-                    else:
-                        config_success = False
-                        logger.error(
-                            f"Fehler beim Konfigurieren von NMEA Nachricht (Class {msgClass:02X}, ID {msgID:02X}).")
-        except Exception as e:
-            logger.error(f"Fehler beim Erstellen/Senden von CFG-MSG: {e}")
-            config_success = False
-
-        # --- 2. Port-Konfiguration sicherstellen (CFG-PRT) ---
-        # Setze UART1 explizit auf 9600 Baud, 8N1, NMEA Input/Output
-        if config_success:  # Nur wenn CFG-MSG ok war
-            try:
-                portID = 1  # UART1
-                reserved0 = 0
-                txReady = 0  # Pins nicht verwendet
-                mode = 0x08D0  # 8N1 -> 0b1000 1101 0000
-                baudRate = 9600
-                inProtoMask = 0x02  # Nur NMEA
-                outProtoMask = 0x02  # Nur NMEA
-                flags = 0  # Keine Flags
-                reserved1 = 0
-
-                payload_prt = portID.to_bytes(1, 'little') + \
-                              reserved0.to_bytes(1, 'little') + \
-                              txReady.to_bytes(2, 'little') + \
-                              mode.to_bytes(4, 'little') + \
-                              baudRate.to_bytes(4, 'little') + \
-                              inProtoMask.to_bytes(2, 'little') + \
-                              outProtoMask.to_bytes(2, 'little') + \
-                              flags.to_bytes(2, 'little') + \
-                              reserved1.to_bytes(2, 'little')
-
-                msg_prt = UBXMessage('CFG', 'CFG-PRT', SET, payload=payload_prt)
-
-                if self._send_ubx_config(msg_prt):
-                    logger.info(f"CFG-PRT: UART1 ({portID}) auf {baudRate} Baud, 8N1, NMEA In/Out gesetzt.")
-                    save_needed = True
-                else:
-                    config_success = False
-                    logger.error("Fehler beim Setzen von CFG-PRT.")
-            except Exception as e:
-                logger.error(f"Fehler beim Erstellen/Senden von CFG-PRT: {e}")
-                config_success = False
-
-        # --- 3. Speichern (CFG-CFG) --- # AKTIVIERT!
-        if save_needed and config_success:
-            logger.info("Speichere Konfiguration im U-BLOX Modul (BBR)...")
-            try:
-                # saveMask: Bitmask for layers to save
-                # 0x0001 = I/O Port config
-                # 0x0002 = Message config
-                # 0x0004 = INF message config
-                # -> 0x0007 should cover Port and Message config
-                clear_mask = 0x0000  # Don't clear anything
-                save_mask = 0x0007  # Save IO, MSG, INF config
-                load_mask = 0x0000  # Don't load anything
-                dev_mask = 0x04  # Save to BBR only
-
-                payload_save = clear_mask.to_bytes(4, 'little') + \
-                               save_mask.to_bytes(4, 'little') + \
-                               load_mask.to_bytes(4, 'little') + \
-                               dev_mask.to_bytes(1, 'little') + b'\x00' * 3  # Padding
-
-                msg_save = UBXMessage('CFG', 'CFG-CFG', SET, payload=payload_save)
-
-                # Use the existing send function which includes delays and error handling
-                if self._send_ubx_config(msg_save):
-                    logger.info("CFG-CFG: Konfiguration erfolgreich zum Speichern in BBR angewiesen.")
-                    # Note: Success here only means the command was sent.
-                    # The module might take time to actually save.
-                else:
-                    # Error already logged in _send_ubx_config
-                    config_success = False  # Mark overall config as failed if save fails
-                    logger.error("Fehler beim Senden des Speicherbefehls (CFG-CFG).")
-
-            except Exception as e:
-                logger.error(f"Fehler beim Erstellen/Senden von CFG-CFG: {e}", exc_info=True)
-                config_success = False
-        elif not config_success:
-            logger.warning("Konfiguration wird nicht gespeichert, da vorherige Schritte fehlschlugen.")
-        elif not save_needed:
-            logger.info("Keine Änderungen zum Speichern vorhanden (save_needed=False).")
-        # --- ENDE CFG-CFG Block ---
-
-        # Update final log message to reflect saving attempt
-        if config_success:
-            logger.info("U-BLOX Konfiguration (Minimal: GGA + Port + Save) erfolgreich abgeschlossen.")
-        else:
-            logger.warning("U-BLOX Konfiguration (Minimal: GGA + Port + Save) mit Fehlern abgeschlossen.")
-
-    # --- ENDE NEUE METHODE ---
-
-    # --- ENDE NEUE METHODE ---
-
+    # --- RouteSimulator Klasse bleibt ---
     class RouteSimulator:
         def __init__(self, start_lat, start_lon, speed=0.00001, direction=0):
             self.current_lat = start_lat
@@ -317,10 +123,12 @@ class GpsHandler:
         def change_direction(self, angle_change):
             self.direction = (self.direction + angle_change) % 360
 
+    # --- is_inside_boundaries bleibt ---
     def is_inside_boundaries(self, lat, lon):
         return (self.lat_bounds[0] <= lat <= self.lat_bounds[1] and
                 self.lon_bounds[0] <= lon <= self.lon_bounds[1])
 
+    # --- download_assist_now_data bleibt ---
     def download_assist_now_data(self):
         """Lädt AssistNow Offline Daten herunter (für u-blox 7 optimiert)."""
         if not self.assist_now_token:
@@ -328,61 +136,42 @@ class GpsHandler:
             return None
         try:
             headers = {"useragent": "Thingstream Client"}
-
-            # --- Angepasste Parameter (basierend auf Doku für u-blox 7) ---
-            # Hole die gewünschte Anzahl Tage aus der Config, prüfe ob gültig für u7
-            requested_days = ASSIST_NOW_CONFIG.get("days", 7)  # Standard 7 Tage aus Config holen
+            requested_days = ASSIST_NOW_CONFIG.get("days", 7)
             valid_u7_days = [1, 2, 3, 5, 7, 10, 14]
             if requested_days not in valid_u7_days:
                 logger.warning(
                     f"Ungültiger Wert für 'days' ({requested_days}) in ASSIST_NOW_CONFIG für u-blox 7. Verwende Standardwert 7.")
-                effective_days = 7  # Fallback auf einen gültigen Wert
+                effective_days = 7
             else:
                 effective_days = requested_days
 
             params = {
                 "token": self.assist_now_token,
                 "gnss": "gps",
-                "format": "aid",  # Korrekt für u-blox 7
-                "days": effective_days  # Korrekt für u-blox 7, Wert validiert
-                # "period": 1,         # Falsch für u-blox 7
-                # "resolution": 1      # Falsch für u-blox 7
-                # "alm": "gps",        # Falsch für format=aid
-                # "datatype": "alm",   # Falsch für u-blox 7
+                "format": "aid",
+                "days": effective_days
             }
-            # --- Ende Anpassung ---
-
             logger.info(
-                f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}... (Params: {params})")  # Logge die Parameter
-            response = requests.get(self.assist_now_offline_url, headers=headers, params=params,
-                                    timeout=15)
-            response.raise_for_status()  # Löst HTTPError bei Fehlern aus (wie 400 Bad Request)
-
-            # ... (Rest der Methode bleibt gleich: Prüfung auf leeren Inhalt, Textfehler, Rückgabe) ...
+                f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}... (Params: {params})")
+            response = requests.get(self.assist_now_offline_url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
 
             if not response.content:
                 logger.warning("Keine AssistNow Offline-Daten erhalten (leere Antwort).")
                 return None
-
-            # Prüfen, ob die Antwort Text enthält (Fehlermeldung von u-blox?)
             try:
                 response_text = response.content.decode('utf-8', errors='ignore')
-                # Suche nach typischen Fehlermeldungen
                 if "error" in response_text.lower() or "invalid token" in response_text.lower() or "bad request" in response_text.lower():
                     logger.error(f"Fehler von AssistNow Service erhalten: {response_text}")
                     return None
             except UnicodeDecodeError:
-                # Das ist der erwartete Fall bei binären Daten
                 pass
-
             logger.info(f"AssistNow Offline-Daten erfolgreich heruntergeladen ({len(response.content)} Bytes).")
             return response.content
-
         except requests.exceptions.Timeout:
             logger.error("Timeout beim Herunterladen der AssistNow Offline-Daten.")
             return None
         except requests.exceptions.RequestException as e:
-            # Logge den Statuscode und die URL, falls verfügbar
             status_code = e.response.status_code if e.response is not None else "N/A"
             req_url = e.request.url if e.request is not None else "N/A"
             logger.error(
@@ -392,53 +181,49 @@ class GpsHandler:
             logger.error(f"Unerwarteter Fehler beim AssistNow Download: {e}", exc_info=True)
             return None
 
+    # --- send_assist_now_data bleibt ---
     def send_assist_now_data(self, data):
         """Sendet die heruntergeladenen AssistNow Daten an das GPS-Modul."""
-        logger.debug("send_assist_now_data aufgerufen.")  # <-- NEU
-
-        # --- NEU: Explizite Prüfung und Logging ---
+        logger.debug("send_assist_now_data aufgerufen.")
         if self.ser_gps is None:
             logger.warning("send_assist_now_data: self.ser_gps ist None. Breche ab.")
             return False
         if not self.ser_gps.is_open:
             logger.warning(f"send_assist_now_data: Serielle Verbindung {self.ser_gps.name} ist nicht offen. Breche ab.")
             return False
-        # --- Ende NEU ---
 
-        logger.debug(f"Versuche, {len(data)} Bytes auf {self.ser_gps.name} zu schreiben...")  # <-- NEU
+        logger.debug(f"Versuche, {len(data)} Bytes auf {self.ser_gps.name} zu schreiben...")
         try:
-            start_write = time.monotonic()  # <-- NEU
+            start_write = time.monotonic()
             bytes_written = self.ser_gps.write(data)
-            duration_write = time.monotonic() - start_write  # <-- NEU
+            duration_write = time.monotonic() - start_write
             logger.debug(
-                f"self.ser_gps.write abgeschlossen nach {duration_write:.2f}s. Bytes geschrieben: {bytes_written}")  # <-- NEU
+                f"self.ser_gps.write abgeschlossen nach {duration_write:.2f}s. Bytes geschrieben: {bytes_written}")
 
-            logger.debug("Führe self.ser_gps.flush() aus...")  # <-- NEU
-            start_flush = time.monotonic()  # <-- NEU
+            logger.debug("Führe self.ser_gps.flush() aus...")
+            start_flush = time.monotonic()
             self.ser_gps.flush()
-            duration_flush = time.monotonic() - start_flush  # <-- NEU
-            logger.debug(f"self.ser_gps.flush() abgeschlossen nach {duration_flush:.2f}s.")  # <-- NEU
+            duration_flush = time.monotonic() - start_flush
+            logger.debug(f"self.ser_gps.flush() abgeschlossen nach {duration_flush:.2f}s.")
 
             logger.info(f"AssistNow Offline-Daten ({bytes_written} Bytes) erfolgreich gesendet.")
             return True
         except serial.SerialTimeoutException:
-            # --- NEU: Logge die Dauer bis zum Timeout ---
             duration_timeout = time.monotonic() - start_write
-            # Sicherstellen, dass write_timeout existiert, bevor darauf zugegriffen wird
             write_timeout_val = getattr(self.ser_gps, 'write_timeout', 'N/A')
             logger.error(
                 f"Timeout ({write_timeout_val}s) beim Senden der AssistNow Offline-Daten nach {duration_timeout:.2f}s.")
-            self._reconnect_serial()
+            self._reconnect_serial()  # Reconnect bleibt sinnvoll
             return False
         except serial.SerialException as e:
-            logger.error(f"Serieller Fehler beim Senden der AssistNow Offline-Daten: {e}",
-                         exc_info=True)  # <-- exc_info hinzugefügt
-            self._reconnect_serial()
+            logger.error(f"Serieller Fehler beim Senden der AssistNow Offline-Daten: {e}", exc_info=True)
+            self._reconnect_serial()  # Reconnect bleibt sinnvoll
             return False
         except Exception as e:
             logger.error(f"Unerwarteter Fehler beim Senden der AssistNow Offline-Daten: {e}", exc_info=True)
             return False
 
+    # --- get_gps_data bleibt im Wesentlichen gleich ---
     def get_gps_data(self):
         """
         Liest und parst NMEA-Nachrichten. Versucht, innerhalb eines Timeouts einen GGA-Satz zu finden.
@@ -448,24 +233,21 @@ class GpsHandler:
         # --- Fake-Modi ---
         if self.mode == "fake_random":
             fake_pos = self.generate_fake_data()
-            # Aktualisiere Statusinformationen auch im Fake-Modus
             self.last_gga_info = {'qual': 1, 'sats': fake_pos.get('satellites', 8),
                                   'timestamp': fake_pos.get('timestamp', time.time())}
-            self.last_known_position = fake_pos  # Wichtig: Auch im Fake-Modus setzen
+            self.last_known_position = fake_pos
             logger.debug(f"Fake Random Data: {fake_pos}")
             return fake_pos
         elif self.mode == "fake_route":
             fake_pos = self.generate_fake_route_data()
-            # Aktualisiere Statusinformationen auch im Fake-Modus
             self.last_gga_info = {'qual': 1, 'sats': fake_pos.get('satellites', 8),
                                   'timestamp': fake_pos.get('timestamp', time.time())}
-            self.last_known_position = fake_pos  # Wichtig: Auch im Fake-Modus setzen
+            self.last_known_position = fake_pos
             logger.debug(f"Fake Route Data: {fake_pos}")
             return fake_pos
 
         # --- Real-Modus ---
         elif self.mode == "real":
-            # --- Connection Check with more logging ---
             connection_ok = True
             if self.ser_gps is None:
                 logger.warning("GPS-Verbindung ist None in get_gps_data.")
@@ -475,175 +257,124 @@ class GpsHandler:
                 connection_ok = False
 
             if not connection_ok:
-                logger.info("-> get_gps_data löst _reconnect_serial aus.")  # <-- NEUES LOGGING
+                logger.info("-> get_gps_data löst _reconnect_serial aus.")
                 self._reconnect_serial()
+                # Setze Status auf Connecting, falls nicht schon
                 if self.last_gga_info.get('qual') != -1:
                     self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
                 return None
-            # --- End Connection Check ---
 
-            # --- Eingangspuffer leeren ---
             try:
-                logger.debug("Leere seriellen Eingangspuffer...")
-                self.ser_gps.reset_input_buffer()
+                # logger.debug("Leere seriellen Eingangspuffer...") # Kann evtl. Probleme machen, erstmal raus
+                # self.ser_gps.reset_input_buffer()
+                pass  # Platzhalter
             except Exception as e:
                 logger.error(f"Fehler beim Leeren des Eingangspuffers: {e}")
-                # Hier nicht unbedingt abbrechen, Leseversuch trotzdem starten
-            # --- ENDE NEU ---
 
-            # --- Versuch, mehrere Zeilen zu lesen ---
             start_time = time.monotonic()
-            # Timeout etwas kürzer als der Serial-Timeout, um Blockaden zu vermeiden
-            # und der Hauptschleife Zeit zu geben.
-            read_timeout = 0.9  # Sekunden
-            gga_msg = None  # Variable für die zuletzt gefundene GGA-Nachricht
+            read_timeout = 0.9
+            gga_msg = None
 
             while time.monotonic() - start_time < read_timeout:
                 try:
-                    # Lese eine Zeile von der seriellen Schnittstelle
                     line_bytes = self.ser_gps.readline()
-
-                    # Wenn nichts gelesen wurde (Timeout der readline-Funktion)
                     if not line_bytes:
-                        logger.debug("Keine Daten von serieller Schnittstelle gelesen (readline Timeout).")
-                        # Kurze Pause, um CPU zu schonen, wenn ständig nichts kommt
+                        # logger.debug("Keine Daten von serieller Schnittstelle gelesen (readline Timeout).") # Zu viel Logspam
                         time.sleep(0.05)
-                        continue  # Nächste Lese-Iteration
+                        continue
 
-                    # Dekodiere die Zeile
                     line = line_bytes.decode('utf-8', errors='ignore').strip()
-                    logger.debug(f"Serielle Zeile empfangen: '{line[:80]}...'")  # Logge empfangene Zeile (gekürzt)
+                    # logger.debug(f"Serielle Zeile empfangen: '{line[:80]}...'") # Zu viel Logspam
 
-                    # Verarbeite nur NMEA-Sätze (beginnen mit '$')
                     if line.startswith('$'):
                         try:
-                            # Parse die NMEA-Nachricht
                             msg = pynmea2.parse(line)
-
-                            # Prüfen, ob es ein GGA-Satz ist
                             if isinstance(msg, pynmea2.types.talker.GGA):
-                                gga_msg = msg  # Merke den letzten gefundenen GGA-Satz
+                                gga_msg = msg
                                 logger.debug(
                                     f"GGA gefunden: Qual={getattr(msg, 'gps_qual', 'N/A')}, Sats={getattr(msg, 'num_sats', 'N/A')}")
-                                # Optional: break, wenn man den *ersten* GGA will
-                                # break
-                                # Aktuell: Lese weiter bis Timeout, um den *letzten* GGA zu bekommen
-                            else:
-                                logger.debug(f"Andere NMEA-Nachricht empfangen: {msg.sentence_type}")
-
+                                # break # Optional: Nur ersten GGA nehmen
+                            # else: # Zu viel Logspam
+                            # logger.debug(f"Andere NMEA-Nachricht empfangen: {msg.sentence_type}")
                         except pynmea2.ParseError as e:
                             logger.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
                         except AttributeError as e:
-                            # Fängt Fehler ab, wenn pynmea2 ein unerwartetes Format parst
                             logger.error(f"Attributfehler beim Verarbeiten der NMEA-Nachricht: {e} - Zeile: '{line}'")
-                        # --- Ende inneres Try/Except für Pynmea2 ---
-                    else:
-                        # Ignoriere Zeilen, die keine NMEA-Sätze sind
-                        if line:  # Nur loggen, wenn die Zeile nicht leer ist
-                            logger.debug(f"Ignoriere Zeile ohne '$': '{line[:50]}...'")
+                    # else: # Zu viel Logspam
+                    # if line:
+                    # logger.debug(f"Ignoriere Zeile ohne '$': '{line[:50]}...'")
 
                 except serial.SerialException as e:
                     logger.error(f"Serieller Fehler beim Lesen von GPS: {e}")
-                    self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}  # Status: Verbindungsfehler
+                    self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
                     self._reconnect_serial()
-                    return None  # Bei seriellem Fehler abbrechen
+                    return None
                 except UnicodeDecodeError as e:
                     logger.warning(f"Fehler beim Dekodieren der seriellen Daten: {e}")
-                    # Hier nicht unbedingt abbrechen, vielleicht ist die nächste Zeile ok
                 except Exception as e:
                     logger.error(f"Unerwarteter Fehler in get_gps_data Leseschleife: {e}", exc_info=True)
-                    # Bei unerwartetem Fehler ist es sicherer, None zurückzugeben
                     return None
-            # --- Ende while-Schleife (Lese-Timeout erreicht) ---
 
-            # --- Verarbeitung des zuletzt gefundenen GGA-Satzes (falls vorhanden) ---
             if gga_msg:
                 current_time = time.time()
                 qual = 0
                 sats = 0
-                # Extrahiere Qualität und Satellitenanzahl sicher
                 try:
-                    # Versuche, gps_qual zu lesen, Standardwert 0
                     qual_str = getattr(gga_msg, 'gps_qual', '0')
-                    if qual_str:  # Nur konvertieren, wenn nicht leer
-                        qual = int(qual_str)
-                    else:
-                        qual = 0
+                    qual = int(qual_str) if qual_str else 0
                 except (ValueError, TypeError):
-                    logger.warning(f"Konnte gps_qual '{qual_str}' nicht in int konvertieren.")
-                    qual = 0  # Fallback auf 0 bei Fehler
+                    qual = 0
                 try:
-                    # Versuche, num_sats zu lesen, Standardwert 0
                     sats_str = getattr(gga_msg, 'num_sats', '0')
-                    if sats_str:  # Nur konvertieren, wenn nicht leer
-                        sats = int(sats_str)
-                    else:
-                        sats = 0
+                    sats = int(sats_str) if sats_str else 0
                 except (ValueError, TypeError):
-                    logger.warning(f"Konnte num_sats '{sats_str}' nicht in int konvertieren.")
-                    sats = 0  # Fallback auf 0 bei Fehler
+                    sats = 0
 
-                # Aktualisiere IMMER die letzten GGA-Statusinformationen
                 self.last_gga_info['qual'] = qual
                 self.last_gga_info['sats'] = sats
                 self.last_gga_info['timestamp'] = current_time
 
-                # Prüfe, ob der Fix gültig ist (Qualität > 0)
                 if qual > 0:
                     self.last_valid_fix_time = current_time
-                    # Aktualisiere die letzte bekannte Position
                     try:
-                        # Stelle sicher, dass Lat/Lon gültige Floats sind und vorhanden
                         if hasattr(gga_msg, 'latitude') and hasattr(gga_msg, 'longitude') and \
                                 gga_msg.latitude is not None and gga_msg.longitude is not None:
                             lat = float(gga_msg.latitude)
                             lon = float(gga_msg.longitude)
                             self.last_known_position = {
-                                'lat': lat,
-                                'lon': lon,
-                                'timestamp': current_time,
-                                'satellites': sats,
-                                'mode': self.mode
+                                'lat': lat, 'lon': lon, 'timestamp': current_time,
+                                'satellites': sats, 'mode': self.mode
                             }
                             logger.debug(
                                 f"Gültige GGA-Daten verarbeitet: Qual={qual}, Sats={sats}, Pos=({lat:.6f}, {lon:.6f})")
-                            return self.last_known_position  # Gib die gültige Position zurück
+                            return self.last_known_position
                         else:
                             logger.warning(f"GGA mit Qual={qual} hat keine gültigen Lat/Lon-Attribute: {gga_msg}")
-                            return None  # Obwohl Qual > 0, sind die Daten unbrauchbar
+                            return None
                     except (ValueError, TypeError, AttributeError) as e:
                         logger.error(f"Fehler beim Extrahieren von Lat/Lon aus GGA: {e} - GGA: {gga_msg}")
-                        return None  # Obwohl Qual > 0, sind die Daten unbrauchbar
+                        return None
                 else:
-                    # Gültiger GGA, aber kein Fix. Gib keine Position zurück.
                     logger.debug(f"Letzter gelesener GGA hatte keinen gültigen Fix (Qual={qual}).")
-                    # last_known_position NICHT ändern, behalte die letzte gültige.
                     return None
             else:
-                # Kein GGA-Satz im Lesezeitfenster gefunden
-                logger.debug("Kein GGA-Satz im Lesezeitfenster gefunden.")
-                # Prüfen, ob seit dem letzten *irgendeinem* GGA-Empfang (auch ohne Fix)
-                # oder seit dem letzten Versuch, die Verbindung herzustellen, zu viel Zeit vergangen ist.
-                # Wenn ja, markiere den Status als "No Signal".
+                # logger.debug("Kein GGA-Satz im Lesezeitfenster gefunden.") # Zu viel Logspam
                 time_since_last_info = time.time() - self.last_gga_info.get('timestamp', 0)
-                if time_since_last_info > 15:  # z.B. 15 Sekunden ohne jegliche GGA-Info
-                    # Nur ändern, wenn der Status nicht schon "Connecting" oder "No Signal" ist
+                # --- Logik für "No Signal" bleibt ---
+                if time_since_last_info > 15:
                     if self.last_gga_info.get('qual') not in [-1, -2]:
                         logger.warning(
                             f"Seit {time_since_last_info:.1f}s keine GGA-Info mehr. Setze Status auf 'No Signal'.")
-                        self.last_gga_info['qual'] = -2  # Markiere als "No Signal"
+                        self.last_gga_info['qual'] = -2
                         self.last_gga_info['sats'] = 0
-                        # Timestamp hier NICHT aktualisieren, damit der Timeout weiterhin greift
                 return None
-            # --- Ende Verarbeitung ---
 
-        # Fallback (sollte eigentlich nicht erreicht werden)
         logger.error("Unerwarteter Fall am Ende von get_gps_data erreicht.")
         return None
 
+    # --- get_last_gga_status bleibt ---
     def get_last_gga_status(self):
-        """Gibt den letzten bekannten GPS-Status inkl. Position und A-GPS Info als String zurück."""
-        qual = self.last_gga_info.get('qual', 0)
+        qual = self.last_gga_info.get('qual', -1)  # Standard -1 (Connecting)
         sats = self.last_gga_info.get('sats', 0)
         ts = self.last_gga_info.get('timestamp', 0)
 
@@ -654,155 +385,100 @@ class GpsHandler:
         }
         fix_description = qual_map.get(qual, f"Unknown ({qual})")
 
-        # --- Position hinzufügen ---
-        lat_str = ""
-        lon_str = ""
-        # Greife auf die zuletzt gespeicherte Position zu
+        lat_str, lon_str = "", ""
         if self.last_known_position and 'lat' in self.last_known_position and 'lon' in self.last_known_position:
-            # Prüfe, ob die letzte Position aktuell genug ist (z.B. nicht älter als 15s)
-            # oder ob der aktuelle Fix-Status > 0 ist.
-            # Dies verhindert, dass eine alte Position bei "No Fix" angezeigt wird.
             if qual > 0 or (time.time() - self.last_known_position.get('timestamp', 0) < 15):
                 try:
-                    # Formatieren mit fester Anzahl Nachkommastellen für Konsistenz
                     lat_str = f"{self.last_known_position['lat']:.8f}"
                     lon_str = f"{self.last_known_position['lon']:.8f}"
                 except (TypeError, ValueError):
-                    logger.warning("Konnte letzte Position nicht formatieren.")
-                    lat_str = ""
-                    lon_str = ""
-        # --- Ende Positions-Hinzufügung ---
+                    pass  # Fehler schon geloggt
 
-        # --- A-GPS Status hinzufügen ---
         agps_status_str = ""
         if self.assist_now_enabled:
             time_since_agps_update = datetime.now() - self.last_assist_now_update
-            # Prüfen, ob das letzte Update erfolgreich war (könnte man noch detaillierter machen)
-            # Hier gehen wir davon aus, dass last_assist_now_update nur bei Erfolg gesetzt wird.
-            if time_since_agps_update < timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1):  # +1 Tag Puffer
+            if time_since_agps_update < timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1):
                 hours_ago = time_since_agps_update.total_seconds() / 3600
                 agps_status_str = f",AGPS: OK ({hours_ago:.1f}h ago)"
             else:
                 agps_status_str = ",AGPS: Stale"
         else:
-            agps_status_str = ",AGPS: Off"  # Explizit anzeigen, wenn deaktiviert
-        # --- Ende A-GPS Status ---
+            agps_status_str = ",AGPS: Off"
 
-        # Format: "status,<Beschreibung>,<Satelliten>,<Latitude>,<Longitude><AGPS-Status>"
-        # Latitude und Longitude sind leer, wenn keine (aktuelle) Position bekannt ist.
         status_message = f"status,{fix_description},{sats},{lat_str},{lon_str}{agps_status_str}"
-
-        logger.debug(f"Generierter GPS Status String: {status_message} (Qual={qual}, Sats={sats}, TS={ts})")
+        # logger.debug(f"Generierter GPS Status String: {status_message} (Qual={qual}, Sats={sats}, TS={ts})") # Zu viel Logspam
         return status_message
 
+    # --- generate_fake_data bleibt ---
     def generate_fake_data(self):
         lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
         fake_pos = {
-            'lat': random.uniform(*lat_range),
-            'lon': random.uniform(*lon_range),
-            'timestamp': time.time(),
-            'satellites': random.randint(4, 12),
-            'mode': self.mode
+            'lat': random.uniform(*lat_range), 'lon': random.uniform(*lon_range),
+            'timestamp': time.time(), 'satellites': random.randint(4, 12), 'mode': self.mode
         }
         logger.debug(f"Generiere Fake-Daten (random): {fake_pos}")
-        # self.last_known_position wird in get_gps_data gesetzt
         return fake_pos
 
+    # --- generate_fake_route_data bleibt ---
     def generate_fake_route_data(self):
         if self.route_simulator:
-            if random.random() < 0.1:  # Zufällige Richtungsänderung
+            if random.random() < 0.1:
                 self.route_simulator.change_direction(random.randint(-30, 30))
-
             lat, lon = self.route_simulator.move()
-
-            # Stelle sicher, dass die Route innerhalb der Grenzen bleibt (optional)
-            # if not self.is_inside_boundaries(lat, lon):
-            #     # Kehre um oder ändere Richtung stark
-            #     self.route_simulator.change_direction(180 + random.randint(-10, 10))
-            #     lat, lon = self.route_simulator.move() # Mache einen Schritt zurück
-
             fake_pos = {
-                'lat': lat,
-                'lon': lon,
-                'timestamp': time.time(),
-                'satellites': random.randint(7, 12),
-                'mode': self.mode
+                'lat': lat, 'lon': lon, 'timestamp': time.time(),
+                'satellites': random.randint(7, 12), 'mode': self.mode
             }
             logger.debug(f"Generiere Fake-Daten (route): {fake_pos}")
-            # self.last_known_position wird in get_gps_data gesetzt
             return fake_pos
         else:
             logger.warning("Routenmodus aktiv, aber kein Routensimulator initialisiert.")
-            return self.generate_fake_data()  # Fallback
+            return self.generate_fake_data()
 
+    # --- check_assist_now bleibt ---
     def check_assist_now(self, force_update=False):
-        """
-        Prüft, ob AssistNow Daten aktualisiert werden müssen (zeitbasiert oder erzwungen)
-        und führt dies ggf. durch.
-
-        Args:
-            force_update (bool): Wenn True, wird das Update unabhängig vom Zeitintervall versucht.
-
-        Returns:
-            bool: True, wenn kein Update nötig war oder das Update erfolgreich war.
-                  False, wenn ein Update versucht wurde, aber fehlschlug.
-        """
-        # Prüfe nur im Real-Modus und wenn aktiviert
         if self.mode != "real" or not self.assist_now_enabled:
-            logger.debug("AssistNow nicht aktiv oder nicht im Real-Modus.")
-            return True  # Nichts zu tun
+            # logger.debug("AssistNow nicht aktiv oder nicht im Real-Modus.") # Zu viel Logspam
+            return True
 
-        # Prüfe, ob das Update-Intervall abgelaufen ist
-        update_interval_days = ASSIST_NOW_CONFIG.get("days", 7) - 1  # Update 1 Tag vor Ablauf
+        update_interval_days = ASSIST_NOW_CONFIG.get("days", 7) - 1
         time_since_last = datetime.now() - self.last_assist_now_update
         interval_elapsed = time_since_last >= timedelta(days=update_interval_days)
 
-        # --- NEUE Bedingung: Update wenn erzwungen ODER Intervall abgelaufen ---
         if force_update or interval_elapsed:
-            if force_update:
-                logger.info("AssistNow Offline Update manuell angestoßen.")
-            else:
-                logger.info(
-                    f"AssistNow Offline Update erforderlich (letztes Update: {self.last_assist_now_update}, Intervall: {update_interval_days} Tage).")
+            log_prefix = "Manuelles" if force_update else "Periodisches"
+            logger.info(f"{log_prefix} AssistNow Offline Update wird versucht...")
 
-            # --- Download und Senden ---
             data = self.download_assist_now_data()
             if data is not None:
                 if self.send_assist_now_data(data):
-                    self.last_assist_now_update = datetime.now()  # Nur bei Erfolg aktualisieren
+                    self.last_assist_now_update = datetime.now()
                     logger.info("AssistNow Offline Update erfolgreich durchgeführt.")
-                    return True  # Erfolg
+                    return True
                 else:
                     logger.error("AssistNow Offline-Daten konnten nicht an das Modul gesendet werden.")
-                    # Optional: Kurze Pause vor nächstem Versuch in der Hauptschleife? Eher nicht hier.
-                    return False  # Signalisiert Fehler beim Senden
+                    return False
             else:
                 logger.error("AssistNow Offline-Daten konnten nicht heruntergeladen werden.")
-                # Optional: Kurze Pause? Eher nicht hier.
-                return False  # Signalisiert Fehler beim Download
-            # --- Ende Download und Senden ---
+                return False
         else:
-            logger.debug(f"Kein AssistNow Update erforderlich (letztes Update: {self.last_assist_now_update}).")
-            return True  # Kein Update nötig, also "Erfolg" im Sinne von "kein Fehler"
+            # logger.debug(f"Kein AssistNow Update erforderlich (letztes Update: {self.last_assist_now_update}).") # Zu viel Logspam
+            return True
 
-    # --- ENDE GEÄNDERTE check_assist_now ---
-
+    # --- change_gps_mode bleibt ---
     def change_gps_mode(self, new_mode):
-        """Ändert den Betriebsmodus des GPS-Handlers (real, fake_random, fake_route)."""
         if new_mode == self.mode:
             logger.info(f"GPS-Modus ist bereits '{new_mode}'. Keine Änderung.")
             return True
 
         logger.info(f"Ändere GPS-Modus von '{self.mode}' zu: {new_mode}")
         previous_mode = self.mode
-        self.mode = new_mode  # Setze den Modus sofort
+        self.mode = new_mode
 
         if new_mode == "fake_route":
             self.is_fake_gps = True
             start_lat, start_lon = self.map_center
-            # Initialisiere Simulator, falls nicht vorhanden oder wenn von 'real' gewechselt wird
             if not self.route_simulator or previous_mode == "real":
-                # Verwende letzte bekannte Position als Start, falls vorhanden und gültig
                 if self.last_known_position and 'lat' in self.last_known_position:
                     start_lat = self.last_known_position['lat']
                     start_lon = self.last_known_position['lon']
@@ -811,35 +487,26 @@ class GpsHandler:
                 else:
                     logger.info(f"Starte Routensimulator von Kartenmitte ({start_lat:.6f}, {start_lon:.6f}).")
                 self.route_simulator = GpsHandler.RouteSimulator(start_lat, start_lon, direction=random.randint(0, 360))
-
-            # Schließe serielle Verbindung, wenn sie offen war
             self.close_serial()
             logger.info("Serielle Verbindung für Fake-Modus geschlossen (falls offen).")
-            # Setze Status auf Simulation
             self.last_gga_info = {'qual': 8, 'sats': 8, 'timestamp': time.time()}
 
         elif new_mode == "fake_random":
             self.is_fake_gps = True
-            self.route_simulator = None  # Deaktiviere Routensimulator
-            # Schließe serielle Verbindung, wenn sie offen war
+            self.route_simulator = None
             self.close_serial()
             logger.info("Serielle Verbindung für Fake-Modus geschlossen (falls offen).")
-            # Setze Status auf Simulation
             self.last_gga_info = {'qual': 8, 'sats': 8, 'timestamp': time.time()}
 
         elif new_mode == "real":
             self.is_fake_gps = False
-            self.route_simulator = None  # Deaktiviere Routensimulator
-            # Stelle serielle Verbindung her (oder versuche es)
-            self._connect_serial()
-            # Status wird durch _connect_serial gesetzt (Connecting oder No Fix)
+            self.route_simulator = None
+            self._connect_serial()  # Stellt Verbindung her, ohne Konfiguration
 
         else:
             logger.warning(f"Ungültiger GPS-Modus angefordert: {new_mode}")
-            self.mode = previous_mode  # Setze Modus zurück
+            self.mode = previous_mode
             return False
 
-        # Reset last_known_position beim Moduswechsel? Optional, aber vielleicht sinnvoll.
-        # self.last_known_position = None
         logger.info(f"GPS-Modus erfolgreich auf '{self.mode}' geändert.")
         return True
