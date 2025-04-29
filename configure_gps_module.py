@@ -97,10 +97,18 @@ def configure_gps_module(ser):
 
     # --- 2. NMEA Nachrichten konfigurieren (CFG-MSG) ---
     logger.info("--- Schritt 2: NMEA Nachrichten (CFG-MSG) ---")
-    # GGA an (Rate 1), GSA, RMC, VTG, GSV, GLL aus (Rate 0) auf UART1
+    # --- Korrektur: GGA, GSA, RMC, VTG, GSV aktivieren (Rate 1), GLL deaktivieren (Rate 0) ---
     nmea_msgs_to_configure = {
-        0xF0: {0x00: 1, 0x02: 0, 0x04: 0, 0x05: 0, 0x03: 0, 0x01: 0}
+        0xF0: {  # NMEA Standard Class
+            0x00: 1,  # GGA: Rate 1
+            0x02: 1,  # GSA: Rate 1
+            0x04: 1,  # RMC: Rate 1
+            0x05: 1,  # VTG: Rate 1
+            0x03: 1,  # GSV: Rate 1
+            0x01: 0  # GLL: Rate 0 (Bleibt oft deaktiviert)
+        }
     }
+    # --- Ende Korrektur ---
     try:
         for msgClass, ids_rates in nmea_msgs_to_configure.items():
             for msgID, rate in ids_rates.items():
@@ -109,7 +117,8 @@ def configure_gps_module(ser):
                 payload_msg = bytes([msgClass, msgID]) + bytes(rates)
                 msg_cfg = UBXMessage('CFG', 'CFG-MSG', SET, payload=payload_msg)
                 if send_ubx_command(ser, msg_cfg):
-                    action = "aktiviert (Rate 1)" if rate > 0 else "deaktiviert"
+                    # Log angepasst für Klarheit
+                    action = f"aktiviert (Rate {rate})" if rate > 0 else "deaktiviert"
                     logger.info(f"CFG-MSG: NMEA {msgClass:02X}-{msgID:02X} {action}.")
                     save_needed = True
                 else:
@@ -172,7 +181,7 @@ def configure_gps_module(ser):
     return config_ok
 
 
-# --- NEU: Funktion zur Überprüfung der NMEA-Ausgabe ---
+# --- Funktion zur Überprüfung der NMEA-Ausgabe ---
 def verify_nmea_output(ser):
     """
     Versucht nach der Konfiguration für eine bestimmte Zeit NMEA-Daten zu lesen
@@ -206,9 +215,9 @@ def verify_nmea_output(ser):
                 lines_read += 1
                 try:
                     line = line_bytes.decode('utf-8', errors='ignore').strip()
-                    # --- Änderung: Zeile immer mit INFO loggen ---
+                    # --- Zeile immer mit INFO loggen ---
                     logger.info(f"Empfangen: {line}")
-                    # --- Ende Änderung ---
+                    # --- Ende ---
 
                     # Prüfe auf GGA (kann $GPGGA, $GNGGA, etc. sein)
                     if line.startswith('$') and line[3:6] == 'GGA':
@@ -251,8 +260,6 @@ def verify_nmea_output(ser):
         return False
 
 
-# --- ENDE NEU ---
-
 # --- Hauptausführung ---
 if __name__ == "__main__":
     logger.info(f"Starte U-Blox Konfigurationsskript für Port {SERIAL_PORT} @ {BAUDRATE} Baud")
@@ -278,13 +285,12 @@ if __name__ == "__main__":
         # Konfiguration durchführen
         config_success = configure_gps_module(ser)
 
-        # --- NEU: Verifizierung nur starten, wenn Konfiguration ok war ---
+        # Verifizierung nur starten, wenn Konfiguration ok war
         verification_success = False
         if config_success:
             verification_success = verify_nmea_output(ser)
         else:
             logger.warning("Konfiguration war nicht erfolgreich, überspringe NMEA-Verifizierung.")
-        # --- ENDE NEU ---
 
         # Gesamterfolg hängt von beiden Schritten ab (wenn Verifizierung durchgeführt wurde)
         overall_success = config_success and (
