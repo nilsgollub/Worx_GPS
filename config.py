@@ -54,7 +54,8 @@ HEATMAP_CONFIG = {
         "path_weight": 2.0,  # Dicke der Linie
         "path_opacity": 1.0,  # Transparenz der Linie (0.0 bis 1.0)
         "show_start_end_markers": True,  # Start-/Endpunkte anzeigen?
-        "path_colors": ["#3388ff"]  # Farbe(n) für den Pfad (nur eine für Single-Session)
+        "path_colors": ["#3388ff"],  # Farbe(n) für den Pfad (nur eine für Single-Session)
+        "use_heatmap_with_time": True,
         # --- ENDE NEU ---
     },
     "heatmap_10_maehvorgang": {
@@ -66,6 +67,7 @@ HEATMAP_CONFIG = {
         "path_weight": 1.0,
         "path_opacity": 0.8,
         "show_start_end_markers": True,
+        "use_heatmap_with_time": True,
         # "path_colors": [...] # Optional: Eigene Liste von Farben, sonst werden Defaults verwendet
         # --- ENDE NEU ---
     },
