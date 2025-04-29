@@ -45,7 +45,7 @@ HEATMAP_CONFIG = {
         "path_opacity": 1.0,
         "show_start_end_markers": True,
         "path_colors": ["#3388ff"],
-        "use_heatmap_with_time": True,
+        "use_heatmap_with_time": False,
         "use_satellite_weight": False,  # Wird für Heatmap nicht verwendet
         "visualize_quality_path": False,  # Ist keine Qualitäts-Pfadkarte
     },

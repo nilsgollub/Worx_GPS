@@ -144,6 +144,8 @@ class HeatmapGenerator:
         # Heatmap Parameter
         heatmap_radius = map_config.get("radius", 3)
         heatmap_blur = map_config.get("blur", 3)
+        # Flag für Zeit-Heatmap (wird nur für Warnung verwendet)
+        use_time_heatmap = map_config.get("use_heatmap_with_time", False)
 
         # Spezifische Flags
         visualize_quality_path = map_config.get("visualize_quality_path", False)
@@ -165,8 +167,7 @@ class HeatmapGenerator:
         # --- Logik für Kartentyp ---
         if visualize_quality_path:
             # --- Farbkodierten Pfad zeichnen (Multi-Session Support) ---
-            # Diese Logik bleibt unverändert, da sie bereits pro Session arbeitet
-            # und keine separaten Heatmaps benötigt.
+            # Diese Logik bleibt unverändert.
             logger.info(f"Zeichne farbkodierten Qualitätspfad für {html_file}.")
             colors = map_config.get('quality_colormap_colors', ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
             index = map_config.get('quality_colormap_index', [4, 6, 8, 10])
@@ -254,7 +255,6 @@ class HeatmapGenerator:
 
             for pg in path_groups: pg.add_to(map_obj)
             colormap.add_to(map_obj)
-            # Bounds werden immer aus allen Punkten berechnet
             all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                      'lat' in p and 'lon' in p]
 
@@ -262,109 +262,189 @@ class HeatmapGenerator:
             # --- Logik für separate Heatmaps UND separate Pfade ---
             logger.info(f"Erstelle Karte mit separaten Heatmaps UND Pfaden für {html_file}.")
 
-            # Listen für die separaten Layer
+            # Listen für die separaten Layer (optional, nur zur Übersicht)
             heatmap_layers = []
             path_layers = []
 
-            for idx, session_data in enumerate(reversed(sessions_to_draw)):
-                if not session_data: continue  # Leere Session überspringen
+            # --- Multi-Session Fall ---
+            if is_multi_session:
+                for idx, session_data in enumerate(reversed(sessions_to_draw)):
+                    if not session_data: continue
 
-                session_index_display = len(sessions_to_draw) - idx
-                session_date_str = self._get_session_date_str(session_data, session_index_display)
-                show_layer = (idx == 0)  # Nur die neueste standardmäßig anzeigen
+                    session_index_display = len(sessions_to_draw) - idx
+                    session_date_str = self._get_session_date_str(session_data, session_index_display)
+                    show_layer = (idx == 0)
 
-                session_points_coords = []
-                session_points_full = []
-                session_heat_data = []  # Heatmap-Daten nur für diese Session
+                    session_points_coords = []
+                    session_points_full = []
+                    session_heat_data = []
 
-                # Distanz und Zeit berechnen (wie vorher)
-                total_distance_m = 0.0
-                start_time_ts = None
-                end_time_ts = None
-                try:
-                    # Sammle Punkte für Pfad, Marker, Heatmap und berechne Distanz
-                    for i in range(len(session_data)):
-                        point = session_data[i]
-                        try:
-                            lat = float(point['lat'])
-                            lon = float(point['lon'])
-                            coord = [lat, lon]
-
-                            # Daten für alle Zwecke sammeln
-                            session_points_coords.append(coord)
-                            session_heat_data.append(coord)  # Auch für Heatmap
-                            session_points_full.append(point)
-
-                            if i > 0:
-                                total_distance_m += calculate_distance(session_data[i - 1], point)
-                        except (ValueError, KeyError, TypeError):
-                            logger.warning(f"Ungültiger Punkt in Session {session_date_str} übersprungen: {point}")
-                            continue
-
-                    if session_points_full:
-                        start_time_ts = float(session_points_full[0].get('timestamp'))
-                        end_time_ts = float(session_points_full[-1].get('timestamp'))
-                except (ValueError, TypeError, KeyError, IndexError):
-                    logger.warning(f"Konnte Start-/Endzeit/Distanz für Session {session_date_str} nicht ermitteln.")
-                    start_time_ts = None;
-                    end_time_ts = None;
+                    # Daten sammeln und Distanz/Zeit berechnen
                     total_distance_m = 0.0
+                    start_time_ts = None
+                    end_time_ts = None
+                    try:
+                        for i in range(len(session_data)):
+                            point = session_data[i]
+                            try:
+                                lat = float(point['lat'])
+                                lon = float(point['lon'])
+                                coord = [lat, lon]
+                                session_points_coords.append(coord)
+                                session_heat_data.append(coord)
+                                session_points_full.append(point)
+                                if i > 0: total_distance_m += calculate_distance(session_data[i - 1], point)
+                            except (ValueError, KeyError, TypeError):
+                                logger.warning(f"Ungültiger Punkt in Session {session_date_str} übersprungen: {point}")
+                                continue
+                        if session_points_full:
+                            start_time_ts = float(session_points_full[0].get('timestamp'))
+                            end_time_ts = float(session_points_full[-1].get('timestamp'))
+                    except (ValueError, TypeError, KeyError, IndexError):
+                        logger.warning(f"Konnte Start-/Endzeit/Distanz für Session {session_date_str} nicht ermitteln.")
+                        start_time_ts = None;
+                        end_time_ts = None;
+                        total_distance_m = 0.0
+                    duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
+                    duration_str = format_duration(duration_seconds)
+                    distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
 
-                duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
-                duration_str = format_duration(duration_seconds)
-                distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
+                    # 1. Separate Heatmap erstellen
+                    if session_heat_data:
+                        heatmap_layer_name = f"Heatmap {session_date_str}"
+                        logger.debug(f"Creating Heatmap layer '{heatmap_layer_name}'")
+                        if use_time_heatmap:  # Nur für die Warnung
+                            logger.warning(
+                                f"[{html_file}] 'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap für {heatmap_layer_name}.")
+                        heatmap_layer = plugins.HeatMap(session_heat_data, name=heatmap_layer_name,
+                                                        radius=heatmap_radius, blur=heatmap_blur, show=show_layer)
+                        heatmap_layer.add_to(map_obj)
+                        heatmap_layers.append(heatmap_layer)
+                    else:
+                        logger.warning(f"Keine Heatmap-Daten für Session {session_date_str}.")
 
-                # --- 1. Separate Heatmap erstellen und zur Karte hinzufügen ---
-                if session_heat_data:
-                    heatmap_layer_name = f"Heatmap {session_date_str}"
-                    logger.debug(f"Creating Heatmap layer '{heatmap_layer_name}'")
-                    heatmap_layer = plugins.HeatMap(session_heat_data,
-                                                    name=heatmap_layer_name,
-                                                    radius=heatmap_radius,
-                                                    blur=heatmap_blur,
-                                                    show=show_layer)  # show steuert Sichtbarkeit
-                    heatmap_layer.add_to(map_obj)  # Direkt zur Karte hinzufügen
-                    heatmap_layers.append(heatmap_layer)  # Optional: Liste behalten falls später benötigt
+                    # 2. Separaten Pfad erstellen
+                    if draw_path and len(session_points_coords) > 1:
+                        path_layer_name = f"Pfad {session_date_str}"
+                        logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
+                        path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
+                        current_path_color = path_colors_list[idx % len(path_colors_list)]
+                        folium.PolyLine(session_points_coords, color=current_path_color, weight=path_weight,
+                                        opacity=path_opacity).add_to(path_feature_group)
+                        if show_markers:
+                            start_ts = session_points_full[0].get('timestamp')
+                            end_ts = session_points_full[-1].get('timestamp')
+                            start_popup = (f"<b>Start {session_date_str}</b><br>"
+                                           f"Zeit: {self._format_timestamp(start_ts)}<br>"
+                                           f"Dauer: {duration_str}<br>"
+                                           f"Strecke: {distance_str}")
+                            end_popup = (f"<b>Ende {session_date_str}</b><br>"
+                                         f"Zeit: {self._format_timestamp(end_ts)}<br>"
+                                         f"Dauer: {duration_str}<br>"
+                                         f"Strecke: {distance_str}")
+                            folium.CircleMarker(location=session_points_coords[0], radius=3,
+                                                color=current_path_color, fill=True, fill_color=current_path_color,
+                                                fill_opacity=0.9,
+                                                popup=folium.Popup(start_popup, max_width=200)).add_to(
+                                path_feature_group)
+                            folium.CircleMarker(location=session_points_coords[-1], radius=3,
+                                                color=current_path_color, fill=True, fill_color=current_path_color,
+                                                fill_opacity=0.9, popup=folium.Popup(end_popup, max_width=200)).add_to(
+                                path_feature_group)
+                        path_feature_group.add_to(map_obj)
+                        path_layers.append(path_feature_group)
+            # --- Ende Multi-Session Fall ---
+
+            # --- Single-Session Fall (z.B. heatmap_aktuell) ---
+            else:
+                session_data_single = sessions_to_draw[0]
+                if session_data_single:
+                    session_date_str_single = self._get_session_date_str(session_data_single, 1)
+                    show_layer = True  # Einzelne Session immer anzeigen
+
+                    single_points_coords = []
+                    single_points_full = []
+                    single_heat_data = []
+
+                    # Daten sammeln und Distanz/Zeit berechnen
+                    total_distance_m = 0.0
+                    start_time_ts = None
+                    end_time_ts = None
+                    try:
+                        for i in range(len(session_data_single)):
+                            point = session_data_single[i]
+                            try:
+                                lat = float(point['lat'])
+                                lon = float(point['lon'])
+                                coord = [lat, lon]
+                                single_points_coords.append(coord)
+                                single_heat_data.append(coord)
+                                single_points_full.append(point)
+                                if i > 0: total_distance_m += calculate_distance(session_data_single[i - 1], point)
+                            except (ValueError, KeyError, TypeError):
+                                logger.warning(f"Ungültiger Punkt in Single-Session übersprungen: {point}")
+                                continue
+                        if single_points_full:
+                            start_time_ts = float(single_points_full[0].get('timestamp'))
+                            end_time_ts = float(single_points_full[-1].get('timestamp'))
+                    except (ValueError, TypeError, KeyError, IndexError):
+                        logger.warning(f"Konnte Start-/Endzeit/Distanz für Single-Session nicht ermitteln.")
+                        start_time_ts = None;
+                        end_time_ts = None;
+                        total_distance_m = 0.0
+                    duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
+                    duration_str = format_duration(duration_seconds)
+                    distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
+
+                    # 1. Separate Heatmap erstellen
+                    if single_heat_data:
+                        heatmap_layer_name = f"Heatmap {session_date_str_single}"
+                        logger.debug(f"Creating Heatmap layer '{heatmap_layer_name}'")
+                        if use_time_heatmap:  # Nur für die Warnung
+                            logger.warning(
+                                f"[{html_file}] 'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap für {heatmap_layer_name}.")
+                        heatmap_layer = plugins.HeatMap(single_heat_data, name=heatmap_layer_name,
+                                                        radius=heatmap_radius, blur=heatmap_blur, show=show_layer)
+                        heatmap_layer.add_to(map_obj)
+                        heatmap_layers.append(heatmap_layer)
+                    else:
+                        logger.warning(f"Keine Heatmap-Daten für Single-Session.")
+
+                    # 2. Separaten Pfad erstellen
+                    if draw_path and len(single_points_coords) > 1:
+                        path_layer_name = f"Pfad {session_date_str_single}"
+                        logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
+                        path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
+                        current_path_color = path_colors_list[
+                            0] if path_colors_list else "blue"  # Erste Farbe für Single-Session
+                        folium.PolyLine(single_points_coords, color=current_path_color, weight=path_weight,
+                                        opacity=path_opacity).add_to(path_feature_group)
+                        if show_markers:
+                            start_ts_single = single_points_full[0].get('timestamp')
+                            end_ts_single = single_points_full[-1].get('timestamp')
+                            start_popup_single = (f"<b>Start {session_date_str_single}</b><br>"
+                                                  f"Zeit: {self._format_timestamp(start_ts_single)}<br>"
+                                                  f"Dauer: {duration_str}<br>"
+                                                  f"Strecke: {distance_str}")
+                            end_popup_single = (f"<b>Ende {session_date_str_single}</b><br>"
+                                                f"Zeit: {self._format_timestamp(end_ts_single)}<br>"
+                                                f"Dauer: {duration_str}<br>"
+                                                f"Strecke: {distance_str}")
+                            folium.CircleMarker(location=single_points_coords[0], radius=3,
+                                                color=current_path_color, fill=True, fill_color=current_path_color,
+                                                fill_opacity=0.9,
+                                                popup=folium.Popup(start_popup_single, max_width=200)).add_to(
+                                path_feature_group)
+                            folium.CircleMarker(location=single_points_coords[-1], radius=3,
+                                                color=current_path_color, fill=True, fill_color=current_path_color,
+                                                fill_opacity=0.9,
+                                                popup=folium.Popup(end_popup_single, max_width=200)).add_to(
+                                path_feature_group)
+                        path_feature_group.add_to(map_obj)
+                        path_layers.append(path_feature_group)
                 else:
-                    logger.warning(f"Keine Heatmap-Daten für Session {session_date_str}.")
-
-                # --- 2. Separaten Pfad (als FeatureGroup) erstellen und zur Karte hinzufügen ---
-                if draw_path and len(session_points_coords) > 1:
-                    path_layer_name = f"Pfad {session_date_str}"
-                    logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
-                    path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
-
-                    current_path_color = path_colors_list[idx % len(path_colors_list)]
-                    # Pfad zur Gruppe hinzufügen
-                    folium.PolyLine(session_points_coords, color=current_path_color, weight=path_weight,
-                                    opacity=path_opacity).add_to(path_feature_group)
-
-                    # Marker zur Gruppe hinzufügen (wenn show_markers=True)
-                    if show_markers:
-                        start_ts = session_points_full[0].get('timestamp')
-                        end_ts = session_points_full[-1].get('timestamp')
-                        start_popup = (f"<b>Start {session_date_str}</b><br>"
-                                       f"Zeit: {self._format_timestamp(start_ts)}<br>"
-                                       f"Dauer: {duration_str}<br>"
-                                       f"Strecke: {distance_str}")
-                        end_popup = (f"<b>Ende {session_date_str}</b><br>"
-                                     f"Zeit: {self._format_timestamp(end_ts)}<br>"
-                                     f"Dauer: {duration_str}<br>"
-                                     f"Strecke: {distance_str}")
-                        folium.CircleMarker(location=session_points_coords[0], radius=3,
-                                            color=current_path_color, fill=True, fill_color=current_path_color,
-                                            fill_opacity=0.9, popup=folium.Popup(start_popup, max_width=200)).add_to(
-                            path_feature_group)
-                        folium.CircleMarker(location=session_points_coords[-1], radius=3,
-                                            color=current_path_color, fill=True, fill_color=current_path_color,
-                                            fill_opacity=0.9, popup=folium.Popup(end_popup, max_width=200)).add_to(
-                            path_feature_group)
-
-                    # Füge die Pfad-Gruppe direkt zur Karte hinzu
-                    path_feature_group.add_to(map_obj)
-                    path_layers.append(path_feature_group)  # Optional: Liste behalten
-                # --- Ende Pfad ---
-            # --- Ende der Session-Schleife ---
+                    logger.warning(f"Keine Daten in Single-Session für {html_file}.")
+            # --- Ende Single-Session Fall ---
 
             # Bounds werden immer aus allen Punkten berechnet (aus flat_data_list)
             all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
@@ -372,13 +452,21 @@ class HeatmapGenerator:
             if not all_points_for_bounds:  # Fallback
                 logger.warning(f"Keine Punkte für Bounds aus flat_data_list, versuche aus session_points_coords.")
                 try:
-                    all_points_for_bounds = [coord for group in path_layers  # Verwende path_layers für Fallback
-                                             for child in group._children.values()
-                                             if isinstance(child, folium.vector_layers.PolyLine)
-                                             for coord in child.locations]
+                    # Verwende Koordinaten aus Pfaden oder Heatmaps als Fallback
+                    bounds_fallback_points = []
+                    if path_layers:
+                        bounds_fallback_points.extend([coord for group in path_layers
+                                                       for child in group._children.values()
+                                                       if isinstance(child, folium.vector_layers.PolyLine)
+                                                       for coord in child.locations])
+                    elif heatmap_layers:  # Wenn keine Pfade, aber Heatmaps da sind
+                        bounds_fallback_points.extend([point for hm_layer in heatmap_layers for point in hm_layer.data])
+
+                    all_points_for_bounds = bounds_fallback_points
                 except Exception as e:
-                    logger.error(f"Fehler beim Extrahieren von Bounds aus PolyLines: {e}")
+                    logger.error(f"Fehler beim Extrahieren von Bounds aus Layern: {e}")
                     all_points_for_bounds = []
+        # --- Ende des else-Blocks für visualize_quality_path=False ---
 
         # --- Gemeinsame Elemente für alle Kartentypen ---
         # Kartengrenzen anpassen (fit_bounds) - (unverändert)
@@ -804,6 +892,12 @@ if __name__ == '__main__':
             {'lat': 46.81195, 'lon': 7.13285, 'satellites': 4, 'timestamp': ts_now - 60 * 5 + 2},
         ]
     ]
+    # Einzelne Session für heatmap_aktuell Test
+    single_session_data = [
+        {'lat': 46.8118, 'lon': 7.1328, 'satellites': 8, 'timestamp': ts_now - 10},
+        {'lat': 46.81182, 'lon': 7.13285, 'satellites': 9, 'timestamp': ts_now - 9},
+        {'lat': 46.81184, 'lon': 7.1329, 'satellites': 10, 'timestamp': ts_now - 8},
+    ]
 
     HEATMAP_CONFIG["test_quality_path_10"] = {
         "output": "heatmaps/test_quality_path_10.html",
@@ -834,15 +928,33 @@ if __name__ == '__main__':
         "use_satellite_weight": False,
         "visualize_quality_path": False,  # Wichtig: Dies steuert, welcher Block ausgeführt wird
     }
+    # Test-Config für heatmap_aktuell
+    HEATMAP_CONFIG["test_heatmap_aktuell"] = {
+        "output": "heatmaps/test_heatmap_aktuell.html",
+        "png_output": "heatmaps/test_heatmap_aktuell.png",
+        "generate_png": False,
+        "radius": 5,
+        "blur": 10,
+        "path_weight": 2.0,
+        "path_opacity": 1.0,
+        "show_start_end_markers": True,
+        "path_colors": ["#3388ff"],
+        "use_heatmap_with_time": True,  # Bleibt drin, wird aber ignoriert (mit Warnung)
+        "use_satellite_weight": False,
+        "visualize_quality_path": False,
+    }
 
     gen = HeatmapGenerator()
 
     logger.info("Teste Qualitäts-Pfadkarte für 10 Sessions (HTML)...")
     gen.create_heatmap(multi_data_sats, "heatmaps/test_quality_path_10.html", draw_path=True, is_multi_session=True)
 
-    logger.info("Teste Heatmap für 10 Sessions (HTML)...")
-    # Rufe create_heatmap für die Test-Config "test_heatmap_10" auf
+    logger.info("Teste Heatmap für 10 Sessions (HTML) - Separate Layer...")
     gen.create_heatmap(multi_data_sats, HEATMAP_CONFIG["test_heatmap_10"]["output"], draw_path=True,
                        is_multi_session=True)
+
+    logger.info("Teste Heatmap für aktuelle Session (HTML) - Separate Layer...")
+    gen.create_heatmap(single_session_data, HEATMAP_CONFIG["test_heatmap_aktuell"]["output"], draw_path=True,
+                       is_multi_session=False)
 
     logger.info("Heatmap-Generierungstests abgeschlossen.")
