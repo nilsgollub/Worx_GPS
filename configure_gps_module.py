@@ -206,24 +206,27 @@ def verify_nmea_output(ser):
                 lines_read += 1
                 try:
                     line = line_bytes.decode('utf-8', errors='ignore').strip()
-                    logger.debug(f"Empfangen: {line}")
+                    # --- Änderung: Zeile immer mit INFO loggen ---
+                    logger.info(f"Empfangen: {line}")
+                    # --- Ende Änderung ---
 
-                    if line.startswith('$GPGGA'):
-                        logger.info(f"GGA Satz gefunden: {line}")
+                    # Prüfe auf GGA (kann $GPGGA, $GNGGA, etc. sein)
+                    if line.startswith('$') and line[3:6] == 'GGA':
+                        # logger.info(f"GGA Satz gefunden: {line}") # Redundant, da oben schon geloggt
                         try:
                             # Versuche zu parsen, um Gültigkeit zu prüfen
                             pynmea2.parse(line)
-                            logger.info("GGA Satz erfolgreich geparst!")
+                            logger.info("-> GGA Satz erfolgreich geparst!")  # Hervorhebung
                             gga_verified = True
                             break  # Erfolgreich verifiziert, Schleife beenden
                         except pynmea2.ParseError as pe:
-                            logger.warning(f"GGA Satz gefunden, aber Parsing fehlgeschlagen: {pe}")
+                            logger.warning(f"-> GGA Satz gefunden, aber Parsing fehlgeschlagen: {pe}")
                             # Nicht abbrechen, vielleicht ist der nächste Satz gültig
-                    elif line.startswith('$'):
-                        logger.debug(f"Andere NMEA Nachricht: {line.split(',')[0]}")
-                    else:
-                        if line:  # Nur loggen, wenn nicht leer
-                            logger.debug(f"Keine NMEA Nachricht: {line[:50]}...")
+                    # elif line.startswith('$'): # Optional: Andere NMEA auch loggen, wenn gewünscht
+                    #     logger.info(f"Andere NMEA Nachricht: {line.split(',')[0]}")
+                    # else: # Optional: Nicht-NMEA Zeilen loggen
+                    #     if line:
+                    #         logger.info(f"Keine NMEA Nachricht: {line[:50]}...")
 
                 except UnicodeDecodeError:
                     logger.warning(f"Konnte empfangene Bytes nicht dekodieren: {line_bytes[:50]}...")
@@ -285,7 +288,7 @@ if __name__ == "__main__":
 
         # Gesamterfolg hängt von beiden Schritten ab (wenn Verifizierung durchgeführt wurde)
         overall_success = config_success and (
-                    verification_success or not PYNMEA2_AVAILABLE)  # Erfolg, wenn Konfig ok UND (Verifizierung ok ODER Verifizierung übersprungen)
+                verification_success or not PYNMEA2_AVAILABLE)  # Erfolg, wenn Konfig ok UND (Verifizierung ok ODER Verifizierung übersprungen)
 
         if overall_success:
             logger.info(">>> Gesamte Operation (Konfiguration + Verifizierung) erfolgreich abgeschlossen. <<<")
