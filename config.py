@@ -105,7 +105,7 @@ ASSIST_NOW_CONFIG = {
 # --- NEU: Nachverarbeitung (Auswertung) ---
 POST_PROCESSING_CONFIG = {
     # Methode: "none", "moving_average", "kalman"
-    "method": "moving_average",
+    "method": "kalman",
 
     # Einstellungen für Gleitenden Durchschnitt
     "moving_average_window": 5,  # Anzahl der Punkte für den Durchschnitt
