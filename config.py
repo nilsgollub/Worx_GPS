@@ -33,12 +33,12 @@ GEO_CONFIG = {
     "save_interval": 5,
 }
 
-# Heatmap
+# Heatmap & Path Maps
 HEATMAP_CONFIG = {
     "heatmap_aktuell": {
         "output": "heatmaps/heatmap_aktuell.html",
         "png_output": "heatmaps/heatmap_aktuell.png",
-        "generate_png": False,  # NEU: PNG-Generierung steuern
+        "generate_png": False,
         "radius": 5,
         "blur": 10,
         "path_weight": 2.0,
@@ -46,12 +46,13 @@ HEATMAP_CONFIG = {
         "show_start_end_markers": True,
         "path_colors": ["#3388ff"],
         "use_heatmap_with_time": True,
-        "use_satellite_weight": False,  # Standardmäßig nicht verwenden
+        "use_satellite_weight": False,  # Wird für Heatmap nicht verwendet
+        "visualize_quality_path": False,  # Ist keine Qualitäts-Pfadkarte
     },
     "heatmap_10_maehvorgang": {
         "output": "heatmaps/heatmap_10.html",
         "png_output": "heatmaps/heatmap_10.png",
-        "generate_png": False,  # NEU: PNG-Generierung steuern
+        "generate_png": False,
         "radius": 5,
         "blur": 10,
         "path_weight": 1.0,
@@ -59,36 +60,49 @@ HEATMAP_CONFIG = {
         "show_start_end_markers": True,
         "use_heatmap_with_time": False,
         "use_satellite_weight": False,
+        "visualize_quality_path": False,
     },
     "heatmap_kumuliert": {
         "output": "heatmaps/heatmap_kumuliert.html",
         "png_output": "heatmaps/heatmap_kumuliert.png",
-        "generate_png": False,  # NEU: PNG-Generierung steuern
+        "generate_png": False,
         "radius": 5,
         "blur": 10,
-        "path_weight": 1.0,
-        "path_opacity": 0.7,
+        "path_weight": 1.0,  # Irrelevant, da kein Pfad gezeichnet wird
+        "path_opacity": 0.7,  # Irrelevant
         "show_start_end_markers": False,
         "use_satellite_weight": False,
+        "visualize_quality_path": False,
     },
     "problemzonen_heatmap": {
         "output": "heatmaps/problemzonen.html",
         "png_output": "heatmaps/problemzonen.png",
-        "generate_png": False,  # NEU: PNG-Generierung steuern
+        "generate_png": False,
         "radius": 5,
         "blur": 5,
         "use_satellite_weight": False,
+        "visualize_quality_path": False,
     },
-    # --- NEU: Kumulierte Qualitäts-Heatmap ---
-    "heatmap_quality_cumulative": {
-        "output": "heatmaps/heatmap_quality.html",
-        "png_output": "heatmaps/heatmap_quality.png",
-        "generate_png": False,  # NEU: PNG-Generierung steuern
-        "radius": 7,  # Ggf. anpassen für gewichtete Heatmap
-        "blur": 12,  # Ggf. anpassen für gewichtete Heatmap
-        "show_start_end_markers": False,  # Keine Pfade, keine Marker
-        "use_satellite_weight": True,  # WICHTIG: Satelliten als Gewicht nutzen
-        "use_heatmap_with_time": False,  # Keine Zeit-Heatmap hier
+    # --- NEU: Kumulierte Qualitäts-Pfadkarte ---
+    "quality_path_cumulative": {
+        "output": "heatmaps/quality.html",
+        "png_output": "heatmaps/quality.png",
+        "generate_png": False,  # PNG für segmentierte Pfade ist komplex, erstmal deaktivieren
+        # Pfad-Styling
+        "path_weight": 3.0,  # Etwas dicker für bessere Sichtbarkeit
+        "path_opacity": 0.85,
+        "show_start_end_markers": False,  # Keine Marker für kumulierte Ansicht
+        # Qualitäts-Visualisierung
+        "visualize_quality_path": True,  # WICHTIG: Dies aktiviert die Pfad-Färbung
+        "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'],  # Rot-Gelb-Grün
+        "quality_colormap_index": [4, 6, 8, 10],
+        # Schwellenwerte: <4 Rot, 4-5 Orange, 6-7 Gelb, 8-9 Hellgrün, >=10 Grün
+        "quality_legend_caption": "Anzahl Satelliten (GPS Qualität)",
+        # Folgende werden nicht verwendet, aber zur Klarheit hinzugefügt
+        "use_heatmap_with_time": False,
+        "use_satellite_weight": False,  # Keine gewichtete Heatmap
+        "radius": 0,  # Nicht relevant
+        "blur": 0,  # Nicht relevant
     }
     # --- ENDE NEU ---
 }
