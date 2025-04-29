@@ -97,7 +97,7 @@ class HeatmapGenerator:
                 logger.warning(f"Konnte Zeitstempel nicht formatieren: {timestamp}")
                 return str(timestamp)
 
-    # --- create_heatmap stark angepasst ---
+    # --- create_heatmap angepasst ---
     def create_heatmap(self, data, html_file, draw_path, is_multi_session=False):
         """Erstellt eine interaktive Karte (Heatmap oder farbkodierter Pfad)."""
         initial_zoom = GEO_CONFIG.get("zoom_start", 22)
@@ -115,141 +115,163 @@ class HeatmapGenerator:
         config_key = self._find_config_key_by_output(html_file)
         map_config = HEATMAP_CONFIG.get(config_key, {})
 
-        # Allgemeine Parameter aus Config lesen
+        # Allgemeine Parameter
         path_weight = map_config.get("path_weight", 1.0)
         path_opacity = map_config.get("path_opacity", 0.8)
         show_markers = map_config.get("show_start_end_markers", True)
         path_colors_list = map_config.get("path_colors", DEFAULT_PATH_COLORS)
 
-        # Spezifische Flags für Kartentyp
-        visualize_quality_path = map_config.get("visualize_quality_path", False)  # NEU
-        use_satellite_weight_heatmap = map_config.get("use_satellite_weight",
-                                                      False)  # Für gewichtete Heatmap (jetzt weniger relevant)
+        # Spezifische Flags
+        visualize_quality_path = map_config.get("visualize_quality_path", False)
+        use_satellite_weight_heatmap = map_config.get("use_satellite_weight", False)
         use_time_heatmap = map_config.get("use_heatmap_with_time", False)
 
-        flat_data_list = flatten_data(data)  # Daten immer flach machen
+        # Daten vorbereiten (flach für Bounds, original für Iteration)
+        # Wichtig: 'data' für Multi-Session-Iteration verwenden, 'flat_data_list' nur für Bounds/Single-Path
+        flat_data_list = flatten_data(data)
+        sessions_to_draw = data if is_multi_session and isinstance(data, list) and data and isinstance(data[0],
+                                                                                                       list) else [
+            data]  # Stellt sicher, dass es immer eine Liste von Sessions ist
 
-        if not flat_data_list:
+        if not flat_data_list:  # Prüfe, ob überhaupt Daten da sind
             logger.warning(f"Keine Datenpunkte für Karte {html_file} vorhanden.")
-            # Leere Karte speichern? Oder hier abbrechen? Wir speichern eine leere Karte.
             plugins.MeasureControl(position='topleft', primary_length_unit='meters').add_to(map_obj)
             folium.LayerControl(collapsed=True).add_to(map_obj)
             map_obj.save(str(self.heatmaps_dir / Path(html_file).name))
             return
 
-        # --- NEUE LOGIK: Qualitäts-Pfad oder Heatmap/Standard-Pfad ---
+        # --- Logik für Kartentyp ---
         if visualize_quality_path:
-            # --- Farbkodierten Pfad zeichnen ---
+            # --- Farbkodierten Pfad zeichnen (jetzt mit Multi-Session Support) ---
             logger.info(f"Zeichne farbkodierten Qualitätspfad für {html_file}.")
 
-            # Colormap-Parameter aus Config holen
+            # Colormap-Setup (nur einmal benötigt)
             colors = map_config.get('quality_colormap_colors', ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
-            index = map_config.get('quality_colormap_index', [4, 6, 8, 10])  # Schwellenwerte
+            index = map_config.get('quality_colormap_index', [4, 6, 8, 10])
             caption = map_config.get('quality_legend_caption', 'GPS Qualität (Satelliten)')
-            default_color = 'grey'  # Farbe für fehlende Sat-Daten
+            default_color = 'grey'
 
-            # Erstelle die StepColormap
-            # Finde min/max Satellitenwerte für die Skala (optional, aber gut für die Legende)
             sat_values = [p.get('satellites') for p in flat_data_list if p.get('satellites') is not None]
             min_sats_data = min(sat_values) if sat_values else min(index) if index else 0
             max_sats_data = max(sat_values) if sat_values else max(index) if index else 12
-            # Erweitere Index um min/max für vollständige Skala
-            full_index = sorted(
-                list(set([min_sats_data] + index + [max_sats_data + 1])))  # +1 am Ende für oberen Bereich
-
+            full_index = sorted(list(set([min_sats_data] + index + [max_sats_data + 1])))
             colormap = cm.StepColormap(colors, index=full_index, vmin=min_sats_data, vmax=max_sats_data,
                                        caption=caption)
 
-            # FeatureGroup für alle Segmente (bessere Performance als einzelne Polylines?)
-            # path_group = folium.FeatureGroup(name="Qualitätspfad", show=True) # Alternative
+            path_groups = []  # Liste für die FeatureGroups der Sessions
 
-            for i in range(len(flat_data_list) - 1):
-                p1 = flat_data_list[i]
-                p2 = flat_data_list[i + 1]
-                try:
-                    lat1, lon1 = float(p1['lat']), float(p1['lon'])
-                    lat2, lon2 = float(p2['lat']), float(p2['lon'])
-                    sats = p1.get('satellites')  # Satelliten von Punkt 1 nehmen
+            # Iteriere durch die Sessions (auch wenn es nur eine ist)
+            for idx, session_data in enumerate(reversed(sessions_to_draw)):
+                if not session_data: continue  # Leere Session überspringen
 
-                    if sats is not None:
-                        try:
-                            segment_color = colormap(int(sats))
-                        except ValueError:  # Falls Satellitenzahl außerhalb des Index liegt
-                            # Nimm Farbe für min/max oder Default
-                            if int(sats) < colormap.vmin:
-                                segment_color = colormap(colormap.vmin)
-                            elif int(sats) > colormap.vmax:
-                                segment_color = colormap(colormap.vmax)
-                            else:
-                                segment_color = default_color
-                    else:
-                        segment_color = default_color  # Farbe für fehlende Sat-Daten
+                session_index_display = len(sessions_to_draw) - idx  # Für Anzeige (1-basiert, neueste zuerst)
+                path_layer_name = f"Qualität Pfad -{session_index_display}"
+                show_layer = (idx == 0)  # Nur die neueste Session standardmäßig anzeigen
+                path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
 
-                    locations = [(lat1, lon1), (lat2, lon2)]
-                    # Einzelne PolyLine pro Segment hinzufügen
-                    folium.PolyLine(locations=locations, color=segment_color, weight=path_weight,
-                                    opacity=path_opacity).add_to(map_obj)
-                    # Alternative: Segmente zur FeatureGroup hinzufügen (könnte HTML verkleinern)
-                    # folium.PolyLine(locations=locations, color=segment_color, weight=path_weight, opacity=path_opacity).add_to(path_group)
+                session_points_coords = []  # Für Marker
 
-                except (ValueError, KeyError, TypeError) as e:
-                    logger.warning(f"Überspringe Pfadsegment wegen Fehler: {e} - Punkte: {p1}, {p2}")
-                    continue
+                # Zeichne die Segmente für diese Session
+                for i in range(len(session_data) - 1):
+                    p1 = session_data[i]
+                    p2 = session_data[i + 1]
+                    try:
+                        lat1, lon1 = float(p1['lat']), float(p1['lon'])
+                        lat2, lon2 = float(p2['lat']), float(p2['lon'])
+                        sats = p1.get('satellites')
 
-            # Alternative: FeatureGroup zur Karte hinzufügen
-            # path_group.add_to(map_obj)
+                        # Koordinaten für Marker sammeln
+                        if i == 0: session_points_coords.append([lat1, lon1])
+                        session_points_coords.append([lat2, lon2])
 
-            # Legende hinzufügen
+                        if sats is not None:
+                            try:
+                                segment_color = colormap(int(sats))
+                            except ValueError:
+                                if int(sats) < colormap.vmin:
+                                    segment_color = colormap(colormap.vmin)
+                                elif int(sats) > colormap.vmax:
+                                    segment_color = colormap(colormap.vmax)
+                                else:
+                                    segment_color = default_color
+                        else:
+                            segment_color = default_color
+
+                        locations = [(lat1, lon1), (lat2, lon2)]
+                        folium.PolyLine(locations=locations, color=segment_color, weight=path_weight,
+                                        opacity=path_opacity).add_to(path_feature_group)  # Zum Gruppenlayer hinzufügen
+
+                    except (ValueError, KeyError, TypeError) as e:
+                        logger.warning(f"Überspringe Pfadsegment in Session {session_index_display} wegen Fehler: {e}")
+                        continue
+
+                # Start-/Endmarker für die Session hinzufügen (falls gewünscht und Punkte vorhanden)
+                if show_markers and len(session_points_coords) > 1:
+                    start_point_data = session_data[0]
+                    end_point_data = session_data[-1]
+                    start_ts = start_point_data.get('timestamp')
+                    end_ts = end_point_data.get('timestamp')
+                    start_popup = f"Start Session {session_index_display}<br>Zeit: {self._format_timestamp(start_ts)}"
+                    end_popup = f"Ende Session {session_index_display}<br>Zeit: {self._format_timestamp(end_ts)}"
+                    # Verwende eine neutrale Farbe für Marker, da der Pfad schon bunt ist
+                    marker_color = 'darkblue'
+                    folium.CircleMarker(location=session_points_coords[0], radius=3, color=marker_color,
+                                        fill=True, fill_color=marker_color, fill_opacity=0.9,
+                                        popup=start_popup).add_to(path_feature_group)
+                    folium.CircleMarker(location=session_points_coords[-1], radius=3, color=marker_color,
+                                        fill=True, fill_color=marker_color, fill_opacity=0.9,
+                                        popup=end_popup).add_to(path_feature_group)
+
+                path_groups.append(path_feature_group)  # Füge die fertige Gruppe zur Liste hinzu
+
+            # Füge alle Session-Gruppen zur Karte hinzu
+            for pg in path_groups:
+                pg.add_to(map_obj)
+
+            # Füge die Colormap-Legende hinzu (nur einmal)
             colormap.add_to(map_obj)
-            # Punkte für Bounds setzen
+
+            # Punkte für Bounds (aus allen flachen Daten)
             all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                      'lat' in p and 'lon' in p]
 
         else:
             # --- Bisherige Logik für Heatmap und normale Pfade ---
+            # (Dieser Teil bleibt weitgehend unverändert, nur die Datenquelle für Bounds wird ggf. angepasst)
             logger.info(f"Erstelle Standard-Karte (Heatmap/Pfad) für {html_file}.")
-            # Daten für Heatmap vorbereiten (ggf. gewichtet, obwohl jetzt weniger relevant)
             heat_data = []
             if use_satellite_weight_heatmap:
-                # ... (Code für gewichtete Heatmap-Daten, falls noch benötigt) ...
-                # Fürs Erste gehen wir davon aus, dass dies nicht mehr der primäre Anwendungsfall ist
-                logger.warning(
-                    f"'use_satellite_weight' für Heatmap ist noch aktiv für {html_file}, wird aber ignoriert, da 'visualize_quality_path' False ist.")
-                # Fallback zu normaler Heatmap
+                logger.warning(f"'use_satellite_weight' für Heatmap aktiv, aber ignoriert.")
                 heat_data = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if 'lat' in p and 'lon' in p]
             else:
-                # Normale Heatmap-Daten
                 heat_data = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if 'lat' in p and 'lon' in p]
 
-            # Heatmap hinzufügen (falls nicht leer)
             if heat_data:
                 heatmap_radius = map_config.get("radius", 3)
                 heatmap_blur = map_config.get("blur", 3)
                 if use_time_heatmap:
-                    # Zeit-Heatmap (falls implementiert)
-                    # plugins.HeatMapWithTime(...).add_to(map_obj) # Beispiel
                     logger.warning(
-                        f"'use_heatmap_with_time' ist aktiv, aber HeatMapWithTime ist nicht implementiert. Zeige normale Heatmap.")
-                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(map_obj)
+                        f"'use_heatmap_with_time' aktiv, aber nicht implementiert. Zeige normale Heatmap.")
+                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(
+                        map_obj)
                 else:
-                    # Normale Heatmap
-                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(map_obj)
-                all_points_for_bounds = heat_data  # Bounds aus Heatmap-Daten
+                    plugins.HeatMap(heat_data, radius=heatmap_radius, blur=heatmap_blur, name="Heatmap").add_to(
+                        map_obj)
+                all_points_for_bounds = heat_data
             else:
                 logger.warning(f"Keine gültigen Heatmap-Daten für {html_file} gefunden.")
-                # Bounds aus flat_data_list nehmen, falls Heatmap leer ist
                 all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
                                          'lat' in p and 'lon' in p]
 
-            # Normalen Pfad zeichnen (wenn draw_path=True)
             if draw_path:
-                if is_multi_session and isinstance(data, list) and data and isinstance(data[0], list):
-                    # --- Multi-Session Pfadzeichnung (unverändert) ---
+                if is_multi_session:  # Hier 'is_multi_session' verwenden, da 'sessions_to_draw' oben definiert wurde
                     logger.info(f"Zeichne Pfade für Multi-Session Karte {html_file}.")
                     path_groups = []
-                    for idx, session_data in enumerate(reversed(data)):
-                        session_index = len(data) - 1 - idx
-                        path_layer_name = f"Pfad -{idx + 1}"
+                    for idx, session_data in enumerate(
+                            reversed(sessions_to_draw)):  # sessions_to_draw verwenden
+                        if not session_data: continue
+                        session_index_display = len(sessions_to_draw) - idx
+                        path_layer_name = f"Pfad -{session_index_display}"
                         show_layer = (idx == 0)
                         path_points_coords = []
                         session_points_full = []
@@ -268,23 +290,22 @@ class HeatmapGenerator:
                             if show_markers:
                                 start_ts = session_points_full[0].get('timestamp')
                                 end_ts = session_points_full[-1].get('timestamp')
-                                start_popup = f"Start Session {session_index + 1}<br>Zeit: {self._format_timestamp(start_ts)}"
-                                end_popup = f"Ende Session {session_index + 1}<br>Zeit: {self._format_timestamp(end_ts)}"
-                                folium.CircleMarker(location=path_points_coords[0], radius=3, color=current_path_color,
-                                                    fill=True, fill_color=current_path_color, fill_opacity=0.9,
-                                                    popup=start_popup).add_to(path_feature_group)
-                                folium.CircleMarker(location=path_points_coords[-1], radius=3, color=current_path_color,
-                                                    fill=True, fill_color=current_path_color, fill_opacity=0.9,
-                                                    popup=end_popup).add_to(path_feature_group)
+                                start_popup = f"Start Session {session_index_display}<br>Zeit: {self._format_timestamp(start_ts)}"
+                                end_popup = f"Ende Session {session_index_display}<br>Zeit: {self._format_timestamp(end_ts)}"
+                                folium.CircleMarker(location=path_points_coords[0], radius=3,
+                                                    color=current_path_color, fill=True, fill_color=current_path_color,
+                                                    fill_opacity=0.9, popup=start_popup).add_to(path_feature_group)
+                                folium.CircleMarker(location=path_points_coords[-1], radius=3,
+                                                    color=current_path_color, fill=True, fill_color=current_path_color,
+                                                    fill_opacity=0.9, popup=end_popup).add_to(path_feature_group)
                             path_groups.append(path_feature_group)
                     for pg in path_groups: pg.add_to(map_obj)
-                    # --- ENDE Multi-Session ---
-                elif isinstance(data, list):
-                    # --- Single-Session Pfadzeichnung (unverändert) ---
+                else:  # Single Session
                     logger.info(f"Zeichne Pfad für Single-Session Karte {html_file}.")
                     single_path_points_coords = []
                     single_session_points_full = []
-                    for point in data:  # Hier data verwenden, nicht flat_data_list, falls es nur eine Session ist
+                    # Hier sessions_to_draw[0] verwenden, da es nur eine Session gibt
+                    for point in sessions_to_draw[0]:
                         try:
                             single_path_points_coords.append([float(point['lat']), float(point['lon'])])
                             single_session_points_full.append(point)
@@ -293,8 +314,7 @@ class HeatmapGenerator:
 
                     if len(single_path_points_coords) > 1:
                         path_group = folium.FeatureGroup(name="Pfad", show=True)
-                        current_path_color = path_colors_list[
-                            0] if path_colors_list else "blue"  # path_color_default verwenden?
+                        current_path_color = path_colors_list[0] if path_colors_list else "blue"
                         folium.PolyLine(single_path_points_coords, color=current_path_color, weight=path_weight,
                                         opacity=path_opacity).add_to(path_group)
                         if show_markers:
@@ -309,39 +329,33 @@ class HeatmapGenerator:
                                                 color=current_path_color, fill=True, fill_color=current_path_color,
                                                 fill_opacity=0.9, popup=end_popup_single).add_to(path_group)
                         path_group.add_to(map_obj)
-                    # --- ENDE Single-Session ---
-            # Falls keine Bounds aus Heatmap, nimm sie aus Pfadpunkten
-            if not all_points_for_bounds and draw_path:
-                if is_multi_session:
-                    all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for session in data for p in session if
-                                             'lat' in p and 'lon' in p]
-                else:
-                    all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in data if
-                                             'lat' in p and 'lon' in p]
+
+            # Falls keine Bounds aus Heatmap, nimm sie aus Pfadpunkten (jetzt aus flat_data_list)
+            if not all_points_for_bounds:
+                all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
+                                         'lat' in p and 'lon' in p]
 
         # --- Gemeinsame Elemente für alle Kartentypen ---
-
-        # Kartengrenzen anpassen (fit_bounds)
+        # Kartengrenzen anpassen (fit_bounds) - (unverändert)
         if all_points_for_bounds:
             try:
                 points_array = np.array(all_points_for_bounds)
-                # Sicherstellen, dass Array nicht leer ist und korrekte Form hat
                 if points_array.size > 0 and points_array.ndim == 2 and points_array.shape[1] == 2:
                     min_lat, max_lat = points_array[:, 0].min(), points_array[:, 0].max()
                     min_lon, max_lon = points_array[:, 1].min(), points_array[:, 1].max()
-                    if min_lat < max_lat or min_lon < max_lon:  # Mehr als ein Punkt oder Punkte nicht identisch
+                    if min_lat < max_lat or min_lon < max_lon:
                         lat_margin = (max_lat - min_lat) * 0.05
                         lon_margin = (max_lon - min_lon) * 0.05
-                        epsilon = 1e-9  # Für den Fall, dass alle Punkte fast identisch sind
+                        epsilon = 1e-9
                         if lat_margin < epsilon: lat_margin = 0.0001
                         if lon_margin < epsilon: lon_margin = 0.0001
                         bounds = [[min_lat - lat_margin, min_lon - lon_margin],
                                   [max_lat + lat_margin, max_lon + lon_margin]]
                         map_obj.fit_bounds(bounds, max_zoom=max_zoom_level)
                         logger.debug(f"Kartenausschnitt für {html_file} angepasst an Grenzen: {bounds}")
-                    else:  # Nur ein Punkt (oder alle Punkte identisch)
+                    else:
                         map_obj.location = [min_lat, min_lon]
-                        map_obj.zoom_start = min(max(initial_zoom, 18), max_zoom_level)  # Höherer Zoom für Einzelpunkt
+                        map_obj.zoom_start = min(max(initial_zoom, 18), max_zoom_level)
                         logger.debug(
                             f"Nur ein Punkt in {html_file}, zentriere Karte auf {map_obj.location} mit Zoom {map_obj.zoom_start}")
                 else:
@@ -350,21 +364,21 @@ class HeatmapGenerator:
                     map_obj.zoom_start = initial_zoom
             except Exception as fit_err:
                 logger.error(f"Fehler bei fit_bounds für {html_file}: {fit_err}", exc_info=True)
-                map_obj.location = self.map_center  # Fallback
+                map_obj.location = self.map_center
                 map_obj.zoom_start = initial_zoom
         else:
             logger.warning(f"Keine Punkte für Bounds-Anpassung in {html_file}. Verwende Standard.")
             map_obj.location = self.map_center
             map_obj.zoom_start = initial_zoom
 
-        # Messwerkzeug hinzufügen
+        # Messwerkzeug hinzufügen (unverändert)
         plugins.MeasureControl(position='topleft', primary_length_unit='meters', secondary_length_unit='kilometers',
                                primary_area_unit='sqmeters', secondary_area_unit='hectares').add_to(map_obj)
 
-        # LayerControl hinzufügen
+        # LayerControl hinzufügen (unverändert)
         folium.LayerControl(collapsed=True).add_to(map_obj)
 
-        # Speichern der HTML-Datei
+        # Speichern der HTML-Datei (unverändert)
         try:
             html_path = self.heatmaps_dir / Path(html_file).name
             map_obj.save(str(html_path))
@@ -384,9 +398,7 @@ class HeatmapGenerator:
         return None
 
     # --- save_html_as_png angepasst ---
-    # HINWEIS: PNG-Generierung für farbkodierten Pfad ist komplex.
-    # Diese Version versucht, es nachzubilden, kann aber bei vielen Segmenten langsam sein oder ungenau werden.
-    # Eine Alternative wäre, für die PNG-Version einen einfarbigen Pfad zu zeichnen.
+    # Muss ebenfalls Multi-Session für Qualitätspfade behandeln, wenn PNGs dafür aktiviert werden
     def save_html_as_png(self, data, draw_path, png_file, config_key_hint=None, is_multi_session_data=False, width=1024,
                          height=768, delay=5):
         if not SELENIUM_AVAILABLE: logger.error("PNG-Export nicht möglich. Selenium/Pillow fehlt."); return
@@ -408,69 +420,72 @@ class HeatmapGenerator:
                                      max_zoom=max_zoom_level_png)
 
             flat_data_list_png = flatten_data(data)
+            sessions_to_draw_png = data if is_multi_session_data and isinstance(data, list) and data and isinstance(
+                data[0], list) else [data]
             all_points_for_bounds_png = []
 
             config_key = config_key_hint or self._find_config_key_by_output(png_file)
             map_config = HEATMAP_CONFIG.get(config_key, {})
-            visualize_quality_path_png = map_config.get("visualize_quality_path", False)  # Flag auch hier lesen
+            visualize_quality_path_png = map_config.get("visualize_quality_path", False)
 
             if not flat_data_list_png:
                 logger.warning(f"Keine Daten zum Generieren der PNG-Datei {png_file}.")
-                # Leere Karte speichern?
                 png_map_obj.save(str(temp_html_path))
-                # Hier könnte man direkt returnen oder leeren Screenshot machen
             elif visualize_quality_path_png:
-                # --- Farbkodierten Pfad für PNG zeichnen ---
+                # --- Farbkodierten Pfad für PNG zeichnen (Multi-Session) ---
                 logger.debug(f"Zeichne farbkodierten Qualitätspfad für PNG {png_file}.")
                 colors = map_config.get('quality_colormap_colors',
                                         ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
                 index = map_config.get('quality_colormap_index', [4, 6, 8, 10])
                 default_color = 'grey'
-                path_weight_png = map_config.get("path_weight", 1.0)  # Eigene PNG-Dicke?
+                path_weight_png = map_config.get("path_weight", 1.0)
                 path_opacity_png = map_config.get("path_opacity", 0.8)
 
-                # Einfachere Colormap für PNG (ohne Legende)
                 sat_values = [p.get('satellites') for p in flat_data_list_png if p.get('satellites') is not None]
                 min_sats_data = min(sat_values) if sat_values else min(index) if index else 0
                 max_sats_data = max(sat_values) if sat_values else max(index) if index else 12
                 full_index = sorted(list(set([min_sats_data] + index + [max_sats_data + 1])))
                 colormap_png = cm.StepColormap(colors, index=full_index, vmin=min_sats_data, vmax=max_sats_data)
 
-                for i in range(len(flat_data_list_png) - 1):
-                    p1 = flat_data_list_png[i]
-                    p2 = flat_data_list_png[i + 1]
-                    try:
-                        lat1, lon1 = float(p1['lat']), float(p1['lon'])
-                        lat2, lon2 = float(p2['lat']), float(p2['lon'])
-                        sats = p1.get('satellites')
-                        if sats is not None:
-                            try:
-                                segment_color = colormap_png(int(sats))
-                            except ValueError:
-                                if int(sats) < colormap_png.vmin:
-                                    segment_color = colormap_png(colormap_png.vmin)
-                                elif int(sats) > colormap_png.vmax:
-                                    segment_color = colormap_png(colormap_png.vmax)
-                                else:
-                                    segment_color = default_color
-                        else:
-                            segment_color = default_color
-                        locations = [(lat1, lon1), (lat2, lon2)]
-                        folium.PolyLine(locations=locations, color=segment_color, weight=path_weight_png,
-                                        opacity=path_opacity_png).add_to(png_map_obj)
-                    except (ValueError, KeyError, TypeError):
-                        continue
+                # Iteriere durch Sessions für PNG
+                # HINWEIS: LayerControl wird im PNG nicht funktionieren, daher zeichnen wir alle Pfade direkt
+                for session_data in sessions_to_draw_png:
+                    if not session_data: continue
+                    for i in range(len(session_data) - 1):
+                        p1 = session_data[i]
+                        p2 = session_data[i + 1]
+                        try:
+                            lat1, lon1 = float(p1['lat']), float(p1['lon'])
+                            lat2, lon2 = float(p2['lat']), float(p2['lon'])
+                            sats = p1.get('satellites')
+                            if sats is not None:
+                                try:
+                                    segment_color = colormap_png(int(sats))
+                                except ValueError:
+                                    if int(sats) < colormap_png.vmin:
+                                        segment_color = colormap_png(colormap_png.vmin)
+                                    elif int(sats) > colormap_png.vmax:
+                                        segment_color = colormap_png(colormap_png.vmax)
+                                    else:
+                                        segment_color = default_color
+                            else:
+                                segment_color = default_color
+                            locations = [(lat1, lon1), (lat2, lon2)]
+                            folium.PolyLine(locations=locations, color=segment_color, weight=path_weight_png,
+                                            opacity=path_opacity_png).add_to(png_map_obj)
+                        except (ValueError, KeyError, TypeError):
+                            continue
+
                 all_points_for_bounds_png = [[float(p['lat']), float(p['lon'])] for p in flat_data_list_png if
                                              'lat' in p and 'lon' in p]
                 # --- ENDE Farbkodierter Pfad PNG ---
             else:
-                # --- Heatmap / Normaler Pfad für PNG ---
+                # --- Heatmap / Normaler Pfad für PNG (unverändert) ---
                 heat_data_for_png = []
                 path_points_for_png = []
-                use_satellite_weight_png = map_config.get("use_satellite_weight", False)  # Für gewichtete Heatmap
+                use_satellite_weight_png = map_config.get("use_satellite_weight", False)
 
                 if use_satellite_weight_png:
-                    # ... (Code für gewichtete Heatmap-Daten PNG) ...
                     logger.warning(f"'use_satellite_weight' für Heatmap PNG aktiv, aber ignoriert.")
                     heat_data_for_png = [[float(p['lat']), float(p['lon'])] for p in flat_data_list_png if
                                          'lat' in p and 'lon' in p]
@@ -484,7 +499,7 @@ class HeatmapGenerator:
                     plugins.HeatMap(heat_data_for_png, radius=radius, blur=blur).add_to(png_map_obj)
                     all_points_for_bounds_png = heat_data_for_png
 
-                if draw_path and len(flat_data_list_png) > 1:  # Nur wenn Pfad gezeichnet werden soll
+                if draw_path and len(flat_data_list_png) > 1:
                     path_points_for_png = [[float(p['lat']), float(p['lon'])] for p in flat_data_list_png if
                                            'lat' in p and 'lon' in p]
                     if path_points_for_png:
@@ -492,13 +507,13 @@ class HeatmapGenerator:
                         png_path_opacity = map_config.get("path_opacity", 0.8)
                         png_path_colors_list = map_config.get("path_colors", DEFAULT_PATH_COLORS)
                         png_path_color = png_path_colors_list[0] if png_path_colors_list else "blue"
+                        # Für PNG zeichnen wir bei Multi-Session vereinfacht nur einen Pfad
                         folium.PolyLine(path_points_for_png, color=png_path_color, weight=png_path_weight,
                                         opacity=png_path_opacity).add_to(png_map_obj)
-                        if not all_points_for_bounds_png:  # Falls keine Heatmap, nimm Pfadpunkte für Bounds
+                        if not all_points_for_bounds_png:
                             all_points_for_bounds_png = path_points_for_png
-                # --- ENDE Heatmap / Normaler Pfad PNG ---
 
-            # Kartenausschnitt für PNG anpassen
+            # Kartenausschnitt für PNG anpassen (unverändert)
             if all_points_for_bounds_png:
                 try:
                     points_array_png = np.array(all_points_for_bounds_png)
@@ -528,7 +543,6 @@ class HeatmapGenerator:
             png_map_obj.save(str(temp_html_path))
 
             # --- Selenium Screenshot mit Chrome (Rest unverändert) ---
-            # ... (kompletter Selenium-Block bleibt hier, wie er war) ...
             options = ChromeOptions();
             options.add_argument("--headless");
             options.add_argument("--disable-gpu");
@@ -541,6 +555,7 @@ class HeatmapGenerator:
             arch = platform.machine()
             try:
                 driver_path = None
+                # ... (ChromeDriver Pfadfindung bleibt gleich) ...
                 if system_name == "Linux":
                     system_driver_paths = ['/usr/lib/chromium-browser/chromedriver', '/usr/bin/chromedriver']
                     for path in system_driver_paths:
@@ -623,7 +638,6 @@ class HeatmapGenerator:
                 if driver: driver.quit()
 
             # --- PNG Cropping (unverändert) ---
-            # ... (kompletter Cropping-Block bleibt hier, wie er war) ...
             if self.crop_enabled and Image is not None:
                 logger.info(f"Cropping für {final_png_path} wird durchgeführt.")
                 try:
@@ -704,70 +718,51 @@ class HeatmapGenerator:
     # --- ENDE save_html_as_png ---
 
 
-# Beispielverwendung im __main__ (angepasst für neuen Kartentyp)
+# __main__ (angepasst für Test)
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s] %(message)s')
 
-    # Stelle sicher, dass GEO_CONFIG Keys existieren
     GEO_CONFIG["map_center"] = (46.8118, 7.1328)
     GEO_CONFIG["zoom_start"] = 22
     GEO_CONFIG["max_zoom"] = 22
     GEO_CONFIG["crop_enabled"] = False
 
-    # Beispiel-Datenpunkte MIT Satelliten
     import time;
 
     ts_now = time.time()
-    single_data_sats = [
-        {'lat': 46.8117, 'lon': 7.1327, 'satellites': 3, 'timestamp': ts_now - 5},  # Wenig
-        {'lat': 46.81175, 'lon': 7.13275, 'satellites': 5, 'timestamp': ts_now - 4},  # Mittel
-        {'lat': 46.8118, 'lon': 7.1328, 'satellites': 7, 'timestamp': ts_now - 3},  # Mittel
-        {'lat': 46.81185, 'lon': 7.13285, 'satellites': 9, 'timestamp': ts_now - 2},  # Gut
-        {'lat': 46.8119, 'lon': 7.1329, 'satellites': 11, 'timestamp': ts_now - 1},  # Sehr gut
-        {'lat': 46.81195, 'lon': 7.13285, 'satellites': 4, 'timestamp': ts_now},  # Mittel/Wenig
+    # Mehrere Sessions für den Test
+    multi_data_sats = [
+        [  # Session 1 (älter)
+            {'lat': 46.8117, 'lon': 7.1327, 'satellites': 3, 'timestamp': ts_now - 15},
+            {'lat': 46.81175, 'lon': 7.13275, 'satellites': 5, 'timestamp': ts_now - 14},
+            {'lat': 46.8118, 'lon': 7.1328, 'satellites': 7, 'timestamp': ts_now - 13},
+        ],
+        [  # Session 2 (neuer)
+            {'lat': 46.81185, 'lon': 7.13285, 'satellites': 9, 'timestamp': ts_now - 5},
+            {'lat': 46.8119, 'lon': 7.1329, 'satellites': 11, 'timestamp': ts_now - 4},
+            {'lat': 46.81195, 'lon': 7.13285, 'satellites': 4, 'timestamp': ts_now - 3},
+        ]
     ]
 
-    # Beispielhafte HEATMAP_CONFIG für Tests hier definieren
-    HEATMAP_CONFIG["test_quality_path"] = {
-        "output": "heatmaps/test_quality_path.html",
-        "png_output": "heatmaps/test_quality_path.png",
-        "generate_png": False,  # PNG erstmal aus
+    HEATMAP_CONFIG["test_quality_path_10"] = {
+        "output": "heatmaps/test_quality_path_10.html",
+        "png_output": "heatmaps/test_quality_path_10.png",
+        "generate_png": False,
         "path_weight": 3.0,
         "path_opacity": 0.85,
-        "show_start_end_markers": False,
+        "show_start_end_markers": True,  # Marker für Multi-Session
         "visualize_quality_path": True,
         "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'],
         "quality_colormap_index": [4, 6, 8, 10],
-        "quality_legend_caption": "Anzahl Satelliten (Test)",
+        "quality_legend_caption": "Anzahl Satelliten (Multi-Test)",
         "use_heatmap_with_time": False,
         "use_satellite_weight": False,
-    }
-    HEATMAP_CONFIG["test_normal_path"] = {
-        "output": "heatmaps/test_normal_path.html",
-        "png_output": "heatmaps/test_normal_path.png",
-        "generate_png": False,
-        "path_weight": 2.0,
-        "path_opacity": 1.0,
-        "show_start_end_markers": True,
-        "path_colors": ["#3388ff"],
-        "use_heatmap_with_time": False,
-        "use_satellite_weight": False,
-        "visualize_quality_path": False,
     }
 
     gen = HeatmapGenerator()
 
-    logger.info("Teste Qualitäts-Pfadkarte (HTML)...")
-    # Wichtig: draw_path=True übergeben, damit der Pfad überhaupt gezeichnet wird!
-    gen.create_heatmap(single_data_sats, "heatmaps/test_quality_path.html", draw_path=True, is_multi_session=False)
-
-    logger.info("Teste normale Pfadkarte (HTML)...")
-    gen.create_heatmap(single_data_sats, "heatmaps/test_normal_path.html", draw_path=True, is_multi_session=False)
-
-    # PNG-Test (optional, falls generate_png=True gesetzt wird)
-    # if SELENIUM_AVAILABLE and HEATMAP_CONFIG["test_quality_path"].get("generate_png", False):
-    #     logger.info("Teste Qualitäts-Pfadkarte (PNG)...")
-    #     gen.save_html_as_png(single_data_sats, draw_path=True, png_file="heatmaps/test_quality_path.png",
-    #                          config_key_hint="test_quality_path")
+    logger.info("Teste Qualitäts-Pfadkarte für 10 Sessions (HTML)...")
+    # Wichtig: draw_path=True und is_multi=True übergeben!
+    gen.create_heatmap(multi_data_sats, "heatmaps/test_quality_path_10.html", draw_path=True, is_multi_session=True)
 
     logger.info("Heatmap-Generierungstests abgeschlossen.")

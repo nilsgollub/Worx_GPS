@@ -22,7 +22,7 @@ class WorxGps:
         self.heatmap_generator = HeatmapGenerator()
         self.data_manager = DataManager(data_folder="data")
         self.gps_data_buffer = ""
-        self.maehvorgang_data = deque(maxlen=10)
+        self.maehvorgang_data = deque(maxlen=10)  # Hält die letzten 10 Sessions
         self.alle_maehvorgang_data = self.data_manager.load_all_mow_data()
         self.problemzonen_data = self.data_manager.read_problemzonen_data()
         self.mqtt_handler.set_message_callback(self.on_mqtt_message)
@@ -45,23 +45,24 @@ class WorxGps:
                     logger.warning(f"Unerwarteter Datentyp in alle_maehvorgang_data: {type(mow_session)}.")
             logger.info(f"{len(self.maehvorgang_data)} Mähvorgänge in das 'letzte 10'-Deque geladen.")
 
-        # --- Letzte 10 Mähvorgänge (Heatmap) ---
+        # --- Letzte 10 Mähvorgänge (Heatmap UND Qualitäts-Pfade) ---
         if self.maehvorgang_data:
-            self.update_single_map("heatmap_10_maehvorgang", list(self.maehvorgang_data), draw_path=True,
+            current_last_10_sessions = list(self.maehvorgang_data)
+            self.update_single_map("heatmap_10_maehvorgang", current_last_10_sessions, draw_path=True,
+                                   is_multi=True)
+            # NEU: Aufruf für quality_path_10
+            self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True,
                                    is_multi=True)
         else:
-            logger.info("Keine Daten für 'heatmap_10_maehvorgang'.")
+            logger.info("Keine Daten für 'heatmap_10_maehvorgang' und 'quality_path_10'.")
 
-        # --- Kumulierte Daten (Alle Sessions kombiniert) ---
+        # --- Kumulierte Daten (Nur Heatmap) ---
         if self.alle_maehvorgang_data:
             flat_all_data = flatten_data(self.alle_maehvorgang_data)
-            # Normale kumulierte Heatmap
             self.update_single_map("heatmap_kumuliert", flat_all_data, draw_path=False, is_multi=False)
-            # NEU: Kumulierte Qualitäts-Pfadkarte
-            # WICHTIG: draw_path=True übergeben, damit der Pfad gezeichnet wird!
-            self.update_single_map("quality_path_cumulative", flat_all_data, draw_path=True, is_multi=False)
+            # Der Aufruf für quality_path_cumulative wurde entfernt
         else:
-            logger.info("Keine Daten für 'heatmap_kumuliert' und 'quality_path_cumulative'.")
+            logger.info("Keine Daten für 'heatmap_kumuliert'.")
 
         # --- Problemzonen (Heatmap) ---
         if self.problemzonen_data:
@@ -116,6 +117,7 @@ class WorxGps:
             logger.info(f"{len(raw_gps_data)} GPS-Punkte aus Puffer gelesen.")
             original_point_count = len(raw_gps_data)
             processed_data = raw_gps_data
+            # ... (Ausreißererkennung und Filterung wie vorher) ...
             outlier_config = POST_PROCESSING_CONFIG.get("outlier_detection", {})
             if outlier_config.get("enable", True):
                 max_speed = outlier_config.get("max_speed_mps", 1.5)
@@ -144,7 +146,7 @@ class WorxGps:
                 f"Verarbeitung abgeschlossen. {len(processed_data)} Punkte werden verwendet (ursprünglich {original_point_count}).")
 
             # Schritt 4: Verarbeitete Daten speichern und für Karten verwenden
-            self.maehvorgang_data.append(processed_data)
+            self.maehvorgang_data.append(processed_data)  # Fügt die *neue* Session zum Deque hinzu
             self.alle_maehvorgang_data.append(processed_data)
             filename = self.data_manager.get_next_mow_filename()
             self.data_manager.save_gps_data(processed_data, filename)
@@ -153,14 +155,18 @@ class WorxGps:
 
             # Aktueller Mähvorgang (Heatmap)
             self.update_single_map("heatmap_aktuell", processed_data, draw_path=True, is_multi=False)
-            # Letzte 10 Mähvorgänge (Heatmap)
-            self.update_single_map("heatmap_10_maehvorgang", list(self.maehvorgang_data), draw_path=True,
-                                   is_multi=True)
-            # Kumulierte Daten (beide Karten)
+
+            # Letzte 10 Mähvorgänge (Heatmap UND Qualitäts-Pfade)
+            # Wichtig: Immer die aktuelle Liste aus dem Deque übergeben
+            current_last_10_sessions = list(self.maehvorgang_data)
+            self.update_single_map("heatmap_10_maehvorgang", current_last_10_sessions, draw_path=True, is_multi=True)
+            self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True, is_multi=True)  # NEU
+
+            # Kumulierte Daten (Nur Heatmap)
             flat_all_data = flatten_data(self.alle_maehvorgang_data)
             self.update_single_map("heatmap_kumuliert", flat_all_data, draw_path=False, is_multi=False)
-            # WICHTIG: draw_path=True für Qualitäts-Pfadkarte!
-            self.update_single_map("quality_path_cumulative", flat_all_data, draw_path=True, is_multi=False)
+            # Der Aufruf für quality_path_cumulative wurde entfernt
+
             # Problemzonen (Heatmap)
             self.update_single_map("problemzonen_heatmap", self.problemzonen_data, draw_path=False, is_multi=False)
             logging.info("Karten-Aktualisierung abgeschlossen.")
@@ -189,7 +195,7 @@ class WorxGps:
         else:
             logging.info(f"Empfangene Statusmeldung: {csv_data}")
 
-    # update_single_heatmap umbenannt und angepasst
+    # update_single_map (unverändert zur letzten Version)
     def update_single_map(self, config_key, data, draw_path, is_multi=False):
         """
         Aktualisiert eine einzelne Karte (HTML und optional PNG).

@@ -84,25 +84,24 @@ HEATMAP_CONFIG = {
         "visualize_quality_path": False,
     },
     # --- NEU: Kumulierte Qualitäts-Pfadkarte ---
-    "quality_path_cumulative": {
+    "quality_path_10": {
         "output": "heatmaps/quality.html",
         "png_output": "heatmaps/quality.png",
-        "generate_png": False,  # PNG für segmentierte Pfade ist komplex, erstmal deaktivieren
+        "generate_png": False, # PNG für segmentierte Pfade ist komplex
         # Pfad-Styling
-        "path_weight": 3.0,  # Etwas dicker für bessere Sichtbarkeit
+        "path_weight": 3.0,
         "path_opacity": 0.85,
-        "show_start_end_markers": False,  # Keine Marker für kumulierte Ansicht
+        "show_start_end_markers": True, # Start/End Marker pro Session anzeigen
         # Qualitäts-Visualisierung
-        "visualize_quality_path": True,  # WICHTIG: Dies aktiviert die Pfad-Färbung
-        "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'],  # Rot-Gelb-Grün
-        "quality_colormap_index": [4, 6, 8, 10],
-        # Schwellenwerte: <4 Rot, 4-5 Orange, 6-7 Gelb, 8-9 Hellgrün, >=10 Grün
+        "visualize_quality_path": True, # Aktiviert die Pfad-Färbung
+        "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'], # Rot-Gelb-Grün
+        "quality_colormap_index": [4, 6, 8, 10], # Schwellenwerte
         "quality_legend_caption": "Anzahl Satelliten (GPS Qualität)",
-        # Folgende werden nicht verwendet, aber zur Klarheit hinzugefügt
+        # Folgende werden nicht verwendet
         "use_heatmap_with_time": False,
-        "use_satellite_weight": False,  # Keine gewichtete Heatmap
-        "radius": 0,  # Nicht relevant
-        "blur": 0,  # Nicht relevant
+        "use_satellite_weight": False,
+        "radius": 0,
+        "blur": 0,
     }
     # --- ENDE NEU ---
 }
