@@ -81,8 +81,8 @@ HEATMAP_CONFIG = {
     },
     # --- NEU: Kumulierte Qualitäts-Heatmap ---
     "heatmap_quality_cumulative": {
-        "output": "heatmaps/heatmap_quality_cumulative.html",
-        "png_output": "heatmaps/heatmap_quality_cumulative.png",
+        "output": "heatmaps/heatmap_quality.html",
+        "png_output": "heatmaps/heatmap_quality.png",
         "generate_png": False,  # NEU: PNG-Generierung steuern
         "radius": 7,  # Ggf. anpassen für gewichtete Heatmap
         "blur": 12,  # Ggf. anpassen für gewichtete Heatmap
