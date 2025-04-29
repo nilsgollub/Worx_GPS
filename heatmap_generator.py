@@ -262,7 +262,7 @@ class HeatmapGenerator:
             map_obj.zoom_start = initial_zoom
 
         # LayerControl hinzufügen (wichtig, damit die Gruppen schaltbar sind)
-        folium.LayerControl(collapsed=False).add_to(map_obj)
+        folium.LayerControl(collapsed=True).add_to(map_obj)
 
         # Speichern der HTML-Datei - bleibt unverändert
         try:
