@@ -1,10 +1,13 @@
 # utils.py
 import csv
-import logging  # Logging importieren
-import io  # Für StringIO
+import logging
+import io
+from typing import List, Dict, Any, Union, Optional # Optional und Type Hinting hinzugefügt
 
-# Logging konfigurieren (kann auch zentral erfolgen, hier zur Sicherheit)
-#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__) # Logger am Anfang definieren
+
+# Logging konfigurieren (sollte idealerweise zentral in der Hauptdatei erfolgen)
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] %(message)s')
 
 
 def read_gps_data_from_csv_string(csv_string):
@@ -81,3 +84,47 @@ def read_gps_data_from_csv_string(csv_string):
         return []  # Leere Liste bei unerwartetem Fehler
 
     return data
+
+def flatten_data(data: Union[List[Dict[str, Any]], List[List[Dict[str, Any]]]]) -> List[Dict[str, Any]]:
+    """
+    Wandelt eine Liste von Sessions (Liste von Listen von Punkten)
+    oder eine einzelne Session (Liste von Punkten) in eine flache Liste von Punkten um.
+
+    Args:
+        data: Die Eingabedaten, entweder eine Liste von Punkten oder eine Liste von Listen von Punkten.
+
+    Returns:
+        Eine einzelne, flache Liste aller Punkte.
+    """
+    flat_list: List[Dict[str, Any]] = []
+    if not data:
+        return flat_list
+
+    # Prüfen, ob das erste Element eine Liste ist (Indikator für Multi-Session)
+    # Zusätzliche Prüfung: Sicherstellen, dass 'data' selbst eine Liste ist
+    if isinstance(data, list) and data and isinstance(data[0], list):
+        # Es ist eine Liste von Listen (Multi-Session)
+        for session in data:
+            if isinstance(session, list):
+                # Stelle sicher, dass die Session Dictionaries enthält (optional, aber robuster)
+                if all(isinstance(point, dict) for point in session):
+                    flat_list.extend(session)
+                else:
+                    logging.warning(f"Session in Multi-Session-Daten enthält ungültige Elemente: {session}. Überspringe.")
+            else:
+                # Dies sollte nicht passieren, wenn die Struktur konsistent ist
+                logging.warning(f"Unerwartetes Element in Multi-Session-Daten gefunden: {type(session)}. Überspringe.")
+    elif isinstance(data, list) and data and isinstance(data[0], dict):
+        # Es ist bereits eine flache Liste (Single-Session)
+        # Stelle sicher, dass alle Elemente Dictionaries sind (optional)
+        if all(isinstance(point, dict) for point in data):
+            flat_list = data
+        else:
+             logging.warning(f"Single-Session-Daten enthalten ungültige Elemente. Filtere Dictionaries.")
+             flat_list = [point for point in data if isinstance(point, dict)]
+    elif isinstance(data, list) and not data: # Leere Liste ist okay
+        pass # flat_list ist bereits leer
+    else:
+        logger.error(f"Unbekannte oder inkonsistente Datenstruktur in flatten_data: Typ des ersten Elements ist {type(data[0]) if data else 'N/A'}. Gebe leere Liste zurück.")
+
+    return flat_list
