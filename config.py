@@ -17,6 +17,8 @@ MQTT_CONFIG = {
     "topic_gps": os.getenv("MQTT_TOPIC_GPS"),
     "topic_status": os.getenv("MQTT_TOPIC_STATUS"),
     "topic_control": os.getenv("MQTT_TOPIC_CONTROL"),
+    # NEU: Status Intervall hinzugefügt (aus vorheriger main_loop Logik)
+    "status_interval": int(os.getenv("MQTT_STATUS_INTERVAL", 5))
 }
 
 # GPS (unverändert)
@@ -87,15 +89,15 @@ HEATMAP_CONFIG = {
     "quality_path_10": {
         "output": "heatmaps/quality.html",
         "png_output": "heatmaps/quality.png",
-        "generate_png": False, # PNG für segmentierte Pfade ist komplex
+        "generate_png": False,  # PNG für segmentierte Pfade ist komplex
         # Pfad-Styling
         "path_weight": 3.0,
         "path_opacity": 0.85,
-        "show_start_end_markers": True, # Start/End Marker pro Session anzeigen
+        "show_start_end_markers": True,  # Start/End Marker pro Session anzeigen
         # Qualitäts-Visualisierung
-        "visualize_quality_path": True, # Aktiviert die Pfad-Färbung
-        "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'], # Rot-Gelb-Grün
-        "quality_colormap_index": [4, 6, 8, 10], # Schwellenwerte
+        "visualize_quality_path": True,  # Aktiviert die Pfad-Färbung
+        "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'],  # Rot-Gelb-Grün
+        "quality_colormap_index": [4, 6, 8, 10],  # Schwellenwerte
         "quality_legend_caption": "Anzahl Satelliten (GPS Qualität)",
         # Folgende werden nicht verwendet
         "use_heatmap_with_time": False,
@@ -111,7 +113,7 @@ REC_CONFIG = {
     "serial_port": os.getenv("GPS_SERIAL_PORT"),
     "baudrate": int(os.getenv("GPS_BAUDRATE") or "9600"),
     "test_mode": os.getenv("TEST_MODE", "False").lower() == "true",
-    "storage_interval": 1,
+    "storage_interval": int(os.getenv("REC_STORAGE_INTERVAL", 1)),  # NEU: Aus .env lesen
     "debug_logging": os.getenv("DEBUG_LOGGING", "False").lower() == "true"
 }
 
@@ -142,8 +144,19 @@ POST_PROCESSING_CONFIG = {
     }
 }
 
+# --- NEU: Pi Status Konfiguration ---
+PI_STATUS_CONFIG = {
+    # MQTT Topic, auf dem die Temperatur veröffentlicht wird
+    "topic_pi_status": os.getenv("MQTT_TOPIC_PI_STATUS", "worx/pi_status"),
+    # Intervall in Sekunden, wie oft die Temperatur gesendet werden soll
+    "pi_status_interval": int(os.getenv("PI_STATUS_INTERVAL", 60))
+}
 
-# Validierung (unverändert)
+
+# --- ENDE NEU ---
+
+
+# Validierung
 def validate_config():
     required_mqtt = ["topic_gps", "topic_status", "topic_control"]
     required_rec = ["baudrate", "storage_interval"]
@@ -187,6 +200,14 @@ def validate_config():
             print(
                 f"WARNUNG: ASSIST_NOW_CONFIG['days'] hat ungültigen Wert ({ASSIST_NOW_CONFIG.get('days')}). Erlaubt: {valid_days}. Verwende Standard 7.")
             ASSIST_NOW_CONFIG["days"] = 7
+
+    # Optional: Neue Werte validieren
+    if not PI_STATUS_CONFIG.get("topic_pi_status"):
+        missing.append("PI_STATUS_CONFIG['topic_pi_status'] (oder MQTT_TOPIC_PI_STATUS in .env)")
+    if PI_STATUS_CONFIG.get("pi_status_interval") is None or PI_STATUS_CONFIG.get("pi_status_interval") <= 0:
+        print(
+            f"WARNUNG: PI_STATUS_CONFIG['pi_status_interval'] ist ungültig oder nicht gesetzt. Verwende Standard 60s.")
+        PI_STATUS_CONFIG["pi_status_interval"] = 60
 
     if missing:
         print("\nWARNUNG: Folgende kritische Konfigurationswerte fehlen oder sind nicht gesetzt:")
