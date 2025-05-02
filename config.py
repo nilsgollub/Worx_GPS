@@ -119,7 +119,7 @@ REC_CONFIG = {
 
 # Problemzonen (unverändert)
 PROBLEM_CONFIG = {
-    "problem_json": "problemzonen.json",
+    "problem_json": "data/problemzonen.json",
     "max_problemzonen": 100,
     "problem_threshold_time": 30
 }
