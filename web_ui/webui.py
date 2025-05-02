@@ -164,6 +164,24 @@ def on_message(client, userdata, msg):
                         logger.error(f"Fehler beim Verarbeiten der Status-Nachricht: {payload} - {e}", exc_info=True)
                 else:
                     logger.debug(f"Ignoriere Statusnachricht (falsches Format?): {payload}")
+
+            # --- NEU: Aufzeichnung Status explizit behandeln ---
+            elif payload == "recording started":
+                logger.info("Aufzeichnungsstatus von MQTT empfangen: Gestartet")
+                with status_lock:
+                    if not current_status['is_recording']:  # Nur ändern, wenn nicht schon True
+                        current_status['is_recording'] = True
+                        # Sende sofort ein Update an die UI
+                        socketio.emit('status_update', current_status)
+            elif payload == "recording stopped":
+                logger.info("Aufzeichnungsstatus von MQTT empfangen: Gestoppt")
+                with status_lock:
+                    if current_status['is_recording']:  # Nur ändern, wenn nicht schon False
+                        current_status['is_recording'] = False
+                        # Sende sofort ein Update an die UI
+                        socketio.emit('status_update', current_status)
+            # --- ENDE NEU ---
+
             elif payload.startswith("problem,"):
                 logger.debug(f"Empfangene Problem-Nachricht (wird hier nicht weiter verarbeitet): {payload}")
             else:
@@ -287,7 +305,7 @@ def get_editable_config():
             elif env_key == 'HEATMAP_GENERATE_PNG':
                 default = config.HEATMAP_CONFIG.get('heatmap_aktuell', {}).get('generate_png', False)
             elif env_key == 'GEO_ZOOM_START':
-                default = config.GEO_CONFIG.get('zoom_start', 20)
+                default = config.GEO_CONFIG.get('zoom_start', 20)  # Default zoom level
             elif env_key == 'GEO_MAX_ZOOM':
                 default = config.GEO_CONFIG.get('max_zoom', 22)
             elif env_key == 'REC_STORAGE_INTERVAL':
@@ -316,6 +334,7 @@ def get_editable_config():
         },
         'GEO': {
             'GEO_ZOOM_START': get_config_value('GEO_ZOOM_START', 15, int),
+            # Keep default here for consistency if needed elsewhere
             'GEO_MAX_ZOOM': get_config_value('GEO_MAX_ZOOM', 22, int),
         },
         'REC': {
@@ -553,7 +572,7 @@ def stats():
 # --- /control, /live (unverändert) ---
 @app.route('/control', methods=['POST'])
 def control():
-    # ... (Code wie vorher) ...
+    """Empfängt und verarbeitet Steuerbefehle."""
     try:
         data = request.get_json()
         if not data or 'command' not in data: return jsonify({"success": False, "message": "'command' fehlt."}), 400
@@ -567,15 +586,22 @@ def control():
         message = command_map.get(command)
         if message:
             try:
-                if command == 'start_recording':
-                    with status_lock:
-                        current_status['is_recording'] = True
-                elif command == 'stop_recording':
-                    with status_lock:
-                        current_status['is_recording'] = False
+                # --- ÄNDERUNG: Status nicht mehr *hier* sofort ändern ---
+                # Entferne die folgenden Zeilen:
+                # if command == 'start_recording':
+                #     with status_lock: current_status['is_recording'] = True
+                # elif command == 'stop_recording':
+                #     with status_lock: current_status['is_recording'] = False
+                # --- ENDE ÄNDERUNG ---
+
                 mqtt_client.publish(control_topic, message)
                 logger.info(f"Steuerbefehl '{message}' an Topic '{control_topic}' gesendet.")
-                socketio.emit('status_update', current_status)
+
+                # --- ÄNDERUNG: Kein sofortiges Socket.IO Update mehr von hier ---
+                # Entferne die folgende Zeile:
+                # socketio.emit('status_update', current_status)
+                # --- ENDE ÄNDERUNG ---
+
                 return jsonify({"success": True, "message": f"Befehl '{command}' gesendet."})
             except Exception as e:
                 logger.error(f"Fehler beim Senden des MQTT-Befehls '{message}': {e}", exc_info=True)
@@ -590,11 +616,14 @@ def control():
 
 @app.route('/live')
 def live_view():
-    # ... (Code wie vorher) ...
+    """Live-Kartenansicht"""
     with status_lock: status_data = current_status.copy()
     map_config = {
-        'center_lat': status_data['lat'], 'center_lon': status_data['lon'],
-        'zoom': config.GEO_CONFIG.get('zoom_start', 15), 'max_zoom': config.GEO_CONFIG.get('max_zoom', 22),
+        'center_lat': status_data['lat'],
+        'center_lon': status_data['lon'],
+        # Hier den Standardwert (die 15) ändern, falls 'zoom_start' in config.py nicht existiert
+        'zoom': config.GEO_CONFIG.get('zoom_start', 19),  # <-- HIER ÄNDERN (z.B. von 15 auf 19)
+        'max_zoom': config.GEO_CONFIG.get('max_zoom', 22),
         'osm_tiles': 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         'osm_attr': '&copy; <a href="https://osm.org/copyright">OSM</a> contributors',
         'satellite_tiles': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
