@@ -160,9 +160,15 @@
              </div>
              <div class="card-body">
                  {# --- IDs für main.js --- #}
-                 <p class="mb-1">CPU-Last: <span id="cpu-load" class="float-end">{{ "%.1f"|format(system.cpu_load) if system else 'N/A' }}%</span></p>
-                 <p class="mb-1">RAM-Nutzung: <span id="ram-usage" class="float-end">{{ "%.1f"|format(system.ram_usage) if system else 'N/A' }}%</span></p>
-                 <p class="mb-0">CPU-Temperatur: <span id="cpu-temp" class="float-end">{{ "%.1f"|format(system.cpu_temp) if system and system.cpu_temp is not none else 'N/A' }}°C</span></p>
+                 <p class="mb-1">CPU-Last (Webserver): <span id="cpu-load" class="float-end">{{ "%.1f"|format(system.cpu_load) if system else 'N/A' }}%</span></p>
+                 <p class="mb-1">RAM-Nutzung (Webserver): <span id="ram-usage" class="float-end">{{ "%.1f"|format(system.ram_usage) if system else 'N/A' }}%</span></p>
+                 <p class="mb-1">CPU-Temperatur (Webserver): <span id="cpu-temp" class="float-end">{{ "%.1f"|format(system.cpu_temp) if system and system.cpu_temp is not none else 'N/A' }}°C</span></p>
+                 {# --- NEUE ZEILE für Pi Temperatur --- #}
+                 <p class="mb-0">CPU-Temperatur (Pi): <span id="pi-temp" class="float-end">{{ "%.1f"|format(pi_status.temperature) if pi_status and pi_status.temperature is not none else 'N/A' }}°C</span></p>
+             </div>
+             {# NEU: Optional Footer für letztes Update des Pi-Status #}
+             <div class="card-footer text-muted text-end" style="font-size: 0.8em;">
+                 Pi Status Update: <span id="pi-last-update">{{ pi_status.last_update if pi_status else 'N/A' }}</span>
              </div>
         </div>
     </div>

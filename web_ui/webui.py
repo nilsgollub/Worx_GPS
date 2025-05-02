@@ -40,7 +40,8 @@ except ImportError:
 # Füge das übergeordnete Verzeichnis zum Suchpfad hinzu
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
-import config  # Importiere die config.py, um Standardwerte zu kennen
+# config importieren, um Standardwerte und das neue Topic zu kennen
+import config  # Enthält jetzt auch PI_STATUS_CONFIG
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -51,7 +52,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
 app.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
 app.static_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-# Erhöhe die Ping-Intervalle, um häufige Disconnects bei hoher Last zu reduzieren
 socketio = SocketIO(app, async_mode='eventlet', ping_timeout=20, ping_interval=10)
 
 # --- Globale Variablen & Sperren ---
@@ -68,22 +68,30 @@ current_status = {
 status_lock = threading.Lock()
 mqtt_client = None
 
-# Globale Variable für Systemstatus
+# Globale Variable für Systemstatus (Webserver)
 current_system_stats = {
     "cpu_load": 0.0,
     "ram_usage": 0.0,
-    "cpu_temp": None  # Nicht auf allen Systemen verfügbar
+    "cpu_temp": None
 }
 system_stats_lock = threading.Lock()
 system_stats_thread = None
 stop_system_stats_thread = threading.Event()
 
+# NEU: Globale Variable für Pi-Status
+current_pi_status = {
+    "temperature": None,
+    "last_update": "Noch keine Daten"
+}
+pi_status_lock = threading.Lock()
 
-# --- MQTT Callbacks (unverändert) ---
+
+# --- MQTT Callbacks ---
 def on_connect(client, userdata, flags, rc, properties=None):
     """Wird aufgerufen, wenn die Verbindung zum MQTT Broker hergestellt wurde."""
     if rc == 0:
         logger.info(f"Erfolgreich mit MQTT Broker verbunden")
+        # Bisherige Topics abonnieren
         status_topic = config.MQTT_CONFIG.get("topic_status")
         if status_topic:
             client.subscribe(status_topic)
@@ -94,6 +102,15 @@ def on_connect(client, userdata, flags, rc, properties=None):
         if gps_topic:
             client.subscribe(gps_topic)
             logger.info(f"Abonniert auf Topic: {gps_topic}")
+
+        # NEU: Pi-Status Topic abonnieren
+        pi_status_topic = config.PI_STATUS_CONFIG.get("topic_pi_status")
+        if pi_status_topic:
+            client.subscribe(pi_status_topic)
+            logger.info(f"Abonniert auf Topic: {pi_status_topic}")
+        else:
+            logger.warning("Pi Status Topic ('topic_pi_status') ist nicht in config.py definiert!")
+            # --- ENDE NEU ---
     else:
         logger.error(f"Verbindung zum MQTT Broker fehlgeschlagen mit Code: {rc}")
 
@@ -105,12 +122,12 @@ def on_disconnect(client, userdata, rc, properties=None):
 
 def on_message(client, userdata, msg):
     """Wird aufgerufen, wenn eine Nachricht auf einem abonnierten Topic empfangen wird."""
-    global current_status
+    global current_status, current_pi_status  # NEU: current_pi_status hinzugefügt
     try:
         payload = msg.payload.decode('utf-8')
         logger.debug(f"Nachricht empfangen auf Topic '{msg.topic}': {payload}")
 
-        # Verarbeite Status-Nachrichten vom Status-Topic
+        # --- Verarbeite Status-Nachrichten vom Status-Topic ---
         if msg.topic == config.MQTT_CONFIG.get("topic_status"):
             if payload.startswith("status,"):
                 parts = payload.split(',')
@@ -133,18 +150,14 @@ def on_message(client, userdata, msg):
                             from datetime import datetime
                             with status_lock:
                                 current_status.update({
-                                    'lat': lat,
-                                    'lon': lon,
-                                    'status_text': status_text,
-                                    'satellites': satellites,
-                                    'agps_status': agps_status,
+                                    'lat': lat, 'lon': lon, 'status_text': status_text,
+                                    'satellites': satellites, 'agps_status': agps_status,
                                     'mower_status': mower_status_text,
                                     'last_update': datetime.now().strftime("%H:%M:%S")
                                 })
                             socketio.emit('status_update', current_status)
                         else:
                             logger.warning(f"Ignoriere ungültige Koordinaten: Lat={lat}, Lon={lon}")
-
                     except (ValueError, IndexError) as e:
                         logger.warning(f"Konnte Daten nicht aus Status-Nachricht extrahieren: {payload}, Fehler: {e}")
                     except Exception as e:
@@ -156,8 +169,27 @@ def on_message(client, userdata, msg):
             else:
                 logger.debug(f"Unbekannte Nachricht auf Status-Topic: {payload}")
 
+        # --- Verarbeite GPS-Nachrichten (falls nötig) ---
         elif msg.topic == config.MQTT_CONFIG.get("topic_gps"):
             logger.debug(f"Nachricht auf GPS-Topic (wird hier nicht weiter verarbeitet): {payload}")
+
+        # --- NEU: Verarbeite Pi-Status Nachrichten ---
+        elif msg.topic == config.PI_STATUS_CONFIG.get("topic_pi_status"):
+            try:
+                # Versuche, den Payload als Fließkommazahl zu interpretieren
+                temp_value = float(payload)
+                from datetime import datetime
+                with pi_status_lock:
+                    current_pi_status['temperature'] = round(temp_value, 1)
+                    current_pi_status['last_update'] = datetime.now().strftime("%H:%M:%S")
+                # Sende Update an alle verbundenen Clients über neues Event
+                socketio.emit('pi_status_update', current_pi_status)
+                logger.debug(f"Pi-Temperatur aktualisiert: {current_pi_status['temperature']}°C")
+            except ValueError:
+                logger.warning(f"Konnte Pi-Status-Payload nicht als Zahl interpretieren: {payload}")
+            except Exception as e:
+                logger.error(f"Fehler beim Verarbeiten der Pi-Status-Nachricht: {payload} - {e}", exc_info=True)
+        # --- ENDE NEU ---
 
     except Exception as e:
         logger.error(f"Fehler in on_message: {e}", exc_info=True)
@@ -165,7 +197,7 @@ def on_message(client, userdata, msg):
 
 # --- setup_mqtt (unverändert) ---
 def setup_mqtt():
-    """Konfiguriert und startet den MQTT Client."""
+    # ... (Code wie vorher) ...
     global mqtt_client
     host = config.MQTT_CONFIG.get("host_lokal") if config.REC_CONFIG.get("test_mode") else config.MQTT_CONFIG.get(
         "host")
@@ -201,9 +233,9 @@ def setup_mqtt():
         return False
 
 
-# --- Hilfsfunktionen (unverändert) ---
+# --- Hilfsfunktionen (get_available_heatmaps, get_problem_zones, get_editable_config unverändert) ---
 def get_available_heatmaps():
-    """Gibt eine Liste der verfügbaren Heatmaps zurück."""
+    # ... (Code wie vorher) ...
     heatmap_dir = os.path.join(project_root, 'heatmaps')
     heatmaps = []
     try:
@@ -226,7 +258,7 @@ def get_available_heatmaps():
 
 
 def get_problem_zones():
-    """Liest die Problemzonen aus der JSON-Datei."""
+    # ... (Code wie vorher) ...
     problem_file = os.path.join(project_root, config.PROBLEM_CONFIG.get("problem_json", "problemzonen.json"))
     if os.path.exists(problem_file):
         try:
@@ -242,13 +274,12 @@ def get_problem_zones():
 
 
 def get_editable_config():
-    """Gibt eine Teilmenge der Konfiguration zurück, die über die UI editierbar sein soll."""
+    # ... (Code wie vorher) ...
     env_values = dotenv_values(find_dotenv())
 
     def get_config_value(env_key, default, value_type=str):
         value_str = env_values.get(env_key)
         if value_str is None:
-            # Vereinfachte Default-Logik, ggf. anpassen
             if env_key == 'HEATMAP_RADIUS':
                 default = config.HEATMAP_CONFIG.get('heatmap_aktuell', {}).get('radius', 5)
             elif env_key == 'HEATMAP_BLUR':
@@ -294,9 +325,9 @@ def get_editable_config():
     }
 
 
-# --- Hintergrund-Thread für Systemstatistiken ---
+# --- system_stats_updater (unverändert) ---
 def system_stats_updater():
-    """Sammelt periodisch Systemstatistiken und sendet sie per SocketIO."""
+    # ... (Code wie vorher) ...
     global current_system_stats
     if not psutil_available:
         logger.warning("psutil nicht verfügbar, Systemstatistiken können nicht gesammelt werden.")
@@ -305,10 +336,9 @@ def system_stats_updater():
     logger.info("Starte Thread für Systemstatistiken...")
     while not stop_system_stats_thread.is_set():
         try:
-            cpu = psutil.cpu_percent(interval=None)  # Non-blocking
+            cpu = psutil.cpu_percent(interval=None)
             ram = psutil.virtual_memory().percent
             temp = None
-            # CPU Temperatur (plattformabhängig)
             if hasattr(psutil, "sensors_temperatures"):
                 temps = psutil.sensors_temperatures()
                 for name, entries in temps.items():
@@ -317,22 +347,17 @@ def system_stats_updater():
                                 'core' in name.lower() or 'cpu' in name.lower() or 'package' in entry.label.lower()):
                             temp = entry.current
                             break
-                    if temp is not None:
-                        break
+                    if temp is not None: break
 
             with system_stats_lock:
                 current_system_stats = {
-                    "cpu_load": cpu,
-                    "ram_usage": ram,
+                    "cpu_load": cpu, "ram_usage": ram,
                     "cpu_temp": round(temp, 1) if temp is not None else None
                 }
-
             socketio.emit('system_update', current_system_stats)
             logger.debug(f"Systemstatistiken gesendet: {current_system_stats}")
-
         except Exception as e:
             logger.error(f"Fehler im Systemstatistiken-Thread: {e}", exc_info=False)
-
         stop_system_stats_thread.wait(5.0)
     logger.info("Thread für Systemstatistiken beendet.")
 
@@ -345,6 +370,9 @@ def index():
         status_data = current_status.copy()
     with system_stats_lock:
         system_data = current_system_stats.copy()
+    # NEU: Pi-Status holen
+    with pi_status_lock:
+        pi_data = current_pi_status.copy()
     heatmaps = get_available_heatmaps()
     current_heatmap_html = None
     for hm in heatmaps:
@@ -355,14 +383,16 @@ def index():
     return render_template('index.html',
                            status=status_data,
                            system=system_data,
-                           heatmaps=heatmaps[:3],  # Nur die ersten 3 für die Liste
-                           current_heatmap_html=current_heatmap_html,  # Für iframe
+                           pi_status=pi_data,  # NEU: Pi-Status übergeben
+                           heatmaps=heatmaps[:3],
+                           current_heatmap_html=current_heatmap_html,
                            mqtt_connected=mqtt_client is not None and mqtt_client.is_connected())
 
 
+# --- /maps, /heatmaps/<filename>, /config, /config/save (unverändert) ---
 @app.route('/maps')
 def maps():
-    """Kartenübersichtsseite"""
+    # ... (Code wie vorher) ...
     heatmaps = get_available_heatmaps()
     selected = request.args.get('map', '')
     if not selected or not any(h['id'] == selected for h in heatmaps):
@@ -376,7 +406,7 @@ def maps():
 
 @app.route('/heatmaps/<path:filename>')
 def serve_heatmap(filename):
-    """Liefert Heatmap-Dateien aus."""
+    # ... (Code wie vorher) ...
     heatmap_dir = os.path.join(project_root, 'heatmaps')
     if '..' in filename or filename.startswith('/'): return "Ungültiger Dateiname", 400
     return send_from_directory(heatmap_dir, filename)
@@ -384,7 +414,7 @@ def serve_heatmap(filename):
 
 @app.route('/config')
 def config_page():
-    """Konfigurationsseite"""
+    # ... (Code wie vorher) ...
     editable_config = get_editable_config()
     env_values = dotenv_values(find_dotenv())
     info = {
@@ -406,7 +436,7 @@ def config_page():
 
 @app.route('/config/save', methods=['POST'])
 def save_config():
-    """Speichert Änderungen an der Konfiguration in der .env-Datei."""
+    # ... (Code wie vorher) ...
     try:
         data = request.form.to_dict()
         logger.info(f"Empfangene Konfigurationsänderungen: {data}")
@@ -452,9 +482,10 @@ def save_config():
         return jsonify({"success": False, "message": f"Serverfehler: {str(e)}"}), 500
 
 
+# --- /stats (unverändert, nutzt jetzt stats_libs_available) ---
 @app.route('/stats')
 def stats():
-    """Statistikseite - Lädt und berechnet Statistiken aus CSV-Dateien."""
+    # ... (Code wie vorher, mit Prüfung auf stats_libs_available) ...
     problem_zones = get_problem_zones()
     recordings_dir = os.path.join(project_root, 'recordings')
     total_recordings = 0
@@ -463,29 +494,22 @@ def stats():
     all_satellites = []
     avg_satellites = 0.0
 
-    # Prüfe, ob benötigte Bibliotheken verfügbar sind
     if not stats_libs_available:
         logger.error("Statistik-Bibliotheken (pandas, geopy) nicht verfügbar.")
         stats_data = {
             'total_recordings': 'N/A', 'total_distance': 'N/A', 'total_time': 'N/A',
             'avg_satellites': 'N/A', 'problem_zones_count': len(problem_zones)
         }
-        # Optional: Fehlermeldung im Template anzeigen
-        # return render_template('stats.html', stats=stats_data, problem_zones=problem_zones, error="Statistik-Bibliotheken fehlen.")
     else:
         try:
-            # Finde alle CSV-Dateien im recordings-Verzeichnis
             csv_files = glob.glob(os.path.join(recordings_dir, '*.csv'))
             total_recordings = len(csv_files)
-
             if total_recordings > 0:
                 for csv_file in csv_files:
                     try:
                         df = pd.read_csv(csv_file, parse_dates=['timestamp'], on_bad_lines='skip')
                         df.dropna(subset=['timestamp', 'latitude', 'longitude', 'satellites'], inplace=True)
-
                         if not df.empty:
-                            # Distanzberechnung
                             points = list(zip(df['latitude'], df['longitude']))
                             distance_m = 0
                             for i in range(len(points) - 1):
@@ -495,33 +519,20 @@ def stats():
                                     logger.warning(
                                         f"Ungültige Koordinaten in {csv_file} bei Index {i}, überspringe Distanzsegment.")
                             total_distance_km += distance_m / 1000.0
-
-                            # Dauerberechnung
                             duration = df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]
                             total_duration_min += duration.total_seconds() / 60.0
-
-                            # Satelliten sammeln
                             all_satellites.extend(df['satellites'].tolist())
-
                     except pd.errors.EmptyDataError:
                         logger.warning(f"CSV-Datei {csv_file} ist leer oder konnte nicht gelesen werden.")
                     except Exception as e:
                         logger.error(f"Fehler beim Verarbeiten von {csv_file}: {e}", exc_info=False)
-
-                # Durchschnittliche Satellitenanzahl berechnen
                 if all_satellites:
                     valid_sats = [float(s) for s in all_satellites if
                                   isinstance(s, (int, float, str)) and str(s).replace('.', '', 1).isdigit()]
-                    if valid_sats:
-                        avg_satellites = sum(valid_sats) / len(valid_sats)
-
+                    if valid_sats: avg_satellites = sum(valid_sats) / len(valid_sats)
         except Exception as e:
             logger.error(f"Fehler beim Laden der Statistiken: {e}", exc_info=True)
-            # Setze Daten auf N/A im Fehlerfall
-            total_recordings = 'Fehler'
-            total_distance_km = 'Fehler'
-            total_duration_min = 'Fehler'
-            avg_satellites = 'Fehler'
+            total_recordings, total_distance_km, total_duration_min, avg_satellites = 'Fehler', 'Fehler', 'Fehler', 'Fehler'
 
         stats_data = {
             'total_recordings': total_recordings,
@@ -532,20 +543,17 @@ def stats():
             'problem_zones_count': len(problem_zones)
         }
 
-    # Stelle sicher, dass die Template-Datei existiert
     template_path = os.path.join(app.template_folder, 'stats.html')
     if not os.path.exists(template_path):
         logger.error(f"Template 'stats.html' nicht gefunden in {app.template_folder}")
         return "Fehler: Template 'stats.html' nicht gefunden.", 500
-
-    return render_template('stats.html',
-                           stats=stats_data,
-                           problem_zones=problem_zones)
+    return render_template('stats.html', stats=stats_data, problem_zones=problem_zones)
 
 
+# --- /control, /live (unverändert) ---
 @app.route('/control', methods=['POST'])
 def control():
-    """Empfängt und verarbeitet Steuerbefehle."""
+    # ... (Code wie vorher) ...
     try:
         data = request.get_json()
         if not data or 'command' not in data: return jsonify({"success": False, "message": "'command' fehlt."}), 400
@@ -554,11 +562,9 @@ def control():
             {"success": False, "message": "MQTT nicht verbunden"}), 503
         control_topic = config.MQTT_CONFIG.get("topic_control")
         if not control_topic: return jsonify({"success": False, "message": "Kontroll-Topic nicht konfiguriert"}), 500
-
         command_map = {'start_recording': 'START_REC', 'stop_recording': 'STOP_REC',
                        'generate_heatmaps': 'GENERATE_HEATMAPS', 'shutdown': 'SHUTDOWN'}
         message = command_map.get(command)
-
         if message:
             try:
                 if command == 'start_recording':
@@ -584,7 +590,7 @@ def control():
 
 @app.route('/live')
 def live_view():
-    """Live-Kartenansicht"""
+    # ... (Code wie vorher) ...
     with status_lock: status_data = current_status.copy()
     map_config = {
         'center_lat': status_data['lat'], 'center_lon': status_data['lon'],
@@ -606,8 +612,12 @@ def live_view():
 def handle_connect():
     """Wird aufgerufen, wenn sich ein Browser per WebSocket verbindet."""
     logger.info(f'Web-Client verbunden (SID: {request.sid})')
+    # Sende den aktuellen Status sofort
     with status_lock: socketio.emit('status_update', current_status, room=request.sid)
+    # Sende aktuellen Systemstatus (Webserver)
     with system_stats_lock: socketio.emit('system_update', current_system_stats, room=request.sid)
+    # NEU: Sende aktuellen Pi-Status
+    with pi_status_lock: socketio.emit('pi_status_update', current_pi_status, room=request.sid)
 
 
 @socketio.on('disconnect')
@@ -624,7 +634,7 @@ if __name__ == '__main__':
     else:
         logger.warning("MQTT-Verbindung konnte nicht hergestellt werden. WebUI läuft ohne MQTT-Updates.")
 
-    # Starte den Systemstatistiken-Thread
+    # Starte den Systemstatistiken-Thread (Webserver)
     if psutil_available:
         system_stats_thread = threading.Thread(target=system_stats_updater, daemon=True)
         system_stats_thread.start()
@@ -641,12 +651,10 @@ if __name__ == '__main__':
         logger.error(f"Fehler beim Starten des Servers: {e}", exc_info=True)
     finally:
         logger.info("Server wird heruntergefahren...")
-        # Signalisiere dem Systemstatistiken-Thread, dass er stoppen soll
         stop_system_stats_thread.set()
         if system_stats_thread:
             logger.info("Warte auf Beendigung des Systemstatistiken-Threads...")
             system_stats_thread.join(timeout=2.0)
-        # MQTT Client trennen
         if mqtt_client:
             try:
                 mqtt_client.loop_stop()
