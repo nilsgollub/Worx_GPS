@@ -287,7 +287,7 @@ def get_editable_config():
             elif env_key == 'HEATMAP_GENERATE_PNG':
                 default = config.HEATMAP_CONFIG.get('heatmap_aktuell', {}).get('generate_png', False)
             elif env_key == 'GEO_ZOOM_START':
-                default = config.GEO_CONFIG.get('zoom_start', 15)
+                default = config.GEO_CONFIG.get('zoom_start', 20)
             elif env_key == 'GEO_MAX_ZOOM':
                 default = config.GEO_CONFIG.get('max_zoom', 22)
             elif env_key == 'REC_STORAGE_INTERVAL':
