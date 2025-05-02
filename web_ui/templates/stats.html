@@ -89,15 +89,16 @@
                         {# --- NEU: Einfache "Erfolgsrate" (mit Vorbehalt) --- #}
                         <dt class="col-sm-5">Mähvorgänge ohne Problem-Event:</dt>
                         <dd class="col-sm-7">
-                            {# Berechne nur, wenn beide Werte gültige Zahlen sind und Aufnahmen existieren #}
-                            {% if stats.total_recordings is number and stats.problem_zones_count is number and stats.total_recordings > 0 %}
-                                {# Berechne erfolgreiche Läufe (kann nicht negativ sein) #}
+                            {# Prüfe, ob beide Werte Zahlen sind UND total_recordings > 0 #}
+                            {% if stats.total_recordings is number and stats.total_recordings > 0 and stats.problem_zones_count is number %}
                                 {% set successful_runs = [0, stats.total_recordings - stats.problem_zones_count] | max %}
                                 {{ successful_runs }} von {{ stats.total_recordings }}
                                 ({{ "%.1f"|format(successful_runs * 100 / stats.total_recordings) }}%)
-                                <small class="d-block text-muted">(Annahme: max. 1 Problem pro Vorgang)</small> {# Hinweis auf Limitierung #}
+                                <small class="d-block text-muted">(Annahme: max. 1 Problem pro Vorgang)</small>
+                            {% elif stats.total_recordings == 0 %}
+                                0 von 0 (N/A %) {# Behandle den Fall von 0 Aufnahmen explizit #}
                             {% else %}
-                                N/A
+                                N/A {# Behandle Fälle, wo stats 'Fehler' oder 'N/A' sind #}
                             {% endif %}
                         </dd>
                         {# --- ENDE NEU --- #}
@@ -140,14 +141,22 @@
                                     <td>{{ zone.timestamp | default('N/A') }}</td>
                                     <td>{{ zone.duration | default('N/A') }}</td>
                                     <td>
-                                        {% if zone.latitude is not none and zone.longitude is not none %}
+                                        {# --- KORRIGIERTE PRÜFUNG --- #}
+                                        {# Prüfe, ob die Schlüssel existieren UND nicht None sind #}
+                                        {% if 'latitude' in zone and zone.latitude is not none and 'longitude' in zone and zone.longitude is not none %}
                                             <a href="https://www.google.com/maps/search/?api=1&query={{ zone.latitude }},{{ zone.longitude }}" target="_blank" title="Auf Google Maps anzeigen">
-                                                {{ "%.6f"|format(zone.latitude) }}, {{ "%.6f"|format(zone.longitude) }}
+                                                {# Versuche Formatierung nur, wenn es Zahlen sind (zusätzliche Sicherheit) #}
+                                                {% if zone.latitude is number and zone.longitude is number %}
+                                                    {{ "%.6f"|format(zone.latitude) }}, {{ "%.6f"|format(zone.longitude) }}
+                                                {% else %}
+                                                    {{ zone.latitude }}, {{ zone.longitude }} {# Fallback ohne Formatierung #}
+                                                {% endif %}
                                                 <i class="fas fa-external-link-alt fa-xs"></i>
                                             </a>
                                         {% else %}
-                                            N/A
+                                            Position N/A {# Zeige N/A an, wenn Schlüssel fehlen oder None sind #}
                                         {% endif %}
+                                        {# --- ENDE KORRIGIERTE PRÜFUNG --- #}
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -155,11 +164,11 @@
                         </table>
                     </div>
                 {% else %}
-                    <p class="card-text">Keine Problemzonen gefunden oder die Datei <code>problemzonen.json</code> existiert nicht.</p>
+                    <p class="card-text">Keine Problemzonen gefunden oder die Datei <code>data/problemzonen.json</code> existiert nicht.</p>
                 {% endif %}
             </div>
              <div class="card-footer text-muted" style="font-size: 0.8em;">
-                 Problemzonen werden in <code>problemzonen.json</code> gespeichert.
+                 Problemzonen werden in <code>data/problemzonen.json</code> gespeichert.
              </div>
         </div>
     </div>
