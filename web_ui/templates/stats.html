@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+
+{% block title %}Statistiken{% endblock %}
+
+{% block content %}
+<h2>Statistiken</h2>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">Aufnahmen</div>
+            <div class="card-body">
+                <p>Anzahl Aufnahmen: {{ stats.total_recordings }}</p>
+                <p>Gesamtdistanz: {{ "%.2f" | format(stats.total_distance) }} km</p>
+                <p>Gesamtzeit: {{ stats.total_time }} Minuten</p>
+                <p>Durchschnittliche Satelliten: {{ "%.1f" | format(stats.avg_satellites) }}</p>
+            </div>
+            <div class="card-footer text-muted">
+                Hinweis: Diese Daten sind Beispiele und müssen noch implementiert werden.
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+             <div class="card-header">Problemzonen</div>
+             <div class="card-body">
+                 <p>Anzahl gespeicherter Problemzonen: {{ stats.problem_zones_count }}</p>
+                 {% if problem_zones %}
+                     <ul class="list-group list-group-flush">
+                         {% for zone in problem_zones | sort(attribute='timestamp', reverse=true) | list[:5] %} {# Zeige die letzten 5 #}
+                             <li class="list-group-item">
+                                 Lat: {{ "%.6f" | format(zone.lat) }}, Lon: {{ "%.6f" | format(zone.lon) }}
+                                 <small class="text-muted float-end">
+                                     {{ moment(zone.timestamp | int).format('DD.MM.YYYY HH:mm') if zone.timestamp else 'Unbekannt' }}
+                                 </small>
+                             </li>
+                         {% endfor %}
+                         {% if problem_zones | length > 5 %}
+                             <li class="list-group-item text-muted">... und {{ problem_zones | length - 5 }} weitere</li>
+                         {% endif %}
+                     </ul>
+                 {% else %}
+                     <p>Keine Problemzonen gespeichert.</p>
+                 {% endif %}
+             </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Moment.js für Datumsformatierung (optional, wenn Timestamps angezeigt werden) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/locale/de.min.js"></script> {# Deutsche Lokalisierung #}
+<script>
+    moment.locale('de'); // Setze Moment.js auf Deutsch
+</script>
+{% endblock %}

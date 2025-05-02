@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+
+{% block title %}Einstellungen{% endblock %}
+
+{% block content %}
+<h2>Einstellungen</h2>
+
+<div class="row">
+    <div class="col-lg-8">
+        <form id="config-form">
+            {% for section, params in config.items() %}
+            <div class="card mb-3">
+                <div class="card-header">{{ section }} Einstellungen</div>
+                <div class="card-body">
+                    {% for key, value in params.items() %}
+                    <div class="mb-3 row">
+                        <label for="{{ section.lower() }}_{{ key.lower() }}" class="col-sm-4 col-form-label">{{ key.replace('_', ' ').title() }}</label>
+                        <div class="col-sm-8">
+                            {% if value is boolean %}
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="{{ section.lower() }}_{{ key.lower() }}"
+                                           name="{{ section.lower() }}_{{ key.lower().replace(section.lower()+'_', '') }}" {# Angepasster Name für das Mapping #}
+                                           value="on" {# Standardwert für aktivierte Checkbox #}
+                                           {% if value %}checked{% endif %}>
+                                    <label class="form-check-label" for="{{ section.lower() }}_{{ key.lower() }}">
+                                        {% if value %}Aktiviert{% else %}Deaktiviert{% endif %}
+                                    </label>
+                                </div>
+                            {% elif value is number %}
+                                <input type="number" class="form-control"
+                                       id="{{ section.lower() }}_{{ key.lower() }}"
+                                       name="{{ section.lower() }}_{{ key.lower().replace(section.lower()+'_', '') }}" {# Angepasster Name für das Mapping #}
+                                       value="{{ value }}"
+                                       step="{{ 0.1 if value is float else 1 }}">
+                            {% else %}
+                                <input type="text" class="form-control"
+                                       id="{{ section.lower() }}_{{ key.lower() }}"
+                                       name="{{ section.lower() }}_{{ key.lower().replace(section.lower()+'_', '') }}" {# Angepasster Name für das Mapping #}
+                                       value="{{ value }}">
+                            {% endif %}
+                            {# Optional: Beschreibung hinzufügen #}
+                            {# <small class="form-text text-muted">Beschreibung für {{ key }}</small> #}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Einstellungen Speichern</button>
+            <small class="text-muted ms-2">Ein Neustart ist erforderlich, damit die Änderungen wirksam werden.</small>
+        </form>
+    </div>
+
+    <div class="col-lg-4">
+         <div class="card sticky-top" style="top: 1rem;"> {# Sticky für Scrollen #}
+            <div class="card-header">Aktuelle Konfiguration (Info)</div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item"><strong>MQTT Host:</strong> {{ info.mqtt_host }}:{{ info.mqtt_port }}</li>
+                    <li class="list-group-item"><strong>Status Topic:</strong> {{ info.mqtt_topic_status }}</li>
+                    <li class="list-group-item"><strong>GPS Topic:</strong> {{ info.mqtt_topic_gps }}</li>
+                    <li class="list-group-item"><strong>Control Topic:</strong> {{ info.mqtt_topic_control }}</li>
+                    <li class="list-group-item"><strong>Test Modus:</strong> {{ info.test_mode }}</li>
+                    <li class="list-group-item"><strong>AssistNow:</strong> {{ info.assist_now }}</li>
+                    <li class="list-group-item"><strong>GPS Port (Pi):</strong> {{ info.gps_serial_port }}</li>
+                </ul>
+            </div>
+            <div class="card-footer text-muted">
+                Diese Werte werden aus der <code>.env</code>-Datei gelesen und erfordern ggf. einen Neustart zur Aktualisierung.
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Keine spezifischen Skripte für diese Seite benötigt, main.js reicht -->
+{% endblock %}

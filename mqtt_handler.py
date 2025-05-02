@@ -130,8 +130,11 @@ class MqttHandler:
     # --- Angepasste Callbacks für Verbindungsstatus und Queue ---
     # In mqtt_handler.py -> _on_connect Methode
 
-    def _on_connect(self, client, userdata, flags, rc):
-        """Callback, der bei erfolgreicher Verbindung zum Broker aufgerufen wird."""
+    def _on_connect(self, client, userdata, flags, rc, properties=None):
+        """Callback, der bei erfolgreicher Verbindung zum Broker aufgerufen wird.
+        
+        Der properties-Parameter wird für MQTT 5.0 verwendet und ist in MQTT 3.1.1 nicht vorhanden.
+        """
         if rc == 0:
             self._is_connected = True
             logging.info("MQTT erfolgreich verbunden.")
@@ -163,8 +166,11 @@ class MqttHandler:
             logging.error(f"MQTT-Verbindungsfehler mit Code {rc}: {paho_mqtt_client.connack_string(rc)}")
             # Paho's loop kümmert sich um Reconnect
 
-    def _on_disconnect(self, client, userdata, rc):
-        """Callback, der bei Verbindungsverlust aufgerufen wird."""
+    def _on_disconnect(self, client, userdata, rc, properties=None):
+        """Callback, der bei Verbindungsverlust aufgerufen wird.
+        
+        Der properties-Parameter wird für MQTT 5.0 verwendet und ist in MQTT 3.1.1 nicht vorhanden.
+        """
         # was_connected = self._is_connected # Merken, ob wir vorher verbunden waren
         self._is_connected = False
         if rc == 0:
@@ -281,6 +287,43 @@ class MqttHandler:
             logging.info("Benutzerdefinierter MQTT-Nachrichten-Callback gesetzt.")
         else:
             logging.warning("Versuch, einen nicht aufrufbaren MQTT-Nachrichten-Callback zu setzen.")
+                
+    def set_connect_callback(self, callback_func):
+            """Setzt die Callback-Funktion für erfolgreiche Verbindung."""
+            if callable(callback_func):
+                self._user_connect_callback = callback_func
+                self._mqtt_client.on_connect = self._on_connect_wrapper
+                logging.info("Benutzerdefinierter MQTT-Connect-Callback gesetzt.")
+            else:
+                logging.warning("Versuch, einen nicht aufrufbaren MQTT-Connect-Callback zu setzen.")
+                
+    def set_disconnect_callback(self, callback_func):
+            """Setzt die Callback-Funktion für Verbindungstrennung."""
+            if callable(callback_func):
+                self._user_disconnect_callback = callback_func
+                self._mqtt_client.on_disconnect = self._on_disconnect_wrapper
+                logging.info("Benutzerdefinierter MQTT-Disconnect-Callback gesetzt.")
+            else:
+                logging.warning("Versuch, einen nicht aufrufbaren MQTT-Disconnect-Callback zu setzen.")
+                
+    def _on_connect_wrapper(self, client, userdata, flags, rc, properties=None):
+            """Wrapper für den Connect-Callback, ruft auch benutzerdefinierten Callback auf."""
+            # properties Parameter nur übergeben, wenn er vorhanden ist
+            self._on_connect(client, userdata, flags, rc, properties)
+            if hasattr(self, '_user_connect_callback') and self._user_connect_callback:
+                try:
+                    self._user_connect_callback()
+                except Exception as e:
+                    logging.error(f"Fehler im benutzerdefinierten Connect-Callback: {e}")
+                    
+    def _on_disconnect_wrapper(self, client, userdata, rc, properties=None):
+            """Wrapper für den Disconnect-Callback, ruft auch benutzerdefinierten Callback auf."""
+            self._on_disconnect(client, userdata, rc, properties)
+            if hasattr(self, '_user_disconnect_callback') and self._user_disconnect_callback:
+                try:
+                    self._user_disconnect_callback()
+                except Exception as e:
+                    logging.error(f"Fehler im benutzerdefinierten Disconnect-Callback: {e}")
 
     def is_connected(self) -> bool:
         """Gibt zurück, ob der Client aktuell mit dem MQTT-Broker verbunden ist."""

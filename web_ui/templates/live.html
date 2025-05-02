@@ -1,0 +1,125 @@
+{% extends "layout.html" %}
+
+{% block title %}Live Ansicht{% endblock %}
+
+{% block additional_css %}
+<style>
+    #liveMap {
+        height: 65vh; /* Höhe der Karte anpassen */
+        width: 100%;
+        border: 1px solid #ccc;
+    }
+    .status-card {
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Status Informationen -->
+    <div class="col-lg-4 col-md-5">
+        <h2>Live Status</h2>
+        <div class="card status-card">
+            <div class="card-body">
+                <h5 class="card-title">Aktuelle Position</h5>
+                <p class="card-text">
+                    Latitude: <span id="latitude">{{ status.lat if status.lat is not none else 'N/A' }}</span><br>
+                    Longitude: <span id="longitude">{{ status.lon if status.lon is not none else 'N/A' }}</span>
+                </p>
+            </div>
+        </div>
+        <div class="card status-card">
+            <div class="card-body">
+                <h5 class="card-title">GPS Status</h5>
+                <p class="card-text">
+                    Status: <span id="status-text">{{ status.status_text }}</span><br>
+                    Satelliten: <span id="satellites">{{ status.satellites }}</span><br>
+                    AGPS: <span id="agps-status">{{ status.agps_status }}</span><br>
+                    Aufnahme: <span id="recording-status" class="badge {% if status.is_recording %}text-bg-success{% else %}text-bg-danger{% endif %}">
+                        {{ 'Läuft' if status.is_recording else 'Gestoppt' }}
+                    </span><br>
+                    Letztes Update: <span id="last-update">{{ status.last_update }}</span>
+                </p>
+            </div>
+        </div>
+         <div class="card status-card">
+            <div class="card-body">
+                <h5 class="card-title">Steuerung</h5>
+                <button id="start-rec-button" class="btn btn-success btn-sm mb-1"><i class="fas fa-play"></i> Aufnahme Start</button>
+                <button id="stop-rec-button" class="btn btn-danger btn-sm mb-1"><i class="fas fa-stop"></i> Aufnahme Stop</button>
+                <button id="generate-heatmaps-button" class="btn btn-info btn-sm mb-1"><i class="fas fa-fire"></i> Heatmaps Generieren</button>
+                <!-- Weitere Buttons hier -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Karte -->
+    <div class="col-lg-8 col-md-7">
+        <h2>Live Karte</h2>
+        <div id="liveMap"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let liveMap;
+    let liveMarker;
+    let isMapInitialized = false;
+
+    // Funktion zum Initialisieren oder Aktualisieren des Markers
+    function updateLiveMarker(lat, lon) {
+        if (!isMapInitialized && lat !== null && lon !== null) {
+            // Initialisiere die Karte, wenn sie noch nicht existiert und gültige Koordinaten vorhanden sind
+            liveMap = L.map('liveMap').setView([lat, lon], {{ map_config.zoom }});
+
+            // OpenStreetMap Layer
+            const osmLayer = L.tileLayer('{{ map_config.osm_tiles | safe }}', {
+                maxZoom: {{ map_config.max_zoom }},
+                attribution: '{{ map_config.osm_attr | safe }}'
+            }).addTo(liveMap);
+
+            // Google Satellite Layer (optional)
+            const satelliteLayer = L.tileLayer('{{ map_config.satellite_tiles | safe }}', {
+                maxZoom: {{ map_config.max_zoom }},
+                attribution: '{{ map_config.satellite_attr | safe }}'
+            });
+
+            // Layer Control
+            const baseLayers = {
+                "OpenStreetMap": osmLayer,
+                "Google Satellite": satelliteLayer
+            };
+            L.control.layers(baseLayers).addTo(liveMap);
+
+            // Erstelle den Marker
+            liveMarker = L.marker([lat, lon]).addTo(liveMap)
+                .bindPopup("Aktuelle Position")
+                .openPopup();
+
+            isMapInitialized = true;
+            console.log("Live Karte initialisiert.");
+
+        } else if (isMapInitialized && lat !== null && lon !== null) {
+            // Aktualisiere die Marker-Position und zentriere die Karte darauf
+            const newLatLng = L.latLng(lat, lon);
+            liveMarker.setLatLng(newLatLng);
+            liveMap.setView(newLatLng); // Karte auf neue Position zentrieren
+            console.log("Live Marker aktualisiert.");
+        } else if (!isMapInitialized) {
+             console.log("Warte auf gültige Koordinaten zur Initialisierung der Karte...");
+             // Optional: Platzhalter anzeigen
+             document.getElementById('liveMap').innerHTML = '<div class="alert alert-info">Warte auf erste GPS-Position...</div>';
+        }
+    }
+
+    // Initialer Aufruf, falls schon Koordinaten vom Server kamen
+    document.addEventListener('DOMContentLoaded', () => {
+        // Versuche, die Karte mit den initialen Daten zu initialisieren
+        updateLiveMarker({{ status.lat if status.lat is not none else 'null' }}, {{ status.lon if status.lon is not none else 'null' }});
+    });
+
+    // Hinweis: Das 'status_update' Event wird von main.js behandelt und ruft updateLiveMarker auf.
+</script>
+{% endblock %}
