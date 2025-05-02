@@ -501,10 +501,10 @@ def save_config():
         return jsonify({"success": False, "message": f"Serverfehler: {str(e)}"}), 500
 
 
-# --- /stats (unverändert, nutzt jetzt stats_libs_available) ---
+# --- /stats (Angepasst für Durchschnittswerte) ---
 @app.route('/stats')
 def stats():
-    # ... (Code wie vorher, mit Prüfung auf stats_libs_available) ...
+    """Statistikseite - Lädt und berechnet Statistiken aus CSV-Dateien."""
     problem_zones = get_problem_zones()
     recordings_dir = os.path.join(project_root, 'recordings')
     total_recordings = 0
@@ -512,23 +512,31 @@ def stats():
     total_duration_min = 0.0
     all_satellites = []
     avg_satellites = 0.0
+    # NEU: Variablen für Durchschnittswerte
+    avg_distance_km = 0.0
+    avg_duration_min = 0.0
 
     if not stats_libs_available:
         logger.error("Statistik-Bibliotheken (pandas, geopy) nicht verfügbar.")
         stats_data = {
             'total_recordings': 'N/A', 'total_distance': 'N/A', 'total_time': 'N/A',
-            'avg_satellites': 'N/A', 'problem_zones_count': len(problem_zones)
+            'avg_satellites': 'N/A', 'problem_zones_count': len(problem_zones),
+            'avg_distance': 'N/A', 'avg_duration': 'N/A'  # NEU
         }
     else:
         try:
             csv_files = glob.glob(os.path.join(recordings_dir, '*.csv'))
             total_recordings = len(csv_files)
+
             if total_recordings > 0:
                 for csv_file in csv_files:
                     try:
                         df = pd.read_csv(csv_file, parse_dates=['timestamp'], on_bad_lines='skip')
                         df.dropna(subset=['timestamp', 'latitude', 'longitude', 'satellites'], inplace=True)
-                        if not df.empty:
+
+                        # Benötigen mind. 2 Punkte für Distanz/Dauer
+                        if not df.empty and len(df) > 1:
+                            # Distanzberechnung
                             points = list(zip(df['latitude'], df['longitude']))
                             distance_m = 0
                             for i in range(len(points) - 1):
@@ -538,20 +546,41 @@ def stats():
                                     logger.warning(
                                         f"Ungültige Koordinaten in {csv_file} bei Index {i}, überspringe Distanzsegment.")
                             total_distance_km += distance_m / 1000.0
+
+                            # Dauerberechnung
                             duration = df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]
-                            total_duration_min += duration.total_seconds() / 60.0
+                            duration_minutes = duration.total_seconds() / 60.0
+                            total_duration_min += duration_minutes
+
+                            # Satelliten sammeln
                             all_satellites.extend(df['satellites'].tolist())
+                        elif not df.empty and len(df) <= 1:
+                            logger.warning(
+                                f"CSV-Datei {csv_file} hat zu wenige gültige Punkte ({len(df)}) für Distanz/Dauer-Berechnung.")
+
+
                     except pd.errors.EmptyDataError:
                         logger.warning(f"CSV-Datei {csv_file} ist leer oder konnte nicht gelesen werden.")
                     except Exception as e:
                         logger.error(f"Fehler beim Verarbeiten von {csv_file}: {e}", exc_info=False)
+
+                # Durchschnittliche Satellitenanzahl berechnen
                 if all_satellites:
                     valid_sats = [float(s) for s in all_satellites if
                                   isinstance(s, (int, float, str)) and str(s).replace('.', '', 1).isdigit()]
-                    if valid_sats: avg_satellites = sum(valid_sats) / len(valid_sats)
+                    if valid_sats:
+                        avg_satellites = sum(valid_sats) / len(valid_sats)
+
+                # NEU: Durchschnittswerte berechnen (nur wenn Aufnahmen vorhanden sind)
+                if total_recordings > 0:
+                    avg_distance_km = total_distance_km / total_recordings
+                    avg_duration_min = total_duration_min / total_recordings
+
         except Exception as e:
             logger.error(f"Fehler beim Laden der Statistiken: {e}", exc_info=True)
+            # Setze Daten auf 'Fehler' im Fehlerfall
             total_recordings, total_distance_km, total_duration_min, avg_satellites = 'Fehler', 'Fehler', 'Fehler', 'Fehler'
+            avg_distance_km, avg_duration_min = 'Fehler', 'Fehler'  # NEU
 
         stats_data = {
             'total_recordings': total_recordings,
@@ -559,17 +588,23 @@ def stats():
             'total_time': round(total_duration_min) if isinstance(total_duration_min,
                                                                   (int, float)) else total_duration_min,
             'avg_satellites': avg_satellites,
-            'problem_zones_count': len(problem_zones)
+            'problem_zones_count': len(problem_zones),
+            # NEU: Durchschnittswerte hinzufügen
+            'avg_distance': avg_distance_km,
+            'avg_duration': avg_duration_min
         }
 
     template_path = os.path.join(app.template_folder, 'stats.html')
     if not os.path.exists(template_path):
         logger.error(f"Template 'stats.html' nicht gefunden in {app.template_folder}")
         return "Fehler: Template 'stats.html' nicht gefunden.", 500
-    return render_template('stats.html', stats=stats_data, problem_zones=problem_zones)
+
+    return render_template('stats.html',
+                           stats=stats_data,
+                           problem_zones=problem_zones)
 
 
-# --- /control, /live (unverändert) ---
+# --- /control (Angepasst) ---
 @app.route('/control', methods=['POST'])
 def control():
     """Empfängt und verarbeitet Steuerbefehle."""
@@ -614,6 +649,7 @@ def control():
         return jsonify({"success": False, "message": f"Serverfehler: {str(e)}"}), 500
 
 
+# --- /live (Angepasst für Zoom) ---
 @app.route('/live')
 def live_view():
     """Live-Kartenansicht"""

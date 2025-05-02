@@ -1,58 +1,171 @@
 {% extends "layout.html" %}
-
 {% block title %}Statistiken{% endblock %}
 
+{% block additional_css %}
+<style>
+    .table-responsive-sm {
+        max-height: 400px; /* Begrenzt die Höhe der Tabelle */
+        overflow-y: auto; /* Fügt Scrollbalken hinzu, wenn nötig */
+    }
+    .problem-zone-table th {
+        position: sticky; /* Lässt den Header beim Scrollen stehen */
+        top: 0;
+        background-color: #f8f9fa; /* Hintergrund für den Header */
+        z-index: 1; /* Stellt sicher, dass der Header über dem Inhalt liegt */
+    }
+    /* Optional: Etwas mehr Platz zwischen den Statistik-Punkten */
+    .stats-dl dt, .stats-dl dd {
+        padding-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<h2>Statistiken</h2>
 <div class="row">
-    <div class="col-md-6">
-        <div class="card mb-3">
-            <div class="card-header">Aufnahmen</div>
-            <div class="card-body">
-                <p>Anzahl Aufnahmen: {{ stats.total_recordings }}</p>
-                <p>Gesamtdistanz: {{ "%.2f" | format(stats.total_distance) }} km</p>
-                <p>Gesamtzeit: {{ stats.total_time }} Minuten</p>
-                <p>Durchschnittliche Satelliten: {{ "%.1f" | format(stats.avg_satellites) }}</p>
+    <!-- Statistik-Übersicht -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-chart-pie"></i> Mäh-Statistiken</h5>
             </div>
-            <div class="card-footer text-muted">
-                Hinweis: Diese Daten sind Beispiele und müssen noch implementiert werden.
+            <div class="card-body">
+                {% if stats %}
+                    <dl class="row stats-dl"> {# Klasse für optionales Styling hinzugefügt #}
+                        <dt class="col-sm-5">Anzahl Mähvorgänge:</dt> {# Umbenannt #}
+                        <dd class="col-sm-7">{{ stats.total_recordings if stats.total_recordings is not none else 'N/A' }}</dd>
+
+                        <dt class="col-sm-5">Gesamte Strecke:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.total_distance is number and stats.total_distance is not none %}
+                                {{ "%.2f"|format(stats.total_distance) }} km
+                            {% else %}
+                                {{ stats.total_distance | default('N/A') }}
+                            {% endif %}
+                        </dd>
+
+                        {# --- NEU: Durchschnittliche Strecke --- #}
+                        <dt class="col-sm-5">Ø Strecke pro Vorgang:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.avg_distance is number and stats.avg_distance is not none %}
+                                {{ "%.2f"|format(stats.avg_distance) }} km
+                            {% else %}
+                                {{ stats.avg_distance | default('N/A') }}
+                            {% endif %}
+                        </dd>
+                        {# --- ENDE NEU --- #}
+
+                        <dt class="col-sm-5">Gesamte Mähzeit:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.total_time is number and stats.total_time is not none %}
+                                {{ stats.total_time }} Minuten
+                            {% else %}
+                                {{ stats.total_time | default('N/A') }}
+                            {% endif %}
+                        </dd>
+
+                        {# --- NEU: Durchschnittliche Mähzeit --- #}
+                        <dt class="col-sm-5">Ø Zeit pro Vorgang:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.avg_duration is number and stats.avg_duration is not none %}
+                                {{ "%.1f"|format(stats.avg_duration) }} Minuten
+                            {% else %}
+                                {{ stats.avg_duration | default('N/A') }}
+                            {% endif %}
+                        </dd>
+                        {# --- ENDE NEU --- #}
+
+                        <dt class="col-sm-5">Ø Satelliten (während Aufnahme):</dt> {# Präzisiert #}
+                        <dd class="col-sm-7">
+                             {% if stats.avg_satellites is number and stats.avg_satellites is not none %}
+                                {{ "%.1f"|format(stats.avg_satellites) }}
+                            {% else %}
+                                {{ stats.avg_satellites | default('N/A') }}
+                            {% endif %}
+                        </dd>
+
+                        <dt class="col-sm-5">Anzahl Problemzonen-Events:</dt> {# Umbenannt #}
+                        <dd class="col-sm-7">{{ stats.problem_zones_count if stats.problem_zones_count is not none else 'N/A' }}</dd>
+
+                        {# --- NEU: Einfache "Erfolgsrate" (mit Vorbehalt) --- #}
+                        <dt class="col-sm-5">Mähvorgänge ohne Problem-Event:</dt>
+                        <dd class="col-sm-7">
+                            {# Berechne nur, wenn beide Werte gültige Zahlen sind und Aufnahmen existieren #}
+                            {% if stats.total_recordings is number and stats.problem_zones_count is number and stats.total_recordings > 0 %}
+                                {# Berechne erfolgreiche Läufe (kann nicht negativ sein) #}
+                                {% set successful_runs = [0, stats.total_recordings - stats.problem_zones_count] | max %}
+                                {{ successful_runs }} von {{ stats.total_recordings }}
+                                ({{ "%.1f"|format(successful_runs * 100 / stats.total_recordings) }}%)
+                                <small class="d-block text-muted">(Annahme: max. 1 Problem pro Vorgang)</small> {# Hinweis auf Limitierung #}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </dd>
+                        {# --- ENDE NEU --- #}
+
+                    </dl>
+                    {% if stats.total_recordings == 'Fehler' or stats.total_recordings == 'N/A' %}
+                         <div class="alert alert-warning mt-3" role="alert">
+                             Konnte Statistiken nicht laden. Prüfe die Log-Dateien und ob 'pandas' und 'geopy' installiert sind.
+                         </div>
+                    {% endif %}
+                {% else %}
+                    <p class="card-text">Statistiken werden geladen oder sind nicht verfügbar.</p>
+                {% endif %}
             </div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="card mb-3">
-             <div class="card-header">Problemzonen</div>
-             <div class="card-body">
-                 <p>Anzahl gespeicherter Problemzonen: {{ stats.problem_zones_count }}</p>
-                 {% if problem_zones %}
-                     <ul class="list-group list-group-flush">
-                         {% for zone in problem_zones | sort(attribute='timestamp', reverse=true) | list[:5] %} {# Zeige die letzten 5 #}
-                             <li class="list-group-item">
-                                 Lat: {{ "%.6f" | format(zone.lat) }}, Lon: {{ "%.6f" | format(zone.lon) }}
-                                 <small class="text-muted float-end">
-                                     {{ moment(zone.timestamp | int).format('DD.MM.YYYY HH:mm') if zone.timestamp else 'Unbekannt' }}
-                                 </small>
-                             </li>
-                         {% endfor %}
-                         {% if problem_zones | length > 5 %}
-                             <li class="list-group-item text-muted">... und {{ problem_zones | length - 5 }} weitere</li>
-                         {% endif %}
-                     </ul>
-                 {% else %}
-                     <p>Keine Problemzonen gespeichert.</p>
-                 {% endif %}
+
+    <!-- Problemzonen -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-triangle"></i> Problemzonen-Log</h5> {# Umbenannt #}
+            </div>
+            <div class="card-body">
+                {% if problem_zones %}
+                    <div class="table-responsive-sm"> {# Macht Tabelle scrollbar auf kleinen Screens #}
+                        <table class="table table-striped table-hover table-sm problem-zone-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Zeitpunkt</th>
+                                    <th scope="col">Dauer (s)</th>
+                                    <th scope="col">Position</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for zone in problem_zones %}
+                                <tr>
+                                    <th scope="row">{{ loop.index }}</th>
+                                    <td>{{ zone.timestamp | default('N/A') }}</td>
+                                    <td>{{ zone.duration | default('N/A') }}</td>
+                                    <td>
+                                        {% if zone.latitude is not none and zone.longitude is not none %}
+                                            <a href="https://www.google.com/maps/search/?api=1&query={{ zone.latitude }},{{ zone.longitude }}" target="_blank" title="Auf Google Maps anzeigen">
+                                                {{ "%.6f"|format(zone.latitude) }}, {{ "%.6f"|format(zone.longitude) }}
+                                                <i class="fas fa-external-link-alt fa-xs"></i>
+                                            </a>
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="card-text">Keine Problemzonen gefunden oder die Datei <code>problemzonen.json</code> existiert nicht.</p>
+                {% endif %}
+            </div>
+             <div class="card-footer text-muted" style="font-size: 0.8em;">
+                 Problemzonen werden in <code>problemzonen.json</code> gespeichert.
              </div>
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
-<!-- Moment.js für Datumsformatierung (optional, wenn Timestamps angezeigt werden) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/locale/de.min.js"></script> {# Deutsche Lokalisierung #}
-<script>
-    moment.locale('de'); // Setze Moment.js auf Deutsch
-</script>
+{# Keine spezifischen Skripte für diese Seite benötigt #}
 {% endblock %}
