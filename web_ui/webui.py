@@ -104,20 +104,39 @@ def on_connect(client, userdata, flags, rc, properties=None):
             logger.info(f"Abonniert auf Topic: {gps_topic}")
 
         # NEU: Pi-Status Topic abonnieren
-        pi_status_topic = config.PI_STATUS_CONFIG.get("topic_pi_status")
-        if pi_status_topic:
-            client.subscribe(pi_status_topic)
-            logger.info(f"Abonniert auf Topic: {pi_status_topic}")
+        pi_status_topic_raw = config.PI_STATUS_CONFIG.get("topic_pi_status")
+        if pi_status_topic_raw:
+            # Bereinige den Topic-String, um Kommentare oder überflüssige Leerzeichen zu entfernen.
+            # Dies ist eine defensive Maßnahme; idealerweise sollte config.py saubere Werte liefern.
+            pi_status_topic_cleaned = str(pi_status_topic_raw).split("#")[0].strip()
+
+            if pi_status_topic_cleaned:  # Prüfen, ob nach der Bereinigung nicht leer
+                try:
+                    client.subscribe(pi_status_topic_cleaned)
+                    logger.info(f"Abonniert auf Pi Status Topic: {pi_status_topic_cleaned}")
+                    if pi_status_topic_raw != pi_status_topic_cleaned:
+                        logger.warning(f"Ursprünglicher Pi Status Topic '{pi_status_topic_raw}' wurde vor dem Abonnement zu '{pi_status_topic_cleaned}' bereinigt. "
+                                       "Bitte den Wert in der .env Datei oder config.py korrigieren.")
+                except ValueError as ve:
+                    logger.error(f"ValueError beim Abonnieren des Pi Status Topics '{pi_status_topic_cleaned}': {ve}. "
+                                 "Der Topic könnte ungültig sein (z.B. Nullzeichen, falsch formatierte Wildcards).")
+                except Exception as e:
+                    logger.error(f"Unerwarteter Fehler beim Abonnieren des Pi Status Topics '{pi_status_topic_cleaned}': {e}", exc_info=True)
+            else:
+                logger.warning(f"Pi Status Topic ('{pi_status_topic_raw}') wurde nach Bereinigung zu einem leeren String. Abonnement übersprungen.")
         else:
-            logger.warning("Pi Status Topic ('topic_pi_status') ist nicht in config.py definiert!")
-            # --- ENDE NEU ---
+            logger.warning("Pi Status Topic ('topic_pi_status') ist nicht in config.py definiert oder ist leer!")
+        # --- ENDE NEU ---
     else:
         logger.error(f"Verbindung zum MQTT Broker fehlgeschlagen mit Code: {rc}")
 
 
-def on_disconnect(client, userdata, rc, properties=None):
+def on_disconnect(client, userdata, flags, rc, properties=None):
     """Wird aufgerufen, wenn die Verbindung zum MQTT Broker getrennt wird."""
-    logger.warning(f"Verbindung zum MQTT Broker getrennt mit Code: {rc}. Paho-MQTT versucht automatischen Reconnect.")
+    # Das 'flags'-Argument wird von paho-mqtt V2 übergeben, auch wenn wir es hier nicht explizit verwenden.
+    # rc ist der reason_code.
+    logger.warning(
+        f"Verbindung zum MQTT Broker getrennt. Flags: {flags}, Reason Code: {rc}. Paho-MQTT versucht automatischen Reconnect.")
 
 
 def on_message(client, userdata, msg):
@@ -134,30 +153,47 @@ def on_message(client, userdata, msg):
                 if len(parts) >= 5:
                     try:
                         status_text = parts[1]
-                        satellites = int(parts[2]) if parts[2].isdigit() else 0
-                        lat = float(parts[3])
-                        lon = float(parts[4])
+                        satellites = int(parts[2]) if parts[2].isdigit() else 0 # Satellites should be convertible even without fix
                         agps_status = parts[5] if len(parts) > 5 else "Unbekannt"
                         mower_status_text = parts[6] if len(parts) > 6 else "Unbekannt"
 
-                        lat_bounds = config.GEO_CONFIG.get("lat_bounds")
-                        lon_bounds = config.GEO_CONFIG.get("lon_bounds")
-                        valid = True
-                        if lat_bounds and not (lat_bounds[0] <= lat <= lat_bounds[1]): valid = False
-                        if lon_bounds and not (lon_bounds[0] <= lon <= lon_bounds[1]): valid = False
+                        # --- NEU: Prüfen, ob Lat/Lon-Werte vorhanden sind, bevor konvertiert wird ---
+                        lat_str = parts[3]
+                        lon_str = parts[4]
+                        valid_coords = False
+                        if lat_str and lon_str: # Sind die Strings nicht leer?
+                            try:
+                                lat = float(lat_str)
+                                lon = float(lon_str)
+                                # Prüfe, ob innerhalb der definierten Grenzen (falls konfiguriert)
+                                lat_bounds = config.GEO_CONFIG.get("lat_bounds")
+                                lon_bounds = config.GEO_CONFIG.get("lon_bounds")
+                                if (not lat_bounds or (lat_bounds[0] <= lat <= lat_bounds[1])) and \
+                                   (not lon_bounds or (lon_bounds[0] <= lon <= lon_bounds[1])):
+                                    valid_coords = True
+                            except ValueError:
+                                logger.warning(f"Konnte Lat/Lon nicht in Float konvertieren: '{lat_str}', '{lon_str}'")
+                        # --- ENDE NEU ---
 
-                        if valid:
-                            from datetime import datetime
-                            with status_lock:
-                                current_status.update({
-                                    'lat': lat, 'lon': lon, 'status_text': status_text,
-                                    'satellites': satellites, 'agps_status': agps_status,
-                                    'mower_status': mower_status_text,
-                                    'last_update': datetime.now().strftime("%H:%M:%S")
-                                })
-                            socketio.emit('status_update', current_status)
-                        else:
-                            logger.warning(f"Ignoriere ungültige Koordinaten: Lat={lat}, Lon={lon}")
+                        from datetime import datetime
+                        with status_lock:
+                            # Update status text, satellites etc. first
+                            current_status.update({
+                                'status_text': status_text,
+                                'satellites': satellites,
+                                'agps_status': agps_status,
+                                'mower_status': mower_status_text,
+                                'last_update': datetime.now().strftime("%H:%M:%S")
+                            })
+                            # Only update lat and lon if valid_coords is True,
+                            # ensuring lat/lon are defined and valid.
+                            if valid_coords:
+                                 current_status['lat'] = lat
+                                 current_status['lon'] = lon
+                            # If valid_coords is False, current_status['lat'] and current_status['lon']
+                            # retain their previous values.
+
+                        socketio.emit('status_update', current_status)
                     except (ValueError, IndexError) as e:
                         logger.warning(f"Konnte Daten nicht aus Status-Nachricht extrahieren: {payload}, Fehler: {e}")
                     except Exception as e:
