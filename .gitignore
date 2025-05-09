@@ -76,3 +76,6 @@ tests/__pycache__/test_data_recorder.cpython-311.pyc
 tests/__pycache__/test_heatmap_generator.cpython-311.pyc
 tests/__pycache__/test_problem_detection.cpython-311.pyc
 tests/__pycache__/test_utils.cpython-311.pyc
+sslkeys.log
+mqtt_test.py
+d.py
