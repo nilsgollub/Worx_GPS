@@ -149,9 +149,8 @@ PI_STATUS_CONFIG = {
     # MQTT Topic, auf dem die Temperatur veröffentlicht wird
     "topic_pi_status": os.getenv("MQTT_TOPIC_PI_STATUS", "worx/pi_status"),
     # Intervall in Sekunden, wie oft die Temperatur gesendet werden soll
-    "pi_status_interval": int(os.getenv("PI_STATUS_INTERVAL", 60))
-}
-
+    "pi_status_interval": int(str(os.getenv("PI_STATUS_INTERVAL", "60")).split("#")[0].strip())
+    }
 
 # --- ENDE NEU ---
 
@@ -204,9 +203,14 @@ def validate_config():
     # Optional: Neue Werte validieren
     if not PI_STATUS_CONFIG.get("topic_pi_status"):
         missing.append("PI_STATUS_CONFIG['topic_pi_status'] (oder MQTT_TOPIC_PI_STATUS in .env)")
-    if PI_STATUS_CONFIG.get("pi_status_interval") is None or PI_STATUS_CONFIG.get("pi_status_interval") <= 0:
-        print(
-            f"WARNUNG: PI_STATUS_CONFIG['pi_status_interval'] ist ungültig oder nicht gesetzt. Verwende Standard 60s.")
+
+    pi_interval_val = PI_STATUS_CONFIG.get("pi_status_interval")
+    try:
+        if pi_interval_val is None or int(pi_interval_val) <= 0:
+            print(f"WARNUNG: PI_STATUS_CONFIG['pi_status_interval'] ('{pi_interval_val}') ist ungültig oder nicht gesetzt. Verwende Standard 60s.")
+            PI_STATUS_CONFIG["pi_status_interval"] = 60
+    except ValueError: # Falls es nach der Bereinigung immer noch kein Int ist
+        print(f"WARNUNG: PI_STATUS_CONFIG['pi_status_interval'] ('{pi_interval_val}') konnte nicht in eine Zahl umgewandelt werden. Verwende Standard 60s.")
         PI_STATUS_CONFIG["pi_status_interval"] = 60
 
     if missing:
