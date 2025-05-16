@@ -5,6 +5,7 @@ import paho.mqtt.client as paho_mqtt_client
 from config import MQTT_CONFIG, REC_CONFIG
 from queue import Queue, Full, Empty  # Thread-sichere Warteschlange
 import threading  # Für den Queue-Verarbeitungs-Thread
+import os # Für os.getpid()
 
 # Standard-Reconnect-Verzögerungen (in Sekunden)
 DEFAULT_INITIAL_RECONNECT_DELAY = 1
@@ -20,13 +21,19 @@ class MqttHandler:
     und eine Warteschlange für ausgehende Nachrichten, um Datenverlust bei
     Verbindungsunterbrechungen zu minimieren.
     """
-
-    def __init__(self, test_mode=False):
+    # --- MODIFIZIERTE __init__ ---
+    def __init__(self, test_mode=False, lwt_payload=None, lwt_topic=None, lwt_qos=1, lwt_retain=True):
         """
         Initialisiert den MQTT-Handler.
 
         Args:
             test_mode (bool): Wenn True, wird ein Präfix zu den Topics hinzugefügt.
+            lwt_payload (str, optional): Die Payload für die Last Will and Testament Nachricht.
+                                         Wenn None, wird kein LWT gesetzt, es sei denn,
+                                         es ist ein Default in der Klasse definiert.
+            lwt_topic (str, optional): Das Topic für die LWT Nachricht. Default ist topic_status.
+            lwt_qos (int, optional): QoS für LWT. Default ist 1.
+            lwt_retain (bool, optional): Retain-Flag für LWT. Default ist True.
         """
         self.test_mode = test_mode
         self._host = MQTT_CONFIG.get("host", "localhost")
@@ -56,8 +63,10 @@ class MqttHandler:
         self.topic_gps = f"{topic_prefix}{MQTT_CONFIG.get('topic_gps', 'worx/gps')}"
 
         # Client-Setup
-        client_id = f"worx_gps_recorder_{int(time.time())}"
-        self.client = paho_mqtt_client.Client(client_id=client_id, protocol=paho_mqtt_client.MQTTv311)
+        # Eindeutigere Client-ID, um Konflikte zu vermeiden, wenn mehrere Instanzen laufen
+        # (z.B. Worx_GPS_Rec und WebUI)
+        client_id = f"worx_gps_client_{os.getpid()}_{int(time.time()) % 1000}"
+        self.client = paho_mqtt_client.Client(client_id=client_id, callback_api_version=paho_mqtt_client.CallbackAPIVersion.VERSION2)
 
         if self._username and self._password:
             self.client.username_pw_set(self._username, self._password)
@@ -70,11 +79,16 @@ class MqttHandler:
         self.client.on_publish = self._on_publish
         self.client.on_log = self._on_log
 
-        # Will-Nachricht
-        will_topic = self.topic_status
-        will_payload = "recorder_offline"
-        self.client.will_set(will_topic, payload=will_payload, qos=1, retain=True)
-        logging.info(f"MQTT Will gesetzt: Topic='{will_topic}', Payload='{will_payload}'")
+        # --- LWT Konfiguration basierend auf Parametern ---
+        actual_lwt_topic = lwt_topic if lwt_topic is not None else self.topic_status
+        
+        if actual_lwt_topic and lwt_payload:
+            self.client.will_set(actual_lwt_topic, payload=lwt_payload, qos=lwt_qos, retain=lwt_retain)
+            logging.info(f"MQTT Will für Client '{client_id}' gesetzt: Topic='{actual_lwt_topic}', Payload='{lwt_payload}'")
+        elif actual_lwt_topic and not lwt_payload:
+            logging.info(f"Kein LWT-Payload für Client '{client_id}' angegeben, es wird kein LWT gesetzt.")
+        else:
+            logging.info(f"Kein LWT-Topic für Client '{client_id}' angegeben, es wird kein LWT gesetzt.")
 
         self._user_message_callback = None
         self._is_connected = False

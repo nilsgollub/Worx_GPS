@@ -42,7 +42,13 @@ class MqttService:
         # die Topics basierend auf config.REC_CONFIG['test_mode'] selbst aufbaut.
         # Wir müssen sicherstellen, dass config.REC_CONFIG korrekt geladen wird,
         # bevor MqttHandler instanziiert wird.
-        self.handler = MqttHandler(test_mode=config.REC_CONFIG.get("test_mode", False))
+        self.handler = MqttHandler(
+            test_mode=config.REC_CONFIG.get("test_mode", False),
+            lwt_payload="webui_offline", # Spezifisches LWT für die WebUI
+            lwt_topic=config.MQTT_CONFIG.get("topic_status"), # Standard Status-Topic
+            lwt_qos=1,
+            lwt_retain=True
+        )
 
         self._on_status_message_callback = None
         self._on_pi_status_message_callback = None

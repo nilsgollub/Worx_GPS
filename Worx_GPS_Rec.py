@@ -16,10 +16,10 @@ import subprocess
 try:
     import psutil
 
-    psutil_available = True
+    PSUTIL_AVAILABLE = True # Use uppercase for constant
 except ImportError:
-    psutil_available = False
-    logging.warning(
+    PSUTIL_AVAILABLE = False
+    logging.info( # Changed to info, warning might be too alarming if not needed
         "psutil nicht gefunden. Pi-Temperatur kann nicht gelesen werden. Installiere mit 'pip install psutil'")
 
 # Logging konfigurieren
@@ -37,7 +37,10 @@ class WorxGpsRec:
 
         # Instanziierung der Handler
         # MqttHandler sollte idealerweise die Reconnect-Logik kapseln
-        self.mqtt_handler = MqttHandler(self.test_mode)
+        self.mqtt_handler = MqttHandler(
+            test_mode=self.test_mode,
+            lwt_payload="recorder_offline" # Spezifisches LWT für den Recorder
+        )
         self.gps_handler = GpsHandler()  # GpsHandler kümmert sich um serielle Verbindung
         self.data_recorder = DataRecorder(self.mqtt_handler)
         self.problem_detector = ProblemDetector(self.mqtt_handler)
@@ -209,7 +212,7 @@ class WorxGpsRec:
     # --- NEUE HILFSFUNKTION zum Lesen der Temperatur ---
     def _get_cpu_temperature(self):
         """Liest die CPU-Temperatur des Raspberry Pi aus."""
-        if not psutil_available:
+        if not PSUTIL_AVAILABLE: # Use the constant
             return None  # psutil nicht verfügbar
 
         try:
@@ -236,7 +239,7 @@ class WorxGpsRec:
                 with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
                     temp_milli = int(f.read().strip())
                     return round(temp_milli / 1000.0, 1)
-            except FileNotFoundError:
+            except (FileNotFoundError, ValueError): # Add ValueError for robustness
                 logging.debug("Fallback /sys/class/thermal/thermal_zone0/temp nicht gefunden.")
                 pass  # Datei nicht gefunden, versuche nichts weiter
             except Exception as e:
@@ -263,10 +266,12 @@ class WorxGpsRec:
         pi_status_topic = PI_STATUS_CONFIG.get("topic_pi_status")
         last_pi_status_send = time.monotonic() - pi_status_interval - 1
 
-        if pi_status_topic and psutil_available:
+        logging.debug(f"Pi Status Topic: '{pi_status_topic}', psutil available: {PSUTIL_AVAILABLE}, Interval: {pi_status_interval}s")
+
+        if pi_status_topic and PSUTIL_AVAILABLE:
             logging.info(f"Pi-Temperatur wird alle {pi_status_interval}s auf Topic '{pi_status_topic}' gesendet.")
-        elif not psutil_available:
-            logging.warning("psutil nicht verfügbar, Pi-Temperatur wird nicht gesendet.")
+        elif not PSUTIL_AVAILABLE:
+            logging.warning("PSUTIL nicht verfügbar, Pi-Temperatur wird nicht gesendet.")
         else:
             logging.warning(
                 "Kein Topic für Pi-Status definiert (MQTT_TOPIC_PI_STATUS), Temperatur wird nicht gesendet.")
@@ -327,15 +332,17 @@ class WorxGpsRec:
                 # --- Ende GPS Status senden ---
 
                 # --- NEU: Pi-Temperatur senden ---
-                if pi_status_topic and psutil_available and (current_time - last_pi_status_send >= pi_status_interval):
+                if pi_status_topic and PSUTIL_AVAILABLE and (current_time - last_pi_status_send >= pi_status_interval):
                     logging.debug("Lese und sende Pi-Temperatur...")
                     cpu_temp = self._get_cpu_temperature()
+                    logging.debug(f"_get_cpu_temperature returned: {cpu_temp}")
                     if cpu_temp is not None:
                         try:
                             # Sende Temperatur als String
                             self.mqtt_handler.publish_message(pi_status_topic, f"{cpu_temp:.1f}")
                             logging.debug(f"Sende Pi-Temperatur: {cpu_temp:.1f}°C auf Topic {pi_status_topic}")
                             last_pi_status_send = current_time
+                            logging.debug("Pi temperature message published.")
                         except Exception as e:
                             logging.error(f"Fehler beim Senden der Pi-Temperatur: {e}", exc_info=True)
                     else:
@@ -355,7 +362,7 @@ class WorxGpsRec:
                 # --- Warten ---
                 # Finde das kürzeste nächste Sendeintervall, um nicht unnötig lange zu schlafen
                 next_gps_send = last_gps_status_send + gps_status_interval
-                next_pi_send = last_pi_status_send + pi_status_interval if pi_status_topic and psutil_available else float(
+                next_pi_send = last_pi_status_send + pi_status_interval if pi_status_topic and PSUTIL_AVAILABLE else float(
                     'inf')
                 next_event_time = min(next_gps_send, next_pi_send)
 
@@ -477,7 +484,10 @@ class WorxGpsRec:
 
         # Instanziierung der Handler
         # MqttHandler sollte idealerweise die Reconnect-Logik kapseln
-        self.mqtt_handler = MqttHandler(self.test_mode)
+        self.mqtt_handler = MqttHandler(
+            test_mode=self.test_mode,
+            lwt_payload="recorder_offline" # Spezifisches LWT für den Recorder
+        )
         self.gps_handler = GpsHandler()  # GpsHandler kümmert sich um serielle Verbindung
         self.data_recorder = DataRecorder(self.mqtt_handler)
         self.problem_detector = ProblemDetector(self.mqtt_handler)

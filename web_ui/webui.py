@@ -14,9 +14,9 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from flask_socketio import SocketIO
 from dotenv import set_key, find_dotenv, dotenv_values
 
+import glob # glob ist Teil der Standardbibliothek
 try:
     import pandas as pd
-    import glob
     from geopy.distance import geodesic
     stats_libs_available = True
 except ImportError:
@@ -59,6 +59,7 @@ system_monitor = None
 @app.route('/')
 def index():
     """Hauptseite / Dashboard"""
+    logger.info("Index-Route ('/') aufgerufen.")
     if not status_manager or not data_service or not mqtt_service:
         logger.error("Services nicht initialisiert in index Route.")
         return "Fehler: Services nicht initialisiert.", 503
@@ -66,26 +67,37 @@ def index():
     status_data = status_manager.get_current_mower_status()
     system_data = status_manager.get_current_system_stats()
     pi_data = status_manager.get_current_pi_status()
+    logger.info("Status-, System- und Pi-Daten abgerufen.")
+
     heatmaps_list = data_service.get_available_heatmaps()
     current_heatmap_html_path = data_service.get_current_heatmap_path()
+    logger.info(f"Heatmap-Liste ({len(heatmaps_list) if heatmaps_list else 0} Einträge) und aktueller Pfad abgerufen.")
 
     template_path = os.path.join(app.template_folder, 'index.html')
     if not os.path.exists(template_path):
         logger.error(f"Template 'index.html' nicht gefunden in {app.template_folder}")
         return "Fehler: Template 'index.html' nicht gefunden.", 500
+    logger.info("Template 'index.html' gefunden.")
 
     # Stelle sicher, dass heatmaps eine Liste ist, auch wenn sie leer ist
     if heatmaps_list is None:
         heatmaps_list = []
 
-    return render_template('index.html',
-                           status=status_data,
-                           system=system_data,
-                           pi_status=pi_data,
-                           heatmaps=heatmaps_list[:3],
-                           current_heatmap_html=current_heatmap_html_path,
-                           mqtt_connected=mqtt_service.is_connected()
-                          )
+    try:
+        logger.info("Versuche 'index.html' zu rendern...")
+        rendered_template = render_template('index.html',
+                               status=status_data,
+                               system=system_data,
+                               pi_status=pi_data,
+                               heatmaps=heatmaps_list[:3],
+                               current_heatmap_html=current_heatmap_html_path,
+                               mqtt_connected=mqtt_service.is_connected()
+                              )
+        logger.info("'index.html' erfolgreich gerendert.")
+        return rendered_template
+    except Exception as e:
+        logger.error(f"Fehler beim Rendern von 'index.html': {e}", exc_info=True)
+        return "Fehler beim Rendern der Seite.", 500
 
 @app.route('/maps')
 def maps():
