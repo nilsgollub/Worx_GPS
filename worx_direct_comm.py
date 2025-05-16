@@ -5,13 +5,13 @@ import time
 import uuid
 import logging
 import threading
-import ssl # Neu für expliziten SSLContext
+import ssl 
 from datetime import datetime
 
 import requests
 import paho.mqtt.client as mqtt
 import jwt # Für JWT-Dekodierung
-import certifi # Import certifi
+import certifi 
 from dotenv import load_dotenv
 
 # --- Konfiguration ---
@@ -231,25 +231,25 @@ class WorxLandroidMQTTClient:
         self.mqtt_client = mqtt.Client(client_id=self.client_id, 
                                        protocol=mqtt.MQTTv311, 
                                        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                                       clean_session=True) # Explizit clean_session setzen
+                                       clean_session=True) 
         
-        # Callbacks so früh wie möglich setzen, um alle Logs zu erfassen
         self.mqtt_client.on_connect = self._on_connect
         self.mqtt_client.on_message = self._on_message
         self.mqtt_client.on_disconnect = self._on_disconnect
         self.mqtt_client.on_log = self._on_log 
         
         if self.broker_port == 443:
-            # Use Paho's tls_set() with explicit TLSv1.2 version
             self.mqtt_client.tls_set(tls_version=ssl.PROTOCOL_TLSv1_2) 
-            # SSL Key Logging für Wireshark aktivieren
+            
             keylog_filename = os.getenv("SSLKEYLOGFILE")
-            if keylog_filename:
+            if keylog_filename and hasattr(self.mqtt_client, '_ssl_context') and self.mqtt_client._ssl_context:
                 self.mqtt_client._ssl_context.keylog_filename = keylog_filename
                 logger.info(f"SSL Key Logging aktiviert. Schlüssel werden in '{keylog_filename}' geschrieben.")
+            elif keylog_filename:
+                logger.warning("SSLKEYLOGFILE gesetzt, aber _ssl_context nicht verfügbar für Key Logging.")
+
             logger.debug("MQTT TLS enabled using Paho's tls_set() with TLSv1.2.")
             
-            # Keep TLS verification disabled for this diagnostic step
             self.mqtt_client.tls_insecure_set(True)
             logger.warning("!!! MQTT TLS-Verifizierung für Diagnosezwecke deaktiviert (tls_insecure_set(True)) !!!")
 
@@ -335,34 +335,27 @@ class WorxLandroidMQTTClient:
 
         try:
             logger.info(f"Versuche MQTT-Verbindung zu {self.broker_url}:{self.broker_port} mit Client ID: {self.client_id}, Keepalive: 60s")
-            # In WorxLandroidMQTTClient.connect_and_loop(), vor dem connect-Aufruf:
+            
+            target_host_for_connect = self.broker_url # Standardmäßig Hostname
             try:
                 broker_ip = socket.gethostbyname(self.broker_url)
                 logger.debug(f"IP Adresse für {self.broker_url} ist {broker_ip}")
+                target_host_for_connect = broker_ip # Explizit die aufgelöste IPv4-Adresse verwenden
             except socket.gaierror:
                 logger.error(f"Konnte IP für {self.broker_url} nicht auflösen.")
-                # Hier ggf. abbrechen
-
-            # Experimenteller Schritt: Versuche, Socket-Optionen zu setzen
-            # Dies ist unüblich, da Paho dies intern handhaben sollte.
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-                # Paho wird diesen Socket nicht direkt verwenden, aber es ist ein Test, ob das System reagiert.
-                sock.close() # Schließe den Test-Socket wieder
+            
+            try: # Experimenteller Socket-Keepalive-Test
+                sock_test = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock_test.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                sock_test.close() 
                 logger.debug("Experimenteller Socket-Keepalive-Options-Test durchgeführt (Socket wieder geschlossen).")
             except Exception as e_sock:
                 logger.warning(f"Experimenteller Socket-Options-Test fehlgeschlagen: {e_sock}")
 
-            rc = self.mqtt_client.connect(self.broker_url, self.broker_port, keepalive=60)
-            logger.debug(f"MQTT connect() call returned with code: {rc} ({mqtt.error_string(rc if isinstance(rc, int) else -1 )})") # error_string erwartet int
-
-            if rc != mqtt.MQTT_ERR_SUCCESS:
-                logger.error(f"MQTT connect() failed with Paho return code: {rc} - {mqtt.error_string(rc if isinstance(rc, int) else -1)}")
-                # Hier könnten wir den Loop direkt beenden, da die Verbindung nicht erfolgreich war
-                self.stop() # Stoppe den Client, da die Verbindung fehlgeschlagen ist
-                return
-
+            # Verwende connect_async()
+            logger.info(f"Paho MQTT connect_async() wird initiiert zu Host/IP: {target_host_for_connect} Port: {self.broker_port}")
+            self.mqtt_client.connect_async(target_host_for_connect, self.broker_port, keepalive=60)
+            
             self.mqtt_client.loop_start() 
             logger.info("MQTT Client Loop gestartet. Warte auf Nachrichten...")
 
