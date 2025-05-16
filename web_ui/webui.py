@@ -82,8 +82,8 @@ def index():
                            status=status_data,
                            system=system_data,
                            pi_status=pi_data,
-                           heatmaps=heatmaps[:3],
-                           current_heatmap_html=current_heatmap_html,
+                           heatmaps=heatmaps_list[:3],
+                           current_heatmap_html=current_heatmap_html_path,
                            mqtt_connected=mqtt_service.is_connected()
                           )
 
@@ -225,11 +225,11 @@ def control():
                        'generate_heatmaps': 'GENERATE_HEATMAPS', 'shutdown': 'SHUTDOWN'}
         message = command_map.get(command)
 
-        if message_to_send:
-            if mqtt_service.publish_command(message_to_send):
+        if message: # Korrigiert von message_to_send
+            if mqtt_service.publish_command(message): # Korrigiert von message_to_send
                 return jsonify({"success": True, "message": f"Befehl '{command}' gesendet."})
             else:
-                return jsonify({"success": False, "message": f"MQTT Sende-Fehler: {str(e)}"}), 500
+                return jsonify({"success": False, "message": "MQTT Sende-Fehler: Befehl konnte nicht veröffentlicht werden."}), 500
         else:
             logger.warning(f"Unbekannter Steuerbefehl empfangen: {command}")
             return jsonify({"success": False, "message": f"Unbekannter Befehl: {command}"}), 400
@@ -294,7 +294,6 @@ if __name__ == '__main__':
     # Globale Service-Instanzen erstellen
     try:
         status_manager = StatusManager(socketio, config.GEO_CONFIG.get("map_center", (0.0, 0.0)))
-        logger.info("StatusManager initialisiert.")
 
         # MqttService benötigt das Pi-Status-Topic aus der config.py
         pi_status_topic_for_mqtt_service = config.PI_STATUS_CONFIG.get("topic_pi_status")
@@ -303,7 +302,6 @@ if __name__ == '__main__':
         mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
         # Optional: mqtt_service.set_gps_update_callback(...)
         mqtt_service.connect()
-        logger.info("MqttService initialisiert und verbunden.")
 
         data_service = DataService(
             project_root_path=project_root,
@@ -312,11 +310,9 @@ if __name__ == '__main__':
             geo_config_main=config.GEO_CONFIG,
             rec_config_main=config.REC_CONFIG
         )
-        logger.info("DataService initialisiert.")
 
         system_monitor = SystemMonitor(status_manager.update_system_stats)
         system_monitor.start()
-        logger.info("SystemMonitor gestartet.")
 
     except Exception as e:
         logger.critical(f"Fehler bei der Initialisierung der Services: {e}", exc_info=True)
