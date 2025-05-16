@@ -135,9 +135,15 @@ class MqttHandler:
         else:
             logging.debug("Kein benutzerdefinierter Callback für MQTT-Nachrichten gesetzt.")
 
-    def _on_publish(self, client, userdata, mid):
-        """Callback, der nach erfolgreichem Senden einer Nachricht mit QoS > 0 aufgerufen wird."""
-        logging.debug(f"MQTT Nachricht (mid={mid}) erfolgreich veröffentlicht.")
+    def _on_publish(self, client, userdata, mid, reason_code, properties=None):
+        """
+        Callback, der nach erfolgreichem Senden einer Nachricht mit QoS > 0 aufgerufen wird.
+        (Paho MQTT v2.x Signatur)
+        """
+        if reason_code == 0: # MQTT_ERR_SUCCESS
+            logging.debug(f"MQTT Nachricht (mid={mid}) erfolgreich veröffentlicht.")
+        else:
+            logging.warning(f"MQTT Nachricht (mid={mid}) Veröffentlichung fehlgeschlagen mit Code {reason_code}.")
         # Hier könnte man komplexere Logik für QoS 1/2 Bestätigungen einbauen,
         # z.B. Nachrichten aus einer "pending confirmation" Liste entfernen.
 

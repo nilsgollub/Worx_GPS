@@ -60,32 +60,35 @@ system_monitor = None
 def index():
     """Hauptseite / Dashboard"""
     logger.info("Index-Route ('/') aufgerufen.")
-    if not status_manager or not data_service or not mqtt_service:
-        logger.error("Services nicht initialisiert in index Route.")
-        return "Fehler: Services nicht initialisiert.", 503
+    try: # Add a try-except around the whole function to catch early errors
+        if not status_manager or not data_service or not mqtt_service:
+            logger.error("Services nicht initialisiert in index Route.")
+            return "Fehler: Services nicht initialisiert.", 503
 
-    status_data = status_manager.get_current_mower_status()
-    system_data = status_manager.get_current_system_stats()
-    pi_data = status_manager.get_current_pi_status()
-    logger.info("Status-, System- und Pi-Daten abgerufen.")
+        logger.debug("Abrufen von Statusdaten...")
+        status_data = status_manager.get_current_mower_status()
+        system_data = status_manager.get_current_system_stats()
+        pi_data = status_manager.get_current_pi_status()
+        logger.info("Status-, System- und Pi-Daten abgerufen.")
 
-    heatmaps_list = data_service.get_available_heatmaps()
-    current_heatmap_html_path = data_service.get_current_heatmap_path()
-    logger.info(f"Heatmap-Liste ({len(heatmaps_list) if heatmaps_list else 0} Einträge) und aktueller Pfad abgerufen.")
+        logger.debug("Abrufen von Heatmap-Daten...")
+        heatmaps_list = data_service.get_available_heatmaps()
+        current_heatmap_html_path = data_service.get_current_heatmap_path()
+        logger.info(f"Heatmap-Liste ({len(heatmaps_list) if heatmaps_list else 0} Einträge) und aktueller Pfad abgerufen.")
 
-    template_path = os.path.join(app.template_folder, 'index.html')
-    if not os.path.exists(template_path):
-        logger.error(f"Template 'index.html' nicht gefunden in {app.template_folder}")
-        return "Fehler: Template 'index.html' nicht gefunden.", 500
-    logger.info("Template 'index.html' gefunden.")
+        template_path = os.path.join(app.template_folder, 'index.html')
+        if not os.path.exists(template_path):
+            logger.error(f"Template 'index.html' nicht gefunden in {app.template_folder}")
+            return "Fehler: Template 'index.html' nicht gefunden.", 500
+        logger.info("Template 'index.html' gefunden.")
 
-    # Stelle sicher, dass heatmaps eine Liste ist, auch wenn sie leer ist
-    if heatmaps_list is None:
-        heatmaps_list = []
+        # Stelle sicher, dass heatmaps eine Liste ist, auch wenn sie leer ist
+        if heatmaps_list is None:
+            heatmaps_list = []
 
-    try:
-        logger.info("Versuche 'index.html' zu rendern...")
-        rendered_template = render_template('index.html',
+        try:
+            logger.info("Versuche 'index.html' zu rendern...")
+            rendered_template = render_template('index.html',
                                status=status_data,
                                system=system_data,
                                pi_status=pi_data,
@@ -93,11 +96,15 @@ def index():
                                current_heatmap_html=current_heatmap_html_path,
                                mqtt_connected=mqtt_service.is_connected()
                               )
-        logger.info("'index.html' erfolgreich gerendert.")
-        return rendered_template
+            logger.info("'index.html' erfolgreich gerendert.")
+            return rendered_template
+        except Exception as e:
+            logger.error(f"Fehler beim Rendern von 'index.html': {e}", exc_info=True)
+            return "Fehler beim Rendern der Seite.", 500
+
     except Exception as e:
-        logger.error(f"Fehler beim Rendern von 'index.html': {e}", exc_info=True)
-        return "Fehler beim Rendern der Seite.", 500
+        logger.critical(f"Kritischer Fehler in der Index-Route: {e}", exc_info=True)
+        return "Ein kritischer Fehler ist aufgetreten.", 500 # Return a generic error page
 
 @app.route('/maps')
 def maps():
