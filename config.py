@@ -147,7 +147,7 @@ POST_PROCESSING_CONFIG = {
 # --- NEU: Pi Status Konfiguration ---
 PI_STATUS_CONFIG = {
     # MQTT Topic, auf dem die Temperatur veröffentlicht wird
-    "topic_pi_status": os.getenv("MQTT_TOPIC_PI_STATUS", "worx/pi_status"),
+    "topic_pi_status": str(os.getenv("MQTT_TOPIC_PI_STATUS", "worx/pi_status")).split("#")[0].strip(),
     # Intervall in Sekunden, wie oft die Temperatur gesendet werden soll
     "pi_status_interval": int(str(os.getenv("PI_STATUS_INTERVAL", "60")).split("#")[0].strip())
     }

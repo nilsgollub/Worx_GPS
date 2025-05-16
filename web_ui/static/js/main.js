@@ -106,6 +106,7 @@ function sendControlCommand(command) {
     console.log(`Sende Steuerbefehl: ${command}`);
     const button = document.getElementById(`${command}-button`);
     let originalButtonText = '';
+    let commandSucceeded = false; // Flag, um Erfolg für finally-Block zu verfolgen
     if (button) {
         originalButtonText = button.innerHTML;
         button.disabled = true;
@@ -127,15 +128,24 @@ function sendControlCommand(command) {
         .then(data => {
             console.log('Antwort vom Server:', data);
             showNotification(data.message || 'Befehl gesendet.', data.success ? 'success' : 'error');
+            if (data.success) {
+                commandSucceeded = true;
+            }
         })
         .catch((error) => {
             console.error('Fehler beim Senden des Steuerbefehls:', error);
             showNotification(`Fehler: ${error.message || 'Unbekannter Fehler beim Senden.'}`, 'error');
+            // commandSucceeded bleibt false
         })
         .finally(() => {
             if (button) {
-                button.disabled = false;
-                button.innerHTML = originalButtonText;
+                button.innerHTML = originalButtonText; // Text immer zurücksetzen
+                // Wenn der Befehl 'start_recording' oder 'stop_recording' war UND erfolgreich,
+                // überlasse 'status_update' die Verwaltung des Deaktivierungsstatus.
+                // Andernfalls (Befehl fehlgeschlagen oder es ist ein anderer Befehlstyp), aktiviere den Button wieder.
+                if (!((command === 'start_recording' || command === 'stop_recording') && commandSucceeded)) {
+                    button.disabled = false;
+                }
             }
         });
 }
