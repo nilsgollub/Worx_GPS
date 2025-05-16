@@ -1,6 +1,6 @@
 # live_gps_map.py
 import logging
-import os
+import os # os wird bereits für urandom und getpid verwendet
 import sys
 import threading
 import json
@@ -17,6 +17,11 @@ try:
 except ImportError:
     print("Fehler: config.py nicht gefunden. Stellen Sie sicher, dass sie im PYTHONPATH liegt.")
     sys.exit(1)
+
+# Es wird angenommen, dass load_dotenv() entweder in config.py oder an anderer Stelle global aufgerufen wird.
+# Falls nicht, und Sie .env-Variablen hier nutzen möchten, fügen Sie hinzu:
+# from dotenv import load_dotenv
+# load_dotenv()
 
 # --- Logging Konfiguration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -189,10 +194,13 @@ if __name__ == '__main__':
     Path("static").mkdir(exist_ok=True)
     # (Optional: Kopiere ein Icon für den Marker nach static/marker-icon.png)
 
+    # Portkonfiguration über Umgebungsvariable oder Standardwert
+    # Verwenden Sie eine andere Variable als FLASK_PORT, um Konflikte mit webui.py zu vermeiden,
+    # oder stellen Sie sicher, dass sie unterschiedliche Werte in .env haben, wenn beide gleichzeitig laufen.
+    default_live_map_port = 5002 # Ein anderer Standardport als webui
+    port = int(os.getenv('LIVE_GPS_MAP_SERVER_PORT', default_live_map_port))
     logger.info("Starte MQTT Client Setup...")
     setup_mqtt()
-
-    port = 5001 # Wähle einen freien Port
     logger.info(f"Starte Flask-SocketIO Server auf http://0.0.0.0:{port}")
     # Verwende socketio.run für korrekten Start mit async_mode
     try:
