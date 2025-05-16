@@ -38,7 +38,7 @@ from web_ui.data_service import DataService
 from web_ui.system_monitor import SystemMonitor
 
 # --- Logging ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s') # Geändert auf DEBUG und detaillierteres Format
 logger = logging.getLogger(__name__)
 
 # --- Flask & SocketIO Setup ---
