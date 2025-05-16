@@ -7,6 +7,7 @@ from dotenv import dotenv_values, find_dotenv
 import sys
 
 # Füge das übergeordnete Verzeichnis zum Suchpfad hinzu
+from datetime import datetime # Importiere datetime
 project_root_ui = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 project_root_base = os.path.dirname(project_root_ui)
 if project_root_base not in sys.path:
@@ -130,6 +131,54 @@ class DataService:
     def get_problem_zones(self):
         """Lädt Problemzonen aus der Datei."""
         return self.data_manager.read_problemzonen_data()
+
+    def get_formatted_problem_zones(self):
+        """
+        Lädt Problemzonen aus der Datei und formatiert sie für die Anzeige in der WebUI.
+        Konvertiert Unix-Zeitstempel und formatiert Koordinaten.
+        """
+        raw_problem_zones = self.data_manager.read_problemzonen_data()
+        formatted_zones = []
+
+        for problem in raw_problem_zones:
+            formatted_problem = {}
+            # Format Timestamp
+            timestamp_unix = problem.get('timestamp')
+            if timestamp_unix is not None:
+                try:
+                    # Convert Unix timestamp (float) to datetime object
+                    dt_object = datetime.fromtimestamp(timestamp_unix)
+                    # Format datetime object to a readable string
+                    formatted_problem['zeitpunkt'] = dt_object.strftime('%Y-%m-%d %H:%M:%S')
+                except (ValueError, TypeError):
+                    formatted_problem['zeitpunkt'] = "Ungültiger Zeitstempel"
+                    logger.warning(f"Ungültiger Unix-Zeitstempel in Problemzone gefunden: {timestamp_unix}")
+            else:
+                formatted_problem['zeitpunkt'] = "N/A"
+
+            # Format Position
+            lat = problem.get('lat')
+            lon = problem.get('lon')
+            if lat is not None and lon is not None:
+                try:
+                    # Format coordinates to a string
+                    formatted_problem['position'] = f"Lat: {lat:.6f}, Lon: {lon:.6f}"
+                    # Also provide separate formatted lat/lon in case the template wants them
+                    formatted_problem['lat_formatted'] = f"{lat:.6f}"
+                    formatted_problem['lon_formatted'] = f"{lon:.6f}"
+                except (ValueError, TypeError):
+                     formatted_problem['position'] = "Ungültige Koordinaten"
+                     formatted_problem['lat_formatted'] = "N/A"
+                     formatted_problem['lon_formatted'] = "N/A"
+                     logger.warning(f"Ungültige Lat/Lon Werte in Problemzone gefunden: Lat={lat}, Lon={lon}")
+            else:
+                formatted_problem['position'] = "Position N/A"
+                formatted_problem['lat_formatted'] = "N/A"
+                formatted_problem['lon_formatted'] = "N/A"
+
+            formatted_zones.append(formatted_problem)
+
+        return formatted_zones
 
     def get_statistics(self):
         """Berechnet Statistiken aus den Mähdaten."""

@@ -209,7 +209,7 @@ def save_config():
 def stats():
     """Statistikseite"""
     if not data_service:
-        logger.error("DataService nicht initialisiert in stats Route.")
+        logger.error("DataService nicht initialisiert in stats Route.") # Keep this check
         return "Fehler: DataService nicht initialisiert.", 503
 
     stats_data = data_service.get_statistics()
@@ -222,7 +222,7 @@ def stats():
 
     return render_template('stats.html',
                            stats=stats_data,
-                           problem_zones=problem_zones)
+                           problem_zones=data_service.get_formatted_problem_zones()) # Use the new formatted data
 
 
 @app.route('/control', methods=['POST'])

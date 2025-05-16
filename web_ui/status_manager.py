@@ -141,16 +141,17 @@ class StatusManager:
         system_stats_to_emit = None # Variable, um den Status nach dem Lock zu speichern
 
         with self.lock:
-            self.current_system_stats.update(stats_dict)
-            logger.debug(f"System-Statistiken aktualisiert: {self.current_system_stats}")
-            # Hole den Status *innerhalb* des Locks, aber sende *außerhalb*
-            system_stats_to_emit = self.current_system_stats.copy()
-        except Exception as e: # Catch potential errors during update
-            logger.error(f"Fehler beim Aktualisieren der System-Statistiken im Lock: {e}", exc_info=True)
-            system_stats_to_emit = self.current_system_stats.copy() # Send last known good or initial
+            try:
+                self.current_system_stats.update(stats_dict)
+                logger.debug(f"System-Statistiken aktualisiert: {self.current_system_stats}")
+                # Hole den Status *innerhalb* des Locks, aber sende *außerhalb*
+                system_stats_to_emit = self.current_system_stats.copy()
+            except Exception as e: # Catch potential errors during update
+                logger.error(f"Fehler beim Aktualisieren der System-Statistiken im Lock: {e}", exc_info=True)
+                system_stats_to_emit = self.current_system_stats.copy() # Send last known good or initial
 
         # Emit the update *after* releasing the lock
-        if system_stats_to_emit:
+        if system_stats_to_emit is not None: # Sicherstellen, dass es nicht None ist
             self._emit_socketio_event('system_update', system_stats_to_emit, "System-Statistiken")
 
 
