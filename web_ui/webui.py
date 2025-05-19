@@ -286,22 +286,28 @@ def live_view():
     status_data = status_manager.get_current_mower_status()
 
     geo_config_dict = getattr(config, "GEO_CONFIG", {})
-    map_config = {
-        'center_lat': status_data['lat'],
-        'center_lon': status_data['lon'],
-        'zoom': geo_config_dict.get('zoom_start', 19),
+    
+    # Definiere initiale Kartenparameter. Verwende Statusdaten, wenn verfügbar, sonst Fallback auf GEO_CONFIG.
+    initial_lat = status_data.get('lat') if status_data.get('lat') is not None else geo_config_dict.get("map_center", (0,0))[0]
+    initial_lon = status_data.get('lon') if status_data.get('lon') is not None else geo_config_dict.get("map_center", (0,0))[1]
+
+    map_config_for_live = {
+        'initial_lat': initial_lat,
+        'initial_lon': initial_lon,
+        'initial_zoom': geo_config_dict.get('max_zoom', 22), # Geändert auf max_zoom
         'max_zoom': geo_config_dict.get('max_zoom', 22),
         'osm_tiles': 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         'osm_attr': '&copy; <a href="https://osm.org/copyright">OSM</a> contributors',
         'satellite_tiles': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
         'satellite_attr': 'Google Satellite'
     }
+
     template_path = os.path.join(app.template_folder, 'live.html')
     if not os.path.exists(template_path):
         logger.error(f"Template 'live.html' nicht gefunden in {app.template_folder}")
         return "Fehler: Template 'live.html' nicht gefunden.", 500
 
-    return render_template('live.html', status=status_data, map_config=map_config)
+    return render_template('live.html', status=status_data, map_config=map_config_for_live)
 
 
 # --- SocketIO Events (Interagieren mit Status-Manager) ---
