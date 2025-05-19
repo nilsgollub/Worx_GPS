@@ -130,33 +130,32 @@
                                 <tr>
                                     <th scope="col">#</th>
                                     <th scope="col">Zeitpunkt</th>
-                                    <th scope="col">Dauer (s)</th>
+                                    {# <th scope="col">Dauer (s)</th> #} {# Diese Spalte wird nicht mehr benötigt #}
                                     <th scope="col">Position</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for zone in problem_zones %}
                                 <tr>
-                                    <th scope="row">{{ loop.index }}</th>
-                                    <td>{{ zone.timestamp | default('N/A') }}</td>
-                                    <td>{{ zone.duration | default('N/A') }}</td>
-                                    <td>
-                                        {# --- KORRIGIERTE PRÜFUNG --- #}
-                                        {# Prüfe, ob die Schlüssel existieren UND nicht None sind #}
-                                        {% if 'latitude' in zone and zone.latitude is not none and 'longitude' in zone and zone.longitude is not none %}
-                                            <a href="https://www.google.com/maps/search/?api=1&query={{ zone.latitude }},{{ zone.longitude }}" target="_blank" title="Auf Google Maps anzeigen">
-                                                {# Versuche Formatierung nur, wenn es Zahlen sind (zusätzliche Sicherheit) #}
-                                                {% if zone.latitude is number and zone.longitude is number %}
-                                                    {{ "%.6f"|format(zone.latitude) }}, {{ "%.6f"|format(zone.longitude) }}
-                                                {% else %}
-                                                    {{ zone.latitude }}, {{ zone.longitude }} {# Fallback ohne Formatierung #}
-                                                {% endif %}
+                                    <th scope="row">{{ loop.index }}</th> {# Zeige die Zeilennummer an #}
+                                    <td>{{ zone.zeitpunkt | default('N/A') }}</td> {# Verwende den neuen Schlüssel 'zeitpunkt' #}
+                                    <td> {# Verwende den neuen Schlüssel 'position' #}
+                                        {% if zone.position and zone.position != 'Position N/A' and zone.position != 'Ungültige Koordinaten' %}
+                                            {# Extrahiere Lat/Lon aus dem formatierten String für den Google Maps Link #}
+                                            {% set lat_lon_parts = zone.position.replace('Lat: ', '').replace('Lon: ', '').split(', ') %}
+                                            {% if lat_lon_parts | length == 2 %}
+                                            <a href="https://www.google.com/maps/search/?api=1&query={{ lat_lon_parts[0] }},{{ lat_lon_parts[1] }}" target="_blank" title="Auf Google Maps anzeigen">
+                                                {{ zone.position }}
                                                 <i class="fas fa-external-link-alt fa-xs"></i>
                                             </a>
                                         {% else %}
-                                            Position N/A {# Zeige N/A an, wenn Schlüssel fehlen oder None sind #}
+                                            {# Wenn das Parsen für den Link fehlschlägt, zeige trotzdem den Positionstext an #}
+                                            {{ zone.position }}
                                         {% endif %}
-                                        {# --- ENDE KORRIGIERTE PRÜFUNG --- #}
+                                        {% else %}
+                                            {# Behandelt 'Position N/A', 'Ungültige Koordinaten' oder andere falsy-Werte für zone.position #}
+                                            {{ zone.position | default('N/A') }}
+                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}

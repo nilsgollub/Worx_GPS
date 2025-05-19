@@ -139,6 +139,8 @@ class DataService:
         """
         raw_problem_zones = self.data_manager.read_problemzonen_data()
         formatted_zones = []
+        logger.debug(f"DataService:get_formatted_problem_zones - {len(raw_problem_zones)} Roh-Problemzonen empfangen.")
+        logger.debug(f"DataService:get_formatted_problem_zones - Erste 3 Roh-Problemzonen (falls vorhanden): {raw_problem_zones[:3]}")
 
         for problem in raw_problem_zones:
             formatted_problem = {}
@@ -150,6 +152,7 @@ class DataService:
                     dt_object = datetime.fromtimestamp(timestamp_unix)
                     # Format datetime object to a readable string
                     formatted_problem['zeitpunkt'] = dt_object.strftime('%Y-%m-%d %H:%M:%S')
+                    logger.debug(f"  Problem-Loop: Timestamp for {problem.get('timestamp')} formatted to {formatted_problem['zeitpunkt']}")
                 except (ValueError, TypeError):
                     formatted_problem['zeitpunkt'] = "Ungültiger Zeitstempel"
                     logger.warning(f"Ungültiger Unix-Zeitstempel in Problemzone gefunden: {timestamp_unix}")
@@ -159,9 +162,11 @@ class DataService:
             # Format Position
             lat = problem.get('lat')
             lon = problem.get('lon')
+            logger.debug(f"  Problem-Loop: Processing item: {problem}, Got lat: {lat}, lon: {lon}")
             if lat is not None and lon is not None:
                 try:
                     # Format coordinates to a string
+                    logger.debug(f"    Problem-Loop: Formatting valid lat/lon: {lat}, {lon}")
                     formatted_problem['position'] = f"Lat: {lat:.6f}, Lon: {lon:.6f}"
                     # Also provide separate formatted lat/lon in case the template wants them
                     formatted_problem['lat_formatted'] = f"{lat:.6f}"
@@ -170,11 +175,13 @@ class DataService:
                      formatted_problem['position'] = "Ungültige Koordinaten"
                      formatted_problem['lat_formatted'] = "N/A"
                      formatted_problem['lon_formatted'] = "N/A"
+                     logger.warning(f"    Problem-Loop: ValueError/TypeError formatting lat/lon. Original lat: {problem.get('lat')}, lon: {problem.get('lon')}")
                      logger.warning(f"Ungültige Lat/Lon Werte in Problemzone gefunden: Lat={lat}, Lon={lon}")
             else:
                 formatted_problem['position'] = "Position N/A"
                 formatted_problem['lat_formatted'] = "N/A"
                 formatted_problem['lon_formatted'] = "N/A"
+                logger.debug(f"    Problem-Loop: Lat or Lon is None. Original lat: {problem.get('lat')}, lon: {problem.get('lon')}. Setting to N/A.")
 
             formatted_zones.append(formatted_problem)
 

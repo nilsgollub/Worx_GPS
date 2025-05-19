@@ -186,18 +186,18 @@ class MqttHandler:
             logging.error(f"MQTT-Verbindungsfehler mit Code {rc}: {paho_mqtt_client.connack_string(rc)}")
             # Paho's loop kümmert sich um Reconnect
 
-    def _on_disconnect(self, client, userdata, rc, properties=None):
+    def _on_disconnect(self, client, userdata, flags, reason_code, properties):
         """Callback, der bei Verbindungsverlust aufgerufen wird.
         
-        Der properties-Parameter wird für MQTT 5.0 verwendet und ist in MQTT 3.1.1 nicht vorhanden.
+        Die Parameter flags, reason_code und properties entsprechen der Paho MQTT v2.x API.
         """
         # was_connected = self._is_connected # Merken, ob wir vorher verbunden waren
         self._is_connected = False
-        if rc == 0:
+        if reason_code == 0: # 0 bedeutet eine saubere Trennung
             logging.info("MQTT-Verbindung ordnungsgemäß getrennt.")
         else:
             logging.warning(
-                f"MQTT unerwartet getrennt mit Code {rc}: {paho_mqtt_client.error_string(rc)}. Automatische Wiederverbindung wird versucht...")
+                f"MQTT unerwartet getrennt. Flags: {flags}, Reason Code: {reason_code} ({paho_mqtt_client.error_string(reason_code)}). Automatische Wiederverbindung wird versucht...")
 
         # Stoppe den Queue-Processing-Thread nicht hier bei unerwartetem Disconnect,
         # damit er weiterlaufen und Nachrichten senden kann, sobald die Verbindung wieder steht.
