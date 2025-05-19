@@ -213,17 +213,19 @@ def stats():
         return "Fehler: DataService nicht initialisiert.", 503
 
     stats_data = data_service.get_statistics()
-    problem_zones = data_service.get_problem_zones()
+    formatted_problem_zones = data_service.get_formatted_problem_zones()
+    mow_sessions = data_service.get_mow_sessions_for_display() # NEU
+    logger.debug(f"Formatted problem zones being passed to template: {formatted_problem_zones[:5]}")
+    logger.debug(f"Mow sessions for display: {mow_sessions[:3]}") # NEU: Log für Mähvorgänge
 
     template_path = os.path.join(app.template_folder, 'stats.html')
     if not os.path.exists(template_path):
         logger.error(f"Template 'stats.html' nicht gefunden in {app.template_folder}")
         return "Fehler: Template 'stats.html' nicht gefunden.", 500
-
     return render_template('stats.html',
                            stats=stats_data,
-                           problem_zones=data_service.get_formatted_problem_zones()) # Use the new formatted data
-
+                           problem_zones=formatted_problem_zones,
+                           mow_sessions=mow_sessions) # NEU: Mähvorgänge an Template übergeben
 
 @app.route('/control', methods=['POST'])
 def control():
@@ -256,6 +258,22 @@ def control():
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten des Steuerbefehls: {e}", exc_info=True)
         return jsonify({"success": False, "message": f"Serverfehler: {str(e)}"}), 500
+
+# NEU: Route zum Löschen von Mähvorgängen
+@app.route('/mow_session/delete/<path:filename>', methods=['POST'])
+def delete_mow_session_route(filename):
+    if not data_service:
+        logger.error("DataService nicht initialisiert für delete_mow_session_route.")
+        return jsonify({"success": False, "message": "Serverfehler: DataService nicht bereit."}), 503
+    
+    logger.info(f"Löschanfrage für Mähvorgang empfangen: {filename}")
+    success = data_service.delete_mow_session(filename)
+    
+    if success:
+        return jsonify({"success": True, "message": f"Mähvorgang '{filename}' erfolgreich gelöscht."})
+    else:
+        # DataManager loggt bereits spezifischere Fehler
+        return jsonify({"success": False, "message": f"Fehler beim Löschen von '{filename}'. Prüfe Server-Logs."}), 500
 
 
 @app.route('/live')

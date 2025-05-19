@@ -5,9 +5,9 @@ import os
 
 # Füge das übergeordnete Verzeichnis zum Suchpfad hinzu, um auf MqttHandler und config zugreifen zu können
 project_root_ui = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-project_root_base = os.path.dirname(project_root_ui) # Eine Ebene höher für Worx_GPS
-if project_root_base not in sys.path:
-    sys.path.insert(0, project_root_base)
+# project_root_ui ist das Verzeichnis 'Worx_GPS', das mqtt_handler.py und config.py enthält.
+if project_root_ui not in sys.path:
+    sys.path.insert(0, project_root_ui)
 
 try:
     from mqtt_handler import MqttHandler
@@ -35,19 +35,38 @@ class MqttService:
             pi_status_config_topic (str, optional): Das spezifische Pi-Status-Topic.
         """
         self.mqtt_config = app_config
-        self.pi_status_topic_from_config = pi_status_config_topic # Für den Vergleich in on_message
+        
+        # Wende den Testmodus-Präfix auf das Pi-Status-Topic für den Vergleich an
+        topic_prefix = "test/" if config.REC_CONFIG.get("test_mode", False) else ""
+        self.pi_status_topic_for_comparison = f"{topic_prefix}{pi_status_config_topic}" if pi_status_config_topic else None
 
-        # Nutze den existierenden MqttHandler
-        # Das test_mode Flag wird hier nicht direkt übergeben, da MqttHandler
-        # die Topics basierend auf config.REC_CONFIG['test_mode'] selbst aufbaut.
-        # Wir müssen sicherstellen, dass config.REC_CONFIG korrekt geladen wird,
-        # bevor MqttHandler instanziiert wird.
+        # --- NEU: Liste der zu abonnierenden Topics erstellen ---
+        # Basis-Topics (ohne Präfix, da MqttHandler den Präfix basierend auf test_mode selbst anwendet,
+        # oder wir den Präfix hier explizit anwenden und test_mode=False an MqttHandler übergeben,
+        # um doppelte Präfixe zu vermeiden. Letzteres ist sauberer.)
+        
+        # Holen der Basis-Topic-Namen aus der MQTT_CONFIG
+        base_topic_control = config.MQTT_CONFIG.get('topic_control', 'worx/control')
+        base_topic_gps = config.MQTT_CONFIG.get('topic_gps', 'worx/gps') # WebUI braucht GPS-Rohdaten evtl. nicht
+        base_topic_status = config.MQTT_CONFIG.get('topic_status', 'worx/status')
+
+        subscribe_list_with_qos = [
+            (f"{topic_prefix}{base_topic_control}", 1),
+            (f"{topic_prefix}{base_topic_status}", 0)
+            # (f"{topic_prefix}{base_topic_gps}", 0), # Auskommentiert, falls WebUI keine GPS-Rohdaten braucht
+        ]
+        if pi_status_config_topic: # pi_status_config_topic ist bereits der Basisname
+            subscribe_list_with_qos.append((f"{topic_prefix}{pi_status_config_topic}", 0))
+        
+        # Der MqttHandler wird mit test_mode initialisiert, um LWT korrekt zu setzen.
+        # Die subscribe_list_with_qos enthält bereits die korrekten (ggf. gepräfixten) Topics.
         self.handler = MqttHandler(
             test_mode=config.REC_CONFIG.get("test_mode", False),
             lwt_payload="webui_offline", # Spezifisches LWT für die WebUI
-            lwt_topic=config.MQTT_CONFIG.get("topic_status"), # Standard Status-Topic
+            lwt_topic=base_topic_status, # Übergib das Basis-Topic; MqttHandler kümmert sich um Präfix
             lwt_qos=1,
-            lwt_retain=True
+            lwt_retain=True, # Komma hier hinzugefügt
+            subscribe_topics_with_qos=subscribe_list_with_qos # NEU
         )
 
         self._on_status_message_callback = None
@@ -67,10 +86,10 @@ class MqttService:
             if msg.topic == self.handler.topic_status:
                 if self._on_status_message_callback:
                     self._on_status_message_callback(payload)
-            elif msg.topic == self.handler.topic_gps: # GPS Rohdaten
+            elif msg.topic == self.handler.topic_gps: 
                 if self._on_gps_message_callback:
                     self._on_gps_message_callback(payload)
-            elif self.pi_status_topic_from_config and msg.topic == self.pi_status_topic_from_config:
+            elif self.pi_status_topic_for_comparison and msg.topic == self.pi_status_topic_for_comparison: # NEU: Vergleich mit präfixbehaftetem Topic
                 if self._on_pi_status_message_callback:
                     self._on_pi_status_message_callback(payload)
             else:

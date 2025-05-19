@@ -21,19 +21,22 @@ class MqttHandler:
     und eine Warteschlange für ausgehende Nachrichten, um Datenverlust bei
     Verbindungsunterbrechungen zu minimieren.
     """
-    # --- MODIFIZIERTE __init__ ---
-    def __init__(self, test_mode=False, lwt_payload=None, lwt_topic=None, lwt_qos=1, lwt_retain=True):
+    def __init__(self, test_mode=False, lwt_payload=None, lwt_topic=None, lwt_qos=1, lwt_retain=True, subscribe_topics_with_qos=None):
         """
         Initialisiert den MQTT-Handler.
 
         Args:
             test_mode (bool): Wenn True, wird ein Präfix zu den Topics hinzugefügt.
             lwt_payload (str, optional): Die Payload für die Last Will and Testament Nachricht.
-                                         Wenn None, wird kein LWT gesetzt, es sei denn,
-                                         es ist ein Default in der Klasse definiert.
-            lwt_topic (str, optional): Das Topic für die LWT Nachricht. Default ist topic_status.
+            lwt_topic (str, optional): Das *Basis*-Topic (ohne Test-Präfix) für die LWT Nachricht.
+                                       Wenn None, wird das Standard-Statustopic aus MQTT_CONFIG verwendet.
+                                       Der MqttHandler wendet den Test-Präfix intern an.
             lwt_qos (int, optional): QoS für LWT. Default ist 1.
             lwt_retain (bool, optional): Retain-Flag für LWT. Default ist True.
+            subscribe_topics_with_qos (list, optional): Eine Liste von Tupeln (topic_string, qos_level),
+                                                        die abonniert werden sollen. Die Topic-Strings hier
+                                                        sollten bereits den korrekten Präfix (z.B. "test/") enthalten.
+                                                        Wenn None, werden Standard-Topics verwendet.
         """
         self.test_mode = test_mode
         self._host = MQTT_CONFIG.get("host", "localhost")
@@ -53,6 +56,7 @@ class MqttHandler:
         self._message_queue = Queue(maxsize=self._max_queue_size)
         self._queue_processing_thread = None
         self._stop_queue_processing = threading.Event()  # Zum Stoppen des Threads
+        self._subscribe_topics_with_qos = subscribe_topics_with_qos # NEU
 
         # Topics
         topic_prefix = "test/" if self.test_mode else ""
@@ -80,15 +84,19 @@ class MqttHandler:
         self.client.on_log = self._on_log
 
         # --- LWT Konfiguration basierend auf Parametern ---
-        actual_lwt_topic = lwt_topic if lwt_topic is not None else self.topic_status
-        
-        if actual_lwt_topic and lwt_payload:
-            self.client.will_set(actual_lwt_topic, payload=lwt_payload, qos=lwt_qos, retain=lwt_retain)
-            logging.info(f"MQTT Will für Client '{client_id}' gesetzt: Topic='{actual_lwt_topic}', Payload='{lwt_payload}'")
-        elif actual_lwt_topic and not lwt_payload:
-            logging.info(f"Kein LWT-Payload für Client '{client_id}' angegeben, es wird kein LWT gesetzt.")
-        else:
-            logging.info(f"Kein LWT-Topic für Client '{client_id}' angegeben, es wird kein LWT gesetzt.")
+        # lwt_topic parameter should be a BASE topic name (e.g., 'worx/status')
+        # If lwt_topic is None, use the default base status topic from MQTT_CONFIG
+        base_lwt_topic_for_will = lwt_topic if lwt_topic is not None else MQTT_CONFIG.get('topic_status', 'worx/status')
+
+        if base_lwt_topic_for_will and lwt_payload:
+            # Apply the MqttHandler's own topic_prefix (derived from self.test_mode)
+            prefixed_lwt_topic = f"{topic_prefix}{base_lwt_topic_for_will}"
+            self.client.will_set(prefixed_lwt_topic, payload=lwt_payload, qos=lwt_qos, retain=lwt_retain)
+            logging.info(f"MQTT Will für Client '{client_id}' gesetzt: Topic='{prefixed_lwt_topic}', Payload='{lwt_payload}'")
+        elif base_lwt_topic_for_will and not lwt_payload:
+            logging.info(f"Kein LWT-Payload für Client '{client_id}' angegeben, es wird kein LWT gesetzt (Topic war: {base_lwt_topic_for_will}).")
+        else: # base_lwt_topic_for_will is None or empty
+            logging.info(f"Kein LWT-Topic für Client '{client_id}' angegeben oder konfiguriert, es wird kein LWT gesetzt.")
 
         self._user_message_callback = None
         self._is_connected = False
@@ -158,12 +166,20 @@ class MqttHandler:
         if rc == 0:
             self._is_connected = True
             logging.info("MQTT erfolgreich verbunden.")
-            # --- Korrektur: Alle relevanten Topics abonnieren ---
-            topics_to_subscribe = [
-                (self.topic_control, 1),  # Control mit QoS 1
-                (self.topic_gps, 0),  # GPS Daten mit QoS 0 (Standard)
-                (self.topic_status, 0)  # Status auch mit QoS 0
-            ]
+            
+            # --- NEU: Dynamische Topic-Liste für Abonnements ---
+            if self._subscribe_topics_with_qos:
+                topics_to_subscribe = self._subscribe_topics_with_qos
+                logging.debug(f"Verwende benutzerdefinierte Abonnement-Liste: {topics_to_subscribe}")
+            else:
+                # Fallback auf Standard-Topics, falls keine spezifische Liste übergeben wurde
+                # Diese self.topic_* Attribute enthalten bereits den korrekten Präfix.
+                topics_to_subscribe = [
+                    (self.topic_control, 1),
+                    (self.topic_gps, 0),      # WebUI könnte dies auch benötigen, wenn es Rohdaten anzeigen soll
+                    (self.topic_status, 0)
+                ]
+                logging.debug(f"Verwende Standard-Abonnement-Liste: {topics_to_subscribe}")
             try:
                 # subscribe kann eine Liste von Tupeln (topic, qos) verarbeiten
                 result, mid = self.client.subscribe(topics_to_subscribe)

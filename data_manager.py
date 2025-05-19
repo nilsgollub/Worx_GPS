@@ -299,6 +299,73 @@ class DataManager:
 
         return last_mow_data
 
+    def get_all_mow_session_details(self):
+        """
+        Lädt Details zu allen Mähvorgängen (Dateiname, erster Zeitstempel, Punktanzahl und Rohdaten).
+        """
+        session_details = []
+        try:
+            json_pattern = self.data_folder / "maehvorgang_*.json"
+            
+            # Sortiere nach der Nummer im Dateinamen, um eine grob chronologische Reihenfolge zu bekommen
+            file_paths_str = glob.glob(str(json_pattern))
+            
+            # Extrahiere Nummern und sortiere danach
+            def get_filenumber(filepath_str):
+                try:
+                    return int(Path(filepath_str).stem.split('_')[-1])
+                except (ValueError, IndexError):
+                    return 0 # Fallback für unerwartete Dateinamen
+
+            sorted_file_paths = sorted(file_paths_str, key=get_filenumber)
+
+            for file_path_str in sorted_file_paths:
+                file_path = Path(file_path_str)
+                filename = file_path.name
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+                    if isinstance(data, list) and data:
+                        first_timestamp = data[0].get('timestamp')
+                        point_count = len(data)
+                        session_details.append({
+                            "filename": filename,
+                            "first_timestamp": first_timestamp,
+                            "point_count": point_count,
+                            "data": data 
+                        })
+                    else:
+                        logger.warning(f"Ungültiges Format oder leere Daten in {filename}. Überspringe.")
+                except json.JSONDecodeError:
+                    logger.error(f"Fehler beim Parsen von {filename}. Überspringe.")
+                except Exception as e:
+                    logger.error(f"Fehler beim Laden von {filename}: {e}. Überspringe.")
+            
+            # Sortiere die Details nach dem ersten Zeitstempel, neueste zuerst
+            session_details.sort(key=lambda s: s.get('first_timestamp', 0) or 0, reverse=True)
+            return session_details
+        except Exception as e:
+            logger.error(f"Fehler beim Auflisten der Mähvorgangsdetails: {e}", exc_info=True)
+            return []
+
+    def delete_mow_session_file(self, filename: str) -> bool:
+        """Löscht eine spezifische Mähvorgangsdatei."""
+        if not filename.startswith("maehvorgang_") or not filename.endswith(".json"):
+            logger.warning(f"Ungültiger Dateiname für Löschvorgang: {filename}")
+            return False
+        
+        file_path = self.data_folder / filename
+        try:
+            if file_path.is_file():
+                file_path.unlink()
+                logger.info(f"Mähvorgangsdatei {filename} erfolgreich gelöscht.")
+                return True
+            else:
+                logger.warning(f"Mähvorgangsdatei {filename} nicht gefunden. Konnte nicht gelöscht werden.")
+                return False
+        except Exception as e:
+            logger.error(f"Fehler beim Löschen der Datei {filename}: {e}", exc_info=True)
+            return False
 
 # --- Beispielhafte Verwendung (optional, für Tests) ---
 if __name__ == '__main__':

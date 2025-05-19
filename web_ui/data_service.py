@@ -232,5 +232,39 @@ class DataService:
             "avg_duration": round(total_duration_minutes / valid_sessions_for_avg, 1) if valid_sessions_for_avg > 0 else 0.0,
         }
 
+    def get_mow_sessions_for_display(self):
+        """Ruft Details zu allen Mähvorgängen ab und formatiert sie für die Anzeige."""
+        sessions = self.data_manager.get_all_mow_session_details()
+        formatted_sessions = []
+        for session in sessions:
+            session_data = session.get("data", [])
+            duration_seconds = 0
+            distance_m = 0
+            start_time_str = "N/A"
+
+            if session_data:
+                timestamps = [p.get('timestamp') for p in session_data if p.get('timestamp') is not None]
+                if timestamps:
+                    min_ts = min(timestamps)
+                    max_ts = max(timestamps)
+                    duration_seconds = max_ts - min_ts
+                    start_time_str = datetime.fromtimestamp(min_ts).strftime('%Y-%m-%d %H:%M:%S')
+                
+                for i in range(len(session_data) - 1):
+                    distance_m += calculate_distance(session_data[i], session_data[i+1])
+
+            formatted_sessions.append({
+                "filename": session.get("filename"),
+                "start_time_str": start_time_str,
+                "point_count": session.get("point_count"),
+                "duration_str": format_duration(duration_seconds),
+                "distance_km_str": f"{distance_m / 1000:.2f} km" if distance_m > 0 else "0.00 km"
+            })
+        return formatted_sessions
+
+    def delete_mow_session(self, filename: str) -> bool:
+        """Löscht eine Mähsession und gibt True bei Erfolg zurück."""
+        return self.data_manager.delete_mow_session_file(filename)
+
 # Benötigt für url_for in get_available_heatmaps, wird von Flask bereitgestellt
 from flask import url_for

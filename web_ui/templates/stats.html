@@ -172,8 +172,99 @@
         </div>
     </div>
 </div>
+
+<!-- NEU: Auflistung der Mähvorgänge -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-tractor"></i> Aufgezeichnete Mähvorgänge</h5>
+            </div>
+            <div class="card-body">
+                {% if mow_sessions %}
+                    <div class="table-responsive-sm">
+                        <table class="table table-striped table-hover table-sm mow-sessions-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Startzeit</th>
+                                    <th scope="col">Dateiname</th>
+                                    <th scope="col">Punkte</th>
+                                    <th scope="col">Dauer</th>
+                                    <th scope="col">Strecke</th>
+                                    <th scope="col">Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for session in mow_sessions %}
+                                <tr id="session-row-{{ session.filename | replace('.', '-') }}"> {# Eindeutige ID für die Zeile #}
+                                    <th scope="row">{{ loop.index }}</th>
+                                    <td>{{ session.start_time_str | default('N/A') }}</td>
+                                    <td>{{ session.filename | default('N/A') }}</td>
+                                    <td>{{ session.point_count | default('N/A') }}</td>
+                                    <td>{{ session.duration_str | default('N/A') }}</td>
+                                    <td>{{ session.distance_km_str | default('N/A') }}</td>
+                                    <td>
+                                        <button class="btn btn-danger btn-sm delete-mow-session-btn" data-filename="{{ session.filename }}" title="Diesen Mähvorgang löschen">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="card-text">Keine Mähvorgänge gefunden oder die Dateien konnten nicht geladen werden.</p>
+                {% endif %}
+            </div>
+            <div class="card-footer text-muted" style="font-size: 0.8em;">
+                 Mähvorgänge werden in <code>data/maehvorgang_*.json</code> gespeichert.
+             </div>
+        </div>
+    </div>
+</div>
+<!-- ENDE NEU -->
+
 {% endblock %}
 
 {% block scripts %}
-{# Keine spezifischen Skripte für diese Seite benötigt #}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.delete-mow-session-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const filename = this.dataset.filename;
+            const sessionRowId = `session-row-${filename.replace(/\./g, '-')}`; // Punkte im Dateinamen für ID ersetzen
+            const sessionRow = document.getElementById(sessionRowId);
+
+            if (confirm(`Möchtest du den Mähvorgang "${filename}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) {
+                fetch(`/mow_session/delete/${filename}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Ggf. CSRF-Token Header hinzufügen, falls von Flask-WTF oder Ähnlichem benötigt
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message); // Erfolgsmeldung
+                        if (sessionRow) {
+                            sessionRow.remove(); // Zeile aus der Tabelle entfernen
+                        }
+                        // Optional: Aggregierte Statistiken neu laden oder Seite neu laden
+                        // location.reload(); // Einfachste Option, um alles zu aktualisieren
+                    } else {
+                        alert(`Fehler: ${data.message}`); // Fehlermeldung
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Ein clientseitiger Fehler ist beim Löschen aufgetreten.');
+                });
+            }
+        });
+    });
+});
+</script>
 {% endblock %}
