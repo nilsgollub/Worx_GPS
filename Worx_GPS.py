@@ -50,11 +50,13 @@ class WorxGps:
             current_last_10_sessions = list(self.maehvorgang_data)
             self.update_single_map("heatmap_10_maehvorgang", current_last_10_sessions, draw_path=True,
                                    is_multi=True)
-            # NEU: Aufruf für quality_path_10
+            # NEU: Aufruf für quality_path_10 und wifi_heatmap
             self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True,
                                    is_multi=True)
+            self.update_single_map("wifi_heatmap", current_last_10_sessions, draw_path=True,
+                                   is_multi=True)
         else:
-            logger.info("Keine Daten für 'heatmap_10_maehvorgang' und 'quality_path_10'.")
+            logger.info("Keine Daten für 'heatmap_10_maehvorgang', 'quality_path_10' und 'wifi_heatmap'.")
 
         # --- Kumulierte Daten (Nur Heatmap) ---
         if self.alle_maehvorgang_data:
@@ -160,7 +162,8 @@ class WorxGps:
             # Wichtig: Immer die aktuelle Liste aus dem Deque übergeben
             current_last_10_sessions = list(self.maehvorgang_data)
             self.update_single_map("heatmap_10_maehvorgang", current_last_10_sessions, draw_path=True, is_multi=True)
-            self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True, is_multi=True)  # NEU
+            self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True, is_multi=True)
+            self.update_single_map("wifi_heatmap", current_last_10_sessions, draw_path=True, is_multi=True)
 
             # Kumulierte Daten (Nur Heatmap)
             flat_all_data = flatten_data(self.alle_maehvorgang_data)

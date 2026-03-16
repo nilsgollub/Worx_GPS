@@ -16,7 +16,7 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
         csv_string: Der CSV-String mit den GPS-Daten. Kann None sein.
     Returns:
         Eine Liste von Dictionaries, wobei jedes Dictionary einen GPS-Punkt repräsentiert.
-        Format: [{"lat": float, "lon": float, "timestamp": float, "satellites": Optional[int]}, ...]
+        Format: [{'lat': float, 'lon': float, 'timestamp': float, 'satellites': Optional[int], 'wifi': Optional[int]}, ...]
         Gibt eine leere Liste zurück, wenn beim Lesen ein Fehler auftritt oder der String leer/None ist.
     """
     data: List[Dict[str, Any]] = []
@@ -26,7 +26,7 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
 
     csvfile = io.StringIO(csv_string)
     try:
-        reader = csv.DictReader(csvfile, fieldnames=["lat", "lon", "timestamp", "satellites"])
+        reader = csv.DictReader(csvfile, fieldnames=["lat", "lon", "timestamp", "satellites", "wifi"])
         for i, row in enumerate(reader):
             if row.get("lat") == "-1":
                 logging.debug("End-Marker (-1) in CSV-Daten gefunden, Verarbeitung beendet.")
@@ -36,6 +36,7 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
                 lon_str = row.get("lon")
                 ts_str = row.get("timestamp")
                 sat_str = row.get("satellites")
+                wifi_str = row.get("wifi")
 
                 if lat_str is None or lon_str is None or ts_str is None:
                     logging.warning(
@@ -54,7 +55,14 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
                         logging.warning(
                             f"Zeile {i + 1}: Ungültiger Satellitenwert '{sat_str}'. Wird als None behandelt.")
 
-                data.append({"lat": lat, "lon": lon, "timestamp": timestamp, "satellites": satellites})
+                wifi: Optional[int] = None
+                if wifi_str is not None and wifi_str.strip():
+                    try:
+                        wifi = int(float(wifi_str))
+                    except (ValueError, TypeError):
+                        pass
+
+                data.append({"lat": lat, "lon": lon, "timestamp": timestamp, "satellites": satellites, "wifi": wifi})
             except (ValueError, TypeError) as e:
                 logging.warning(f"Zeile {i + 1}: Fehler bei Wertkonvertierung: {e} - Zeile: {row}. Überspringe.")
                 continue

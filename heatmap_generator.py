@@ -151,6 +151,7 @@ class HeatmapGenerator:
 
         # Spezifische Flags
         visualize_quality_path = map_config.get("visualize_quality_path", False)
+        visualize_wifi_path = map_config.get("visualize_wifi_path", False)
 
         # Daten vorbereiten
         flat_data_list = flatten_data(data)  # Diese Liste enthält ALLE Punkte für die aktuelle Karte
@@ -167,18 +168,24 @@ class HeatmapGenerator:
             return
 
         # --- Logik für Kartentyp ---
-        if visualize_quality_path:
+        if visualize_quality_path or visualize_wifi_path:
+            is_wifi = visualize_wifi_path
             # --- Farbkodierten Pfad zeichnen (Multi-Session Support) ---
-            logger.info(f"Zeichne farbkodierten Qualitätspfad für {html_file}.")
-            colors = map_config.get('quality_colormap_colors', ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
-            index = map_config.get('quality_colormap_index', [4, 6, 8, 10])
-            caption = map_config.get('quality_legend_caption', 'GPS Qualität (Satelliten)')
+            logger.info(f"Zeichne farbkodierten {'WiFi' if is_wifi else 'Qualitäts'}pfad für {html_file}.")
+            colors = map_config.get('wifi_colormap_colors' if is_wifi else 'quality_colormap_colors', 
+                                    ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'] if is_wifi else ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
+            index = map_config.get('wifi_colormap_index' if is_wifi else 'quality_colormap_index', 
+                                   [-85, -75, -65] if is_wifi else [4, 6, 8, 10])
+            caption = map_config.get('wifi_legend_caption' if is_wifi else 'quality_legend_caption', 
+                                     'WiFi Signal (dBm)' if is_wifi else 'GPS Qualität (Satelliten)')
             default_color = 'grey'
-            sat_values = [p.get('satellites') for p in flat_data_list if p.get('satellites') is not None]
-            min_sats_data = min(sat_values) if sat_values else min(index) if index else 0
-            max_sats_data = max(sat_values) if sat_values else max(index) if index else 12
-            full_index = sorted(list(set([min_sats_data] + index + [max_sats_data + 1])))
-            colormap = cm.StepColormap(colors, index=full_index, vmin=min_sats_data, vmax=max_sats_data,
+            val_key = 'wifi' if is_wifi else 'satellites'
+
+            val_values = [p.get(val_key) for p in flat_data_list if p.get(val_key) is not None]
+            min_val_data = min(val_values) if val_values else min(index) if index else (-100 if is_wifi else 0)
+            max_val_data = max(val_values) if val_values else max(index) if index else (-30 if is_wifi else 12)
+            full_index = sorted(list(set([min_val_data] + index + [max_val_data + 1])))
+            colormap = cm.StepColormap(colors, index=full_index, vmin=min_val_data, vmax=max_val_data,
                                        caption=caption)
 
             path_groups = []
@@ -187,7 +194,7 @@ class HeatmapGenerator:
 
                 session_index_display = len(sessions_to_draw) - idx
                 session_date_str = self._get_session_date_str(session_data, session_index_display)
-                path_layer_name = f"Qualität {session_date_str}"
+                path_layer_name = f"{'WiFi' if is_wifi else 'Qualität'} {session_date_str}"
                 show_layer = (idx == 0)
                 path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
                 session_points_coords = []
@@ -214,19 +221,19 @@ class HeatmapGenerator:
                     try:
                         lat1, lon1 = float(p1['lat']), float(p1['lon'])
                         lat2, lon2 = float(p2['lat']), float(p2['lon'])
-                        sats = p1.get('satellites')
+                        val = p1.get(val_key)
                         # Distanz aufsummieren
                         total_distance_m += calculate_distance(p1, p2)
                         if i == 0: session_points_coords.append([lat1, lon1])
                         session_points_coords.append([lat2, lon2])
                         # Farbsegmentierung
-                        if sats is not None:
+                        if val is not None:
                             try:
-                                segment_color = colormap(int(sats))
+                                segment_color = colormap(int(val))
                             except ValueError:
-                                if int(sats) < colormap.vmin:
+                                if int(val) < colormap.vmin:
                                     segment_color = colormap(colormap.vmin)
-                                elif int(sats) > colormap.vmax:
+                                elif int(val) > colormap.vmax:
                                     segment_color = colormap(colormap.vmax)
                                 else:
                                     segment_color = default_color

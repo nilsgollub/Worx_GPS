@@ -1,0 +1,144 @@
+Von github.com:nilsgollub/Worx_GPS
+   8ec7895..10e33a1  main       -> origin/main
+Aktualisiere 8ec7895..10e33a1
+Fast-forward
+ .env.example                                       |  39 ++
+ Dockerfile                                         |  29 ++
+ Worx_GPS.sln                                       |  24 ++
+ Worx_GPS_Rec.py                                    | 466 +--------------------
+ __pycache__/Worx_GPS_Rec.cpython-313.pyc           | Bin 0 -> 22734 bytes
+ __pycache__/config.cpython-313.pyc                 | Bin 0 -> 8604 bytes
+ __pycache__/data_manager.cpython-313.pyc           | Bin 0 -> 25063 bytes
+ __pycache__/heatmap_generator.cpython-313.pyc      | Bin 0 -> 60813 bytes
+ __pycache__/mqtt_handler.cpython-313.pyc           | Bin 0 -> 30786 bytes
+ __pycache__/utils.cpython-313.pyc                  | Bin 0 -> 8891 bytes
+ data_manager.py                                    |  67 +++
+ data_recorder.py                                   | 104 ++---
+ directcom/PositecJson.cs                           | 418 ++++++++++++++++++
+ directcom/Program.cs                               |  41 ++
+ directcom/WorxMqttInterface.csproj                 |  21 +
+ directcom/WorxMqttInterface.http                   |   6 +
+ directcom/WorxMqttService.cs                       | 344 +++++++++++++++
+ .../.NETCoreApp,Version=v8.0.AssemblyAttributes.cs |   4 +
+ .../Debug/net8.0/WorxMqttInterface.AssemblyInfo.cs |  22 +
+ .../WorxMqttInterface.AssemblyInfoInputs.cache     |   1 +
+ ...rface.GeneratedMSBuildEditorConfig.editorconfig |  21 +
+ .../net8.0/WorxMqttInterface.GlobalUsings.g.cs     |  19 +
+ ...Interface.MvcApplicationPartsAssemblyInfo.cache |   0
+ ...qttInterface.MvcApplicationPartsAssemblyInfo.cs |  17 +
+ .../Debug/net8.0/WorxMqttInterface.assets.cache    | Bin 0 -> 4717 bytes
+ ...orxMqttInterface.csproj.AssemblyReference.cache | Bin 0 -> 2690 bytes
+ ...orxMqttInterface.csproj.CoreCompileInputs.cache |   1 +
+ .../WorxMqttInterface.csproj.FileListAbsolute.txt  |   8 +
+ .../obj/WorxMqttInterface.csproj.nuget.g.props     |  23 +
+ .../obj/WorxMqttInterface.csproj.nuget.g.targets   |   6 +
+ directcom/obj/project.nuget.cache                  |  17 +
+ docs/tasks.md                                      | 149 +++++++
+ frontend/.gitignore                                |  24 ++
+ frontend/README.md                                 |  16 +
+ frontend/build_output.txt                          |  29 ++
+ frontend/eslint.config.js                          |  29 ++
+ frontend/index.html                                |  13 +
+ frontend/public/favicon.svg                        |   1 +
+ frontend/public/icons.svg                          |  24 ++
+ frontend/src/App.css                               | 184 ++++++++
+ frontend/src/App.jsx                               | 115 +++++
+ frontend/src/assets/hero.png                       | Bin 0 -> 44919 bytes
+ frontend/src/assets/react.svg                      |   1 +
+ frontend/src/assets/vite.svg                       |   1 +
+ frontend/src/index.css                             | 235 +++++++++++
+ frontend/src/main.jsx                              |  10 +
+ frontend/src/pages/Config.jsx                      | 135 ++++++
+ frontend/src/pages/Dashboard.jsx                   | 190 +++++++++
+ frontend/src/pages/Maps.jsx                        |  71 ++++
+ frontend/src/pages/Stats.jsx                       | 141 +++++++
+ frontend/vite.config.js                            |   7 +
+ gps_handler.py                                     |  30 +-
+ heatmap_generator.py                               |   6 +-
+ jetson_info.txt                                    |  17 +
+ mqtt_handler.py                                    |  56 ++-
+ notes.txt                                          |  52 +++
+ pi_details.txt                                     |  37 ++
+ pi_env.txt                                         |  68 +++
+ pi_info.txt                                        |  53 +++
+ pi_worx.txt                                        | 106 +++++
+ problem_detection.py                               |  55 ++-
+ requirements.txt                                   | Bin 1588 -> 477 bytes
+ web_ui/__pycache__/data_service.cpython-312.pyc    | Bin 13733 -> 15649 bytes
+ web_ui/__pycache__/data_service.cpython-313.pyc    | Bin 0 -> 18652 bytes
+ web_ui/__pycache__/mqtt_service.cpython-312.pyc    | Bin 6604 -> 7209 bytes
+ web_ui/__pycache__/mqtt_service.cpython-313.pyc    | Bin 0 -> 7319 bytes
+ web_ui/__pycache__/status_manager.cpython-313.pyc  | Bin 0 -> 9402 bytes
+ web_ui/__pycache__/system_monitor.cpython-313.pyc  | Bin 0 -> 5270 bytes
+ web_ui/data_service.py                             | 103 ++++-
+ web_ui/mqtt_service.py                             |  47 ++-
+ web_ui/static/leaflet.rotatedMarker.js             |  57 +++
+ web_ui/static/worx.png                             | Bin 0 -> 126600 bytes
+ web_ui/templates/live.html                         | 115 +++--
+ web_ui/templates/stats.html                        |  93 +++-
+ web_ui/webui.py                                    | 155 ++++---
+ 75 files changed, 3467 insertions(+), 656 deletions(-)
+ create mode 100644 .env.example
+ create mode 100644 Dockerfile
+ create mode 100644 Worx_GPS.sln
+ create mode 100644 __pycache__/Worx_GPS_Rec.cpython-313.pyc
+ create mode 100644 __pycache__/config.cpython-313.pyc
+ create mode 100644 __pycache__/data_manager.cpython-313.pyc
+ create mode 100644 __pycache__/heatmap_generator.cpython-313.pyc
+ create mode 100644 __pycache__/mqtt_handler.cpython-313.pyc
+ create mode 100644 __pycache__/utils.cpython-313.pyc
+ create mode 100644 directcom/PositecJson.cs
+ create mode 100644 directcom/Program.cs
+ create mode 100644 directcom/WorxMqttInterface.csproj
+ create mode 100644 directcom/WorxMqttInterface.http
+ create mode 100644 directcom/WorxMqttService.cs
+ create mode 100644 directcom/obj/Debug/net8.0/.NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.AssemblyInfo.cs
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.AssemblyInfoInputs.cache
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.GeneratedMSBuildEditorConfig.editorconfig
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.GlobalUsings.g.cs
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.MvcApplicationPartsAssemblyInfo.cache
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.MvcApplicationPartsAssemblyInfo.cs
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.assets.cache
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.csproj.AssemblyReference.cache
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.csproj.CoreCompileInputs.cache
+ create mode 100644 directcom/obj/Debug/net8.0/WorxMqttInterface.csproj.FileListAbsolute.txt
+ create mode 100644 directcom/obj/WorxMqttInterface.csproj.nuget.g.props
+ create mode 100644 directcom/obj/WorxMqttInterface.csproj.nuget.g.targets
+ create mode 100644 directcom/obj/project.nuget.cache
+ create mode 100644 docs/tasks.md
+ create mode 100644 frontend/.gitignore
+ create mode 100644 frontend/README.md
+ create mode 100644 frontend/build_output.txt
+ create mode 100644 frontend/eslint.config.js
+ create mode 100644 frontend/index.html
+ create mode 100644 frontend/public/favicon.svg
+ create mode 100644 frontend/public/icons.svg
+ create mode 100644 frontend/src/App.css
+ create mode 100644 frontend/src/App.jsx
+ create mode 100644 frontend/src/assets/hero.png
+ create mode 100644 frontend/src/assets/react.svg
+ create mode 100644 frontend/src/assets/vite.svg
+ create mode 100644 frontend/src/index.css
+ create mode 100644 frontend/src/main.jsx
+ create mode 100644 frontend/src/pages/Config.jsx
+ create mode 100644 frontend/src/pages/Dashboard.jsx
+ create mode 100644 frontend/src/pages/Maps.jsx
+ create mode 100644 frontend/src/pages/Stats.jsx
+ create mode 100644 frontend/vite.config.js
+ create mode 100644 jetson_info.txt
+ create mode 100644 notes.txt
+ create mode 100644 pi_details.txt
+ create mode 100644 pi_env.txt
+ create mode 100644 pi_info.txt
+ create mode 100644 pi_worx.txt
+ create mode 100644 web_ui/__pycache__/data_service.cpython-313.pyc
+ create mode 100644 web_ui/__pycache__/mqtt_service.cpython-313.pyc
+ create mode 100644 web_ui/__pycache__/status_manager.cpython-313.pyc
+ create mode 100644 web_ui/__pycache__/system_monitor.cpython-313.pyc
+ create mode 100644 web_ui/static/leaflet.rotatedMarker.js
+ create mode 100644 web_ui/static/worx.png
+---PULL OK---
+10e33a1 chore: Add frontend project dependencies and build artifacts.
+90f9208 Implement code changes to enhance functionality and improve performance
+da62465 Add Mow session management features and enhance stats display in web UI

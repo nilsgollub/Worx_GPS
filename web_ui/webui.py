@@ -1,7 +1,6 @@
 # webui.py (Überarbeitete Struktur - Konzeptionell)
 
-import eventlet
-eventlet.monkey_patch()
+import logging
 
 import logging
 import os
@@ -51,7 +50,8 @@ app.static_folder = frontend_dist
 # For serving static assets inside the Vite build (js/css)
 app.static_url_path = ''
 CORS(app) # Enable CORS for React Frontend API calls
-socketio = SocketIO(app, async_mode='eventlet', ping_timeout=20, ping_interval=10, cors_allowed_origins="*")
+# Eventlet entfernt wegen Kompatibilitätsproblemen auf Windows, falle zurück auf default (threading/werkzeug)
+socketio = SocketIO(app, async_mode=None, ping_timeout=20, ping_interval=10, cors_allowed_origins="*")
 
 # --- Instanzen der neuen Services (Globale Instanzen, auf die Routen zugreifen) ---
 mqtt_service = None

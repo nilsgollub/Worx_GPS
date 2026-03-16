@@ -33,15 +33,36 @@ class DataRecorder:
         self.buffer_file = "offline_gps_buffer.csv"
         logging.info("DataRecorder (mit offline persistenz) initialisiert.")
 
+    def _get_wifi_signal_strength(self):
+        """Liest die WiFi-Signalstärke in dBm von /proc/net/wireless."""
+        try:
+            if os.path.exists("/proc/net/wireless"):
+                with open("/proc/net/wireless", "r") as f:
+                    lines = f.readlines()
+                for line in lines[2:]:
+                    # Prüfe auf gängige Interface-Namen
+                    if line.strip().startswith("wlan0:") or line.strip().startswith("wlan1:"):
+                        parts = line.split()
+                        # Der Wert ist oft der 4. Wert (Index 3) und hat oft einen Punkt am Ende (z.B. "-65.")
+                        level_str = parts[3].strip('.')
+                        return int(level_str)
+        except Exception as e:
+            # Nur Debug, da es auf dem PC/Jetson fehlschlagen wird
+            logging.debug(f"Konnte WiFi-Signal nicht lesen: {e}")
+        return None
+
     def add_gps_data(self, gps_data):
         if gps_data and isinstance(gps_data, dict):
             lat = gps_data.get('lat', '')
             lon = gps_data.get('lon', '')
             time_stamp = gps_data.get('timestamp', '')
             satellites = gps_data.get('satellites', '')
+            wifi_dbm = self._get_wifi_signal_strength()
+            wifi_str = wifi_dbm if wifi_dbm is not None else ''
+
             try:
                 with open(self.buffer_file, "a") as f:
-                    f.write(f"{lat},{lon},{time_stamp},{satellites}\n")
+                    f.write(f"{lat},{lon},{time_stamp},{satellites},{wifi_str}\n")
             except Exception as e:
                 logging.error(f"DataRecorder: Fehler beim Schreiben in Datei: {e}")
         elif gps_data is not None:

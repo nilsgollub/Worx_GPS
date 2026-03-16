@@ -104,6 +104,19 @@ HEATMAP_CONFIG = {
         "use_satellite_weight": False,
         "radius": 0,
         "blur": 0,
+    },
+    # --- NEU: WiFi Signalstärke Karte ---
+    "wifi_heatmap": {
+        "output": "heatmaps/wifi.html",
+        "png_output": "heatmaps/wifi.png",
+        "generate_png": False,
+        "path_weight": 4.0,
+        "path_opacity": 0.85,
+        "show_start_end_markers": False,
+        "visualize_wifi_path": True, # Neuer Flag für Wifi
+        "wifi_colormap_colors": ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'], # Rot (-90), Gelb (-80), Hellgrün (-70), Dunkelgrün (-60)
+        "wifi_colormap_index": [-85, -75, -65], # Schwellenwerte für dBm
+        "wifi_legend_caption": "WiFi Signalstärke (dBm)"
     }
     # --- ENDE NEU ---
 }
