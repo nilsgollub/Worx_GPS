@@ -1,0 +1,37 @@
+[Unit]
+Description=Worx GPS Recording Service
+# Warten, bis NetworkManager online ist
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nilsgollub
+Group=nilsgollub
+# Arbeitsverzeichnis ist das Projekt-Unterverzeichnis
+WorkingDirectory=/home/nilsgollub/Documents/GitHub/Worx_GPS
+# Pfade zum venv Python und zum Skript im Unterverzeichnis
+ExecStart=/home/nilsgollub/Documents/GitHub/Worx_GPS/.venv/bin/python /home/nilsgollub/Documents/GitHub/Worx_GPS/Worx_GPS_Rec.py
+Restart=on-failure # Startet den Service neu, wenn er fehlschl├ñgt
+RestartSec=5s
+# Optional: Lade Umgebungsvariablen aus der .env Datei im Unterverzeichnis
+# EnvironmentFile=/home/nilsgollub/Documents/GitHub/Worx_GPS/.env
+
+[Install]
+WantedBy=multi-user.target
+
+
+===ENV===
+insgesamt 16
+drwxr-xr-x  4 nilsgollub nilsgollub 4096  1. Mai 2025  .
+drwx------ 11 nilsgollub nilsgollub 4096  9. Mai 2025  ..
+drwxr-xr-x  3 nilsgollub nilsgollub 4096  1. Mai 2025  GitHub
+drwxr-xr-x 11 nilsgollub nilsgollub 4096 22. Mai 2025  Pycharm_Sync
+===WORX===
+no .env
+===GPS===
+/dev/ttyACM0
+
+/dev/serial:
+by-id
+by-path
+no serial

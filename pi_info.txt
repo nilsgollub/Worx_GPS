@@ -1,0 +1,53 @@
+Linux WorxPi 6.12.20+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.12.20-1+rpt1~bpo12+1 (2025-03-19) aarch64 GNU/Linux
+---
+Python 3.11.2
+---
+insgesamt 72
+drwx------ 11 nilsgollub nilsgollub 4096  9. Mai 2025  .
+drwxr-xr-x  3 root       root       4096 19. Nov 2024  ..
+-rw-------  1 nilsgollub nilsgollub 5521 19. Mai 2025  .bash_history
+-rw-r--r--  1 nilsgollub nilsgollub  220 19. Nov 2024  .bash_logout
+-rw-r--r--  1 nilsgollub nilsgollub 3523 19. Nov 2024  .bashrc
+drwxr-xr-x  4 nilsgollub nilsgollub 4096  9. Mai 2025  .cache
+drwxr-xr-x  4 nilsgollub nilsgollub 4096  1. Mai 2025  Documents
+drwxr-xr-x  3 nilsgollub nilsgollub 4096  9. Mai 2025  .dotnet
+drwxr-xr-x  3 nilsgollub nilsgollub 4096  3. Mai 2025  home
+-rw-------  1 nilsgollub nilsgollub   20  1. Mai 2025  .lesshst
+drwxr-xr-x  3 nilsgollub nilsgollub 4096  2. Mai 2025  .local
+-rw-r--r--  1 nilsgollub nilsgollub  807 19. Nov 2024  .profile
+drwxr-xr-x 21 nilsgollub nilsgollub 4096  2. Mai 2025  .pycharm_helpers
+drwx------  2 nilsgollub nilsgollub 4096  3. Mai 2025  .ssh
+-rw-r--r--  1 nilsgollub nilsgollub    0 19. Nov 2024  .sudo_as_admin_successful
+drwxr-xr-x  3 nilsgollub nilsgollub 4096  2. Mai 2025  .virtualenvs
+drwxr-x---  5 nilsgollub nilsgollub 4096 19. Mai 2025  .vscode-server
+-rw-r--r--  1 nilsgollub nilsgollub  183 19. Mai 2025  .wget-hsts
+---
+Dateisystem    Gr├Â├ƒe Benutzt Verf. Verw% Eingeh├ñngt auf
+/dev/mmcblk0p2   58G    7.7G   48G   14% /
+---
+              gesamt       benutzt     frei      gemns.  Puffer/Cache verf├╝gbar
+Speicher:      416Mi       148Mi        85Mi       964Ki       235Mi       268Mi
+Swap:          511Mi          0B       511Mi
+---
+48850
+---
+  UNIT                      LOAD   ACTIVE SUB     DESCRIPTION
+  avahi-daemon.service      loaded active running Avahi mDNS/DNS-SD Stack
+  bluetooth.service         loaded active running Bluetooth service
+  cron.service              loaded active running Regular background program processing daemon
+  dbus.service              loaded active running D-Bus System Message Bus
+  getty@tty1.service        loaded active running Getty on tty1
+  ModemManager.service      loaded active running Modem Manager
+  NetworkManager.service    loaded active running Network Manager
+  polkit.service            loaded active running Authorization Manager
+  ssh.service               loaded active running OpenBSD Secure Shell server
+  systemd-journald.service  loaded active running Journal Service
+  systemd-logind.service    loaded active running User Login Management
+  systemd-timesyncd.service loaded active running Network Time Synchronization
+  systemd-udevd.service     loaded active running Rule-based Manager for Device Events and Files
+  triggerhappy.service      loaded active running triggerhappy global hotkey daemon
+  user@1000.service         loaded active running User Manager for UID 1000
+  worx_gps.service          loaded active running Worx GPS Recording Service
+  wpa_supplicant.service    loaded active running WPA supplicant
+
+LOAD   = Reflects whether the unit definition was properly loaded.

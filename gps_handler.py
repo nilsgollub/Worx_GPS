@@ -34,6 +34,11 @@ class GpsHandler:
 
         # Zeitstempel des letzten erfolgreichen AssistNow-Updates
         self.last_assist_now_update = datetime.now() - timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1)
+        # NEU: Backoff für fehlgeschlagene AssistNow-Downloads
+        self._assist_now_fail_count = 0
+        self._assist_now_last_attempt = None
+        self._assist_now_backoff_base = 300  # 5 Minuten Basis-Backoff
+        self._assist_now_max_backoff = 21600  # Max 6 Stunden
 
         self.is_fake_gps = False
         self.route_simulator = None
@@ -438,8 +443,20 @@ class GpsHandler:
     # --- check_assist_now bleibt ---
     def check_assist_now(self, force_update=False):
         if self.mode != "real" or not self.assist_now_enabled:
-            # logger.debug("AssistNow nicht aktiv oder nicht im Real-Modus.") # Zu viel Logspam
             return True
+
+        # NEU: Backoff-Logik bei vorherigen Fehlern
+        if self._assist_now_fail_count > 0 and not force_update:
+            backoff_seconds = min(
+                self._assist_now_backoff_base * (2 ** (self._assist_now_fail_count - 1)),
+                self._assist_now_max_backoff
+            )
+            if self._assist_now_last_attempt:
+                elapsed = (datetime.now() - self._assist_now_last_attempt).total_seconds()
+                if elapsed < backoff_seconds:
+                    # Noch in Backoff-Phase, überspringe
+                    return True
+                logger.info(f"AssistNow Backoff abgelaufen ({elapsed:.0f}s >= {backoff_seconds:.0f}s). Neuer Versuch...")
 
         update_interval_days = ASSIST_NOW_CONFIG.get("days", 7) - 1
         time_since_last = datetime.now() - self.last_assist_now_update
@@ -448,21 +465,26 @@ class GpsHandler:
         if force_update or interval_elapsed:
             log_prefix = "Manuelles" if force_update else "Periodisches"
             logger.info(f"{log_prefix} AssistNow Offline Update wird versucht...")
+            self._assist_now_last_attempt = datetime.now()
 
             data = self.download_assist_now_data()
             if data is not None:
                 if self.send_assist_now_data(data):
                     self.last_assist_now_update = datetime.now()
+                    self._assist_now_fail_count = 0  # Reset bei Erfolg
                     logger.info("AssistNow Offline Update erfolgreich durchgeführt.")
                     return True
                 else:
-                    logger.error("AssistNow Offline-Daten konnten nicht an das Modul gesendet werden.")
+                    self._assist_now_fail_count += 1
+                    next_retry = min(self._assist_now_backoff_base * (2 ** (self._assist_now_fail_count - 1)), self._assist_now_max_backoff)
+                    logger.error(f"AssistNow Offline-Daten konnten nicht an das Modul gesendet werden. Nächster Versuch in {next_retry:.0f}s.")
                     return False
             else:
-                logger.error("AssistNow Offline-Daten konnten nicht heruntergeladen werden.")
+                self._assist_now_fail_count += 1
+                next_retry = min(self._assist_now_backoff_base * (2 ** (self._assist_now_fail_count - 1)), self._assist_now_max_backoff)
+                logger.error(f"AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in {next_retry:.0f}s (Versuch #{self._assist_now_fail_count}).")
                 return False
         else:
-            # logger.debug(f"Kein AssistNow Update erforderlich (letztes Update: {self.last_assist_now_update}).") # Zu viel Logspam
             return True
 
     # --- change_gps_mode bleibt ---

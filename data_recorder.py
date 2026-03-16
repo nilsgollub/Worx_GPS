@@ -9,9 +9,14 @@ import io  # Benötigt für das effiziente Erstellen von Strings im Speicher
 #.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
+import logging
+import io
+import os
+
 class DataRecorder:
     """
-    Puffert GPS-Datenpunkte und sendet sie via MQTT.
+    Puffert GPS-Datenpunkte in einer lokalen Datei und sendet sie via MQTT.
+    Dies übersteht auch Stromausfälle des Pi Zeros.
     """
 
     def __init__(self, mqtt_handler):
@@ -23,99 +28,67 @@ class DataRecorder:
                           von Nachrichten verwendet wird.
         """
         if mqtt_handler is None:
-            # Sicherstellen, dass ein gültiger Handler übergeben wird
             raise ValueError("MqttHandler instance is required.")
         self.mqtt_handler = mqtt_handler
-        self.gps_data_buffer = []  # Initialisiert eine leere Liste als Puffer
-        logging.info("DataRecorder initialisiert.")
+        self.buffer_file = "offline_gps_buffer.csv"
+        logging.info("DataRecorder (mit offline persistenz) initialisiert.")
 
     def add_gps_data(self, gps_data):
-        """
-        Fügt einen einzelnen GPS-Datenpunkt (Dictionary) zum internen Puffer hinzu.
-
-        Args:
-            gps_data (dict): Ein Dictionary, das einen GPS-Punkt repräsentiert
-                             (z.B. {'lat': ..., 'lon': ..., 'timestamp': ..., 'satellites': ...}).
-                             Kann None sein, wird dann ignoriert.
-        """
-        if gps_data and isinstance(gps_data, dict):  # Nur gültige Dictionaries hinzufügen
-            self.gps_data_buffer.append(gps_data)
-            # Optional: Puffergrösse periodisch loggen für Debugging
-            # if len(self.gps_data_buffer) % 100 == 0:
-            #    logging.debug(f"DataRecorder Puffergrösse: {len(self.gps_data_buffer)}")
+        if gps_data and isinstance(gps_data, dict):
+            lat = gps_data.get('lat', '')
+            lon = gps_data.get('lon', '')
+            time_stamp = gps_data.get('timestamp', '')
+            satellites = gps_data.get('satellites', '')
+            try:
+                with open(self.buffer_file, "a") as f:
+                    f.write(f"{lat},{lon},{time_stamp},{satellites}\n")
+            except Exception as e:
+                logging.error(f"DataRecorder: Fehler beim Schreiben in Datei: {e}")
         elif gps_data is not None:
             logging.warning(f"DataRecorder: Ignoriere ungültige GPS-Daten: {gps_data}")
 
     def clear_buffer(self):
-        """
-        Leert den internen GPS-Datenpuffer.
-        """
-        self.gps_data_buffer = []
-        logging.info("DataRecorder Puffer geleert.")
+        if os.path.exists(self.buffer_file):
+            try:
+                os.remove(self.buffer_file)
+                logging.info("DataRecorder Puffer-Datei geleert.")
+            except Exception as e:
+                logging.error(f"Fehler beim Leeren des Puffers: {e}")
 
     def send_buffer_data(self):
-        """
-        Formatiert die gepufferten GPS-Daten als CSV-String und sendet sie via MQTT.
-        Sendet danach einen End-Marker ("-1").
-        """
-        # Sicherstellen, dass der MQTT-Handler und das Topic verfügbar sind
         if not hasattr(self.mqtt_handler, 'topic_gps') or not self.mqtt_handler.topic_gps:
             logging.error("DataRecorder: MQTT handler hat kein 'topic_gps' Attribut oder es ist leer.")
             return
 
         topic = self.mqtt_handler.topic_gps
 
-        if not self.gps_data_buffer:
+        if not os.path.exists(self.buffer_file) or os.path.getsize(self.buffer_file) == 0:
             logging.warning("DataRecorder: Kein Daten im Puffer zum Senden.")
-            # Sende End-Marker auch bei leerem Puffer, damit der Empfänger das Ende erkennt
             try:
                 self.mqtt_handler.publish_message(topic, "-1")
                 logging.info(f"DataRecorder: End-Marker (-1) für leeren Puffer an {topic} gesendet.")
             except Exception as e:
-                logging.error(f"DataRecorder: Fehler beim Senden des End-Markers für leeren Puffer: {e}")
+                logging.error(f"DataRecorder: Fehler beim Senden des End-Markers: {e}")
             return
 
-        logging.info(f"DataRecorder: Bereite das Senden von {len(self.gps_data_buffer)} Datenpunkten vor.")
-
-        # Nutze io.StringIO, um den CSV-String effizient im Speicher zu bauen
-        # Dies ist performanter als häufige String-Konkatenation
-        csv_output = io.StringIO()
-
-        # Schreibe die Datenpunkte als CSV-Zeilen
-        # Annahme: Der Empfänger (Worx_GPS.py) erwartet keine Kopfzeile,
-        # da er DictReader mit festen Feldnamen verwendet.
-        for data_point in self.gps_data_buffer:
-            try:
-                # Hole Werte sicherheitshalber mit .get(), falls Keys fehlen könnten
-                lat = data_point.get('lat', '')
-                lon = data_point.get('lon', '')
-                timestamp = data_point.get('timestamp', '')
-                satellites = data_point.get('satellites', '')
-                # Schreibe die Zeile als einfachen CSV-String
-                csv_output.write(f"{lat},{lon},{timestamp},{satellites}\n")
-            except Exception as e:
-                # Logge Fehler bei der Formatierung einzelner Punkte, fahre aber fort
-                logging.error(
-                    f"DataRecorder: Fehler beim Formatieren des Datenpunkts {data_point}: {e}. Überspringe Zeile.")
-
-        # Hole den kompletten CSV-String aus dem StringIO Puffer
-        csv_string = csv_output.getvalue()
-        csv_output.close()  # Schliesse den StringIO Puffer
-
-        # Sende die formatierten CSV-Daten via MQTT
+        logging.info(f"DataRecorder: Lese gepufferte Daten aus {self.buffer_file}.")
+        
         try:
-            if csv_string:  # Sende nur, wenn der String nicht leer ist
-                self.mqtt_handler.publish_message(topic, csv_string)
-                logging.info(f"DataRecorder: {len(self.gps_data_buffer)} Datenpunkte erfolgreich an {topic} gesendet.")
-            else:
-                logging.warning("DataRecorder: Formatierter CSV-String ist leer, keine Daten gesendet.")
+            with open(self.buffer_file, "r") as f:
+                csv_string = f.read()
 
-            # Sende den End-Marker "-1", um den Abschluss zu signalisieren
+            if csv_string:
+                self.mqtt_handler.publish_message(topic, csv_string)
+                logging.info(f"DataRecorder: Daten erfolgreich an {topic} gesendet über MQTT Queue.")
+            
             self.mqtt_handler.publish_message(topic, "-1")
             logging.info(f"DataRecorder: End-Marker (-1) an {topic} gesendet.")
 
+            # Da die Daten nun in der MQTT Queue liegen, können wir die Datei leeren
+            self.clear_buffer()
+
         except Exception as e:
-            logging.error(f"DataRecorder: Fehler beim Senden der Daten oder des End-Markers via MQTT: {e}")
+            logging.error(f"DataRecorder: Fehler beim Senden der Daten: {e}")
 
         # Das Leeren des Puffers wird durch clear_buffer() gehandhabt,
         # das in start_recording() von Worx_GPS_Rec.py aufgerufen wird.
@@ -166,7 +139,6 @@ if __name__ == '__main__':
     # Teste das Senden eines leeren Puffers
     print("\n--- Teste Senden bei leerem Puffer ---")
     recorder.clear_buffer()
-    print(f"Puffergrösse nach clear_buffer(): {len(recorder.gps_data_buffer)}")
     recorder.send_buffer_data()
 
     print("\n--- DataRecorder Test Ende ---")

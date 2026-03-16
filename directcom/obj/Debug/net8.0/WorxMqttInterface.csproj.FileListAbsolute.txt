@@ -1,0 +1,8 @@
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.csproj.AssemblyReference.cache
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.AssemblyInfoInputs.cache
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.AssemblyInfo.cs
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.csproj.CoreCompileInputs.cache
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.MvcApplicationPartsAssemblyInfo.cs
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.MvcApplicationPartsAssemblyInfo.cache
+C:\Users\gollu\Documents\GitHub\Worx_GPS\directcom\obj\Debug\net8.0\WorxMqttInterface.sourcelink.json

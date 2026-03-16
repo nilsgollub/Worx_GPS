@@ -346,8 +346,9 @@ class HeatmapGenerator:
                         logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
                         path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
                         current_path_color = path_colors_list[idx % len(path_colors_list)]
-                        folium.PolyLine(session_points_coords, color=current_path_color, weight=path_weight,
+                        polyline = folium.PolyLine(session_points_coords, color=current_path_color, weight=path_weight,
                                         opacity=path_opacity).add_to(path_feature_group)
+                        plugins.PolyLineTextPath(polyline, '►', repeat=True, offset=7, attributes={'fill': current_path_color, 'font-weight': 'bold', 'font-size': '16'}).add_to(path_feature_group)
                         if show_markers and session_points_full:
                             # Popups mit Distanz/Dauer
                             start_ts = session_points_full[0].get('timestamp')
@@ -494,8 +495,9 @@ class HeatmapGenerator:
                         logger.debug(f"Creating Path FeatureGroup '{path_layer_name}'")
                         path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
                         current_path_color = path_colors_list[0] if path_colors_list else "blue"
-                        folium.PolyLine(single_points_coords, color=current_path_color, weight=path_weight,
+                        polyline = folium.PolyLine(single_points_coords, color=current_path_color, weight=path_weight,
                                         opacity=path_opacity).add_to(path_feature_group)
+                        plugins.PolyLineTextPath(polyline, '►', repeat=True, offset=7, attributes={'fill': current_path_color, 'font-weight': 'bold', 'font-size': '16'}).add_to(path_feature_group)
                         if show_markers and single_points_full:
                             # Popups mit Distanz/Dauer
                             start_ts_single = single_points_full[0].get('timestamp')

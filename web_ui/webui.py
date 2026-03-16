@@ -13,6 +13,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
 from flask_socketio import SocketIO
 from dotenv import set_key, find_dotenv, dotenv_values
+from flask_cors import CORS
 
 import glob # glob ist Teil der Standardbibliothek
 try:
@@ -44,9 +45,13 @@ logger = logging.getLogger(__name__)
 # --- Flask & SocketIO Setup ---
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
-app.template_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
-app.static_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
-socketio = SocketIO(app, async_mode='eventlet', ping_timeout=20, ping_interval=10)
+frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+app.template_folder = frontend_dist
+app.static_folder = frontend_dist
+# For serving static assets inside the Vite build (js/css)
+app.static_url_path = ''
+CORS(app) # Enable CORS for React Frontend API calls
+socketio = SocketIO(app, async_mode='eventlet', ping_timeout=20, ping_interval=10, cors_allowed_origins="*")
 
 # --- Instanzen der neuen Services (Globale Instanzen, auf die Routen zugreifen) ---
 mqtt_service = None
@@ -56,55 +61,59 @@ system_monitor = None
 
 # --- Flask Routen (Interagieren mit Service-Instanzen) ---
 
-@app.route('/')
-def index():
-    """Hauptseite / Dashboard"""
-    logger.info("Index-Route ('/') aufgerufen.")
-    try: # Add a try-except around the whole function to catch early errors
-        if not status_manager or not data_service or not mqtt_service:
-            logger.error("Services nicht initialisiert in index Route.")
-            return "Fehler: Services nicht initialisiert.", 503
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    """
+    Serve the React UI. If a file exists in the static folder, send it.
+    Otherwise, send index.html and let React Router handle the route.
+    """
+    if path and path.startswith('api/'):
+        return jsonify({"error": "API route not found"}), 404
+        
+    full_path = os.path.join(app.static_folder, path)
+    if path != "" and os.path.exists(full_path):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 
-        logger.debug("Abrufen von Statusdaten...")
-        status_data = status_manager.get_current_mower_status()
-        system_data = status_manager.get_current_system_stats()
-        pi_data = status_manager.get_current_pi_status()
-        logger.info("Status-, System- und Pi-Daten abgerufen.")
+# --- NEUE API ROUTEN FÜR REACT FRONTEND ---
+@app.route('/api/status')
+def api_status():
+    if not status_manager or not data_service or not mqtt_service:
+        return jsonify({"error": "Services not ready"}), 503
+    return jsonify({
+        "mower": status_manager.get_current_mower_status(),
+        "system": status_manager.get_current_system_stats(),
+        "pi": status_manager.get_current_pi_status(),
+        "mqtt_connected": mqtt_service.is_connected()
+    })
 
-        logger.debug("Abrufen von Heatmap-Daten...")
-        heatmaps_list = data_service.get_available_heatmaps()
-        current_heatmap_html_path = data_service.get_current_heatmap_path()
-        logger.info(f"Heatmap-Liste ({len(heatmaps_list) if heatmaps_list else 0} Einträge) und aktueller Pfad abgerufen.")
+@app.route('/api/heatmaps')
+def api_heatmaps():
+    if not data_service: return jsonify({"error": "Service not ready"}), 503
+    return jsonify({
+        "heatmaps": data_service.get_available_heatmaps(),
+        "current_heatmap": data_service.get_current_heatmap_path()
+    })
 
-        template_path = os.path.join(app.template_folder, 'index.html')
-        if not os.path.exists(template_path):
-            logger.error(f"Template 'index.html' nicht gefunden in {app.template_folder}")
-            return "Fehler: Template 'index.html' nicht gefunden.", 500
-        logger.info("Template 'index.html' gefunden.")
+@app.route('/api/stats')
+def api_stats():
+    if not data_service: return jsonify({"error": "Service not ready"}), 503
+    return jsonify({
+        "stats": data_service.get_statistics(),
+        "problem_zones": data_service.get_formatted_problem_zones(),
+        "mow_sessions": data_service.get_mow_sessions_for_display()
+    })
 
-        # Stelle sicher, dass heatmaps eine Liste ist, auch wenn sie leer ist
-        if heatmaps_list is None:
-            heatmaps_list = []
-
-        try:
-            logger.info("Versuche 'index.html' zu rendern...")
-            rendered_template = render_template('index.html',
-                               status=status_data,
-                               system=system_data,
-                               pi_status=pi_data,
-                               heatmaps=heatmaps_list[:3],
-                               current_heatmap_html=current_heatmap_html_path,
-                               mqtt_connected=mqtt_service.is_connected()
-                              )
-            logger.info("'index.html' erfolgreich gerendert.")
-            return rendered_template
-        except Exception as e:
-            logger.error(f"Fehler beim Rendern von 'index.html': {e}", exc_info=True)
-            return "Fehler beim Rendern der Seite.", 500
-
-    except Exception as e:
-        logger.critical(f"Kritischer Fehler in der Index-Route: {e}", exc_info=True)
-        return "Ein kritischer Fehler ist aufgetreten.", 500 # Return a generic error page
+@app.route('/api/config')
+def api_config():
+    if not data_service: return jsonify({"error": "Service not ready"}), 503
+    return jsonify({
+        "config": data_service.get_editable_config(),
+        "info": data_service.get_config_info()
+    })
+# --- ENDE NEUE API ROUTEN ---
 
 @app.route('/maps')
 def maps():

@@ -1,0 +1,68 @@
+# MQTT-Konfiguration (Heimnetzwerk)
+MQTT_HOST=192.168.1.117
+MQTT_PORT=1883
+MQTT_USER=nilsgollub
+MQTT_PASSWORD=JhiswenP3003!
+MQTT_TOPIC_GPS=worx/gps
+MQTT_TOPIC_STATUS=worx/status
+MQTT_TOPIC_CONTROL=worx/control
+MQTT_TOPIC_PI_STATUS=worx/pi/temperature # Beispiel f├╝r anderen Topic-Namen
+PI_STATUS_INTERVAL=30 # Beispiel: Sende alle 30 Sekunden
+
+
+# MQTT-Konfiguration (Lokaler Testbroker)
+MQTT_HOST_LOKAL=localhost
+MQTT_PORT_LOKAL=1883
+MQTT_USER_LOCAL=nilsgollub
+MQTT_PASSWORD_LOCAL=JhiswenP3003!
+
+# AssistNow Offline Konfiguration
+ASSIST_NOW_TOKEN=jqju-OOBQnSWHmcs7pWSBA
+ASSIST_NOW_ENABLED=True
+
+# Serielle Konfiguration (nur f├╝r Raspberry Pi)
+GPS_SERIAL_PORT=/dev/ttyACM0
+GPS_BAUDRATE=9600
+
+# Test-Modus
+TEST_MODE=FALSE
+
+# Google Maps (Optional)
+GOOGLE_MAPS_API_KEY=AIzaSyCeUl8GA9G9XnnbxMgljrc1i1utlz3jm1o
+
+GITHUB_TOKEN=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
+
+FLASK_PORT=5001
+
+FLASK_DEBUG=True
+===CONFIG===
+# config.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# MQTT (unver├ñndert)
+MQTT_CONFIG = {
+    "host": os.getenv("MQTT_HOST"),
+    "port": int(os.getenv("MQTT_PORT") or 1883),
+    "user": os.getenv("MQTT_USER"),
+    "password": os.getenv("MQTT_PASSWORD"),
+    "host_lokal": os.getenv("MQTT_HOST_LOKAL"),
+    "port_lokal": int(os.getenv("MQTT_PORT_LOKAL") or 1883),
+    "user_local": os.getenv("MQTT_USER_LOCAL"),
+    "password_local": os.getenv("MQTT_PASSWORD_LOCAL"),
+    "topic_gps": os.getenv("MQTT_TOPIC_GPS"),
+    "topic_status": os.getenv("MQTT_TOPIC_STATUS"),
+    "topic_control": os.getenv("MQTT_TOPIC_CONTROL"),
+    # NEU: Status Intervall hinzugef├╝gt (aus vorheriger main_loop Logik)
+    "status_interval": int(os.getenv("MQTT_STATUS_INTERVAL", 5))
+}
+
+# GPS (unver├ñndert)
+GEO_CONFIG = {
+    "fake_gps_range": ((46.811819, 46.811919), (7.132838, 7.132938)),
+    "lat_bounds": (46.811818, 46.812104),
+    "lon_bounds": (7.132837, 7.133173),
+    "map_center": (46.811819, 7.132838),
+    "zoom_start": 15,

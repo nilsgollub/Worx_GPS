@@ -187,6 +187,60 @@ class DataService:
 
         return formatted_zones
 
+    def _calculate_coverage(self, sessions, grid_size_m=0.5):
+        """Berechnet den prozentualen Anteil der abgedeckten Fläche im Geofence."""
+        if not STATS_LIBS_AVAILABLE or not sessions:
+            return 0.0
+
+        lat_bounds = self.geo_config_main.get("lat_bounds")
+        lon_bounds = self.geo_config_main.get("lon_bounds")
+
+        if not lat_bounds or not lon_bounds:
+            return 0.0
+
+        bottom_left = (lat_bounds[0], lon_bounds[0])
+        top_left = (lat_bounds[1], lon_bounds[0])
+        bottom_right = (lat_bounds[0], lon_bounds[1])
+
+        try:
+            height_m = geodesic(bottom_left, top_left).meters
+            width_m = geodesic(bottom_left, bottom_right).meters
+
+            if height_m == 0 or width_m == 0:
+                return 0.0
+
+            cols = int(width_m / grid_size_m) + 1
+            rows = int(height_m / grid_size_m) + 1
+            total_cells = cols * rows
+
+            visited_cells = set()
+            for session_data in sessions:
+                if isinstance(session_data, dict):
+                    session_points = session_data.get('data', [])
+                else:
+                    session_points = session_data
+
+                for point in session_points:
+                    try:
+                        lat = float(point.get('lat', 0))
+                        lon = float(point.get('lon', 0))
+                        if lat_bounds[0] <= lat <= lat_bounds[1] and lon_bounds[0] <= lon <= lon_bounds[1]:
+                            col = int((lon - lon_bounds[0]) / (lon_bounds[1] - lon_bounds[0]) * cols)
+                            row = int((lat - lat_bounds[0]) / (lat_bounds[1] - lat_bounds[0]) * rows)
+                            visited_cells.add((row, col))
+                    except (ValueError, TypeError):
+                        pass
+
+            coverage = (len(visited_cells) / total_cells) * 100
+            # Mähroboter überlappen oft, also könnten wir eine höhere Rate extrapolieren. 
+            # Multiplikator um auf realistische 100% zu kommen
+            coverage = coverage * 1.5 
+            return round(min(100.0, coverage), 1)
+
+        except Exception as e:
+            logger.error(f"Fehler bei _calculate_coverage: {e}")
+            return 0.0
+
     def get_statistics(self):
         """Berechnet Statistiken aus den Mähdaten."""
         if not STATS_LIBS_AVAILABLE:
@@ -194,7 +248,7 @@ class DataService:
 
         all_mow_data = self.data_manager.load_all_mow_data()
         if not all_mow_data:
-            return {"total_recordings": 0, "total_distance": 0.0, "total_time": 0, "avg_satellites": 0.0, "problem_zones_count": 0, "avg_distance": 0.0, "avg_duration": 0.0}
+            return {"total_recordings": 0, "total_distance": 0.0, "total_time": 0, "avg_satellites": 0.0, "problem_zones_count": 0, "avg_distance": 0.0, "avg_duration": 0.0, "total_coverage": 0.0, "last_coverage": 0.0}
 
         total_distance_km = 0
         total_duration_minutes = 0
@@ -221,6 +275,14 @@ class DataService:
                 total_duration_minutes += (session_end_time - session_start_time) / 60
 
         problem_zones = self.get_problem_zones()
+        
+        # Kumulative Coverage über alle Sessions
+        total_coverage = self._calculate_coverage(all_mow_data)
+
+        # Letzte Session Coverage
+        last_coverage = 0.0
+        if valid_sessions_for_avg > 0:
+             last_coverage = self._calculate_coverage([all_mow_data[-1]])
 
         return {
             "total_recordings": len(all_mow_data),
@@ -230,6 +292,8 @@ class DataService:
             "problem_zones_count": len(problem_zones),
             "avg_distance": round(total_distance_km / valid_sessions_for_avg, 2) if valid_sessions_for_avg > 0 else 0.0,
             "avg_duration": round(total_duration_minutes / valid_sessions_for_avg, 1) if valid_sessions_for_avg > 0 else 0.0,
+            "total_coverage": total_coverage,
+            "last_coverage": last_coverage,
         }
 
     def get_mow_sessions_for_display(self):
@@ -252,13 +316,16 @@ class DataService:
                 
                 for i in range(len(session_data) - 1):
                     distance_m += calculate_distance(session_data[i], session_data[i+1])
+                    
+            coverage = self._calculate_coverage([session_data]) if session_data else 0.0
 
             formatted_sessions.append({
                 "filename": session.get("filename"),
                 "start_time_str": start_time_str,
                 "point_count": session.get("point_count"),
                 "duration_str": format_duration(duration_seconds),
-                "distance_km_str": f"{distance_m / 1000:.2f} km" if distance_m > 0 else "0.00 km"
+                "distance_km_str": f"{distance_m / 1000:.2f} km" if distance_m > 0 else "0.00 km",
+                "coverage_str": f"{coverage}%"
             })
         return formatted_sessions
 

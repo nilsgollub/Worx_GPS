@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <!-- <OutputType>Exe</OutputType>  Behalte Web für ASP.NET Core Projekte, auch wenn sie als Exe laufen -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.7" /> <!-- Passende Version für .NET 8.0 -->
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" /> <!-- Passende Version für .NET 8.0 -->
+    <PackageReference Include="MQTTnet" Version="5.0.1.1416" /> <!-- Angleichen an AvaDeskApp -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="MQTTnet.Client" />
+    <Using Include="MQTTnet.Client.Options" /> <!-- Häufig zusammen mit MQTTnet.Client benötigt -->
+  </ItemGroup>
+
+</Project>
