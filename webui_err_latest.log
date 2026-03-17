@@ -1996,3 +1996,4 @@ ERROR:__main__:Template 'maps.html' nicht gefunden in C:\Users\gollu\Documents\G
 127.0.0.1 - - [17/Mar/2026 23:20:56] "GET /socket.io/?EIO=4&transport=polling&t=6f5086m1&sid=6i6Zd5kGhBI3oiAdAAHG HTTP/1.1" 200 562 0.000123
 (5824) accepted ('127.0.0.1', 63520)
 127.0.0.1 - - [17/Mar/2026 23:20:57] "GET /socket.io/?EIO=4&transport=polling&t=6f50b8l8&sid=6i6Zd5kGhBI3oiAdAAHG HTTP/1.1" 200 181 0.317462
+127.0.0.1 - - [17/Mar/2026 23:21:20] "GET /api/status HTTP/1.1" 200 599 0.000407
