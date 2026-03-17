@@ -85,3 +85,8 @@ heatmaps/heatmap_aktuell.html
 heatmaps/heatmap_kumuliert.html
 heatmaps/problemzonen.html
 heatmaps/quality.html
+mqtt_Problemlösung.txt
+Mqtttest.py
+heatmaps/wifi.html
+directcom/obj/Debug/net8.0/WorxMqttInterface.AssemblyInfo.cs
+directcom/obj/Debug/net8.0/WorxMqttInterface.AssemblyInfoInputs.cache

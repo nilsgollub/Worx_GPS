@@ -41,7 +41,7 @@ class MqttHandler:
         self.test_mode = test_mode
         self._host = MQTT_CONFIG.get("host", "localhost")
         self._port = MQTT_CONFIG.get("port", 1883)
-        self._keepalive = MQTT_CONFIG.get("keepalive", 60)
+        self._keepalive = MQTT_CONFIG.get("keepalive", 120)  # Erhöht von 60 auf 120 für mehr Stabilität auf dem Pi Zero
         self._username = MQTT_CONFIG.get("user")
         self._password = MQTT_CONFIG.get("password")
 
@@ -328,7 +328,7 @@ class MqttHandler:
             """Setzt die Callback-Funktion für erfolgreiche Verbindung."""
             if callable(callback_func):
                 self._user_connect_callback = callback_func
-                self._mqtt_client.on_connect = self._on_connect_wrapper
+                self.client.on_connect = self._on_connect_wrapper
                 logging.info("Benutzerdefinierter MQTT-Connect-Callback gesetzt.")
             else:
                 logging.warning("Versuch, einen nicht aufrufbaren MQTT-Connect-Callback zu setzen.")
@@ -337,7 +337,7 @@ class MqttHandler:
             """Setzt die Callback-Funktion für Verbindungstrennung."""
             if callable(callback_func):
                 self._user_disconnect_callback = callback_func
-                self._mqtt_client.on_disconnect = self._on_disconnect_wrapper
+                self.client.on_disconnect = self._on_disconnect_wrapper
                 logging.info("Benutzerdefinierter MQTT-Disconnect-Callback gesetzt.")
             else:
                 logging.warning("Versuch, einen nicht aufrufbaren MQTT-Disconnect-Callback zu setzen.")
@@ -348,16 +348,16 @@ class MqttHandler:
             self._on_connect(client, userdata, flags, rc, properties)
             if hasattr(self, '_user_connect_callback') and self._user_connect_callback:
                 try:
-                    self._user_connect_callback()
+                    self._user_connect_callback(client, userdata, flags, rc, properties)
                 except Exception as e:
                     logging.error(f"Fehler im benutzerdefinierten Connect-Callback: {e}")
                     
-    def _on_disconnect_wrapper(self, client, userdata, rc, properties=None):
+    def _on_disconnect_wrapper(self, client, userdata, flags, rc, properties=None):
             """Wrapper für den Disconnect-Callback, ruft auch benutzerdefinierten Callback auf."""
-            self._on_disconnect(client, userdata, rc, properties)
+            self._on_disconnect(client, userdata, flags, rc, properties)
             if hasattr(self, '_user_disconnect_callback') and self._user_disconnect_callback:
                 try:
-                    self._user_disconnect_callback()
+                    self._user_disconnect_callback(client, userdata, flags, rc, properties)
                 except Exception as e:
                     logging.error(f"Fehler im benutzerdefinierten Disconnect-Callback: {e}")
 

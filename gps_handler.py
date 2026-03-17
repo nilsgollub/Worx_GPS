@@ -293,16 +293,28 @@ class GpsHandler:
 
                     if line.startswith('$'):
                         try:
+                            # Basis-Prüfung: Hat die Zeile überhaupt nützliche Felder?
+                            # Zeilen wie '$GPGL,,,,,*4' haben kaum Inhalt.
+                            parts = line.split(',')
+                            if len(parts) > 1:
+                                # Zähle nicht-leere Felder (ohne den Talker-Teil)
+                                filled_fields = [p for p in parts[1:] if p.split('*')[0].strip()]
+                                if not filled_fields:
+                                    # logger.debug(f"Überspringe leere NMEA-Zeile: '{line}'")
+                                    continue
+                            
                             msg = pynmea2.parse(line)
                             if isinstance(msg, pynmea2.types.talker.GGA):
                                 gga_msg = msg
                                 logger.debug(
                                     f"GGA gefunden: Qual={getattr(msg, 'gps_qual', 'N/A')}, Sats={getattr(msg, 'num_sats', 'N/A')}")
                                 # break # Optional: Nur ersten GGA nehmen
-                            # else: # Zu viel Logspam
-                            # logger.debug(f"Andere NMEA-Nachricht empfangen: {msg.sentence_type}")
                         except pynmea2.ParseError as e:
-                            logger.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
+                            # Nur warnen, wenn die Zeile nicht offensichtlich Schrott ist
+                            if len(line) > 10:
+                                logger.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
+                            else:
+                                logger.debug(f"Ignoriere sehr kurze/unvollständige NMEA-Zeile: '{line}'")
                         except AttributeError as e:
                             logger.error(f"Attributfehler beim Verarbeiten der NMEA-Nachricht: {e} - Zeile: '{line}'")
                     # else: # Zu viel Logspam
