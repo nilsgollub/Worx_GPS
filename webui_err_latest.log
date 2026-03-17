@@ -1983,3 +1983,16 @@ ERROR:__main__:Template 'maps.html' nicht gefunden in C:\Users\gollu\Documents\G
 127.0.0.1 - - [17/Mar/2026 23:19:53] "GET /socket.io/?EIO=4&transport=polling&t=6dsdzr3e&sid=CSovU0skTnhBjRl2AAHC HTTP/1.1" 200 561 0.000134
 (5824) accepted ('127.0.0.1', 51384)
 127.0.0.1 - - [17/Mar/2026 23:19:54] "GET /socket.io/?EIO=4&transport=polling&t=6dse9led&sid=CSovU0skTnhBjRl2AAHC HTTP/1.1" 200 181 0.302191
+127.0.0.1 - - [17/Mar/2026 23:20:20] "GET /api/status HTTP/1.1" 200 600 0.000553
+127.0.0.1 - - [17/Mar/2026 23:20:24] "GET /socket.io/?EIO=4&transport=websocket&sid=CSovU0skTnhBjRl2AAHC HTTP/1.1" 200 0 30.006054
+127.0.0.1 - - [17/Mar/2026 23:20:25] "GET /socket.io/?EIO=4&transport=polling&t=6eh2t6bn HTTP/1.1" 200 300 0.000171
+127.0.0.1 - - [17/Mar/2026 23:20:25] "POST /socket.io/?EIO=4&transport=polling&t=6eh2w5nl&sid=i_YkBu-55K7liIBeAAHE HTTP/1.1" 200 219 0.000555
+127.0.0.1 - - [17/Mar/2026 23:20:25] "GET /socket.io/?EIO=4&transport=polling&t=6eh2w94k&sid=i_YkBu-55K7liIBeAAHE HTTP/1.1" 200 560 0.000129
+(5824) accepted ('127.0.0.1', 57839)
+127.0.0.1 - - [17/Mar/2026 23:20:26] "GET /socket.io/?EIO=4&transport=polling&t=6eh36jbu&sid=i_YkBu-55K7liIBeAAHE HTTP/1.1" 200 181 0.309952
+127.0.0.1 - - [17/Mar/2026 23:20:56] "GET /socket.io/?EIO=4&transport=websocket&sid=i_YkBu-55K7liIBeAAHE HTTP/1.1" 200 0 30.006929
+127.0.0.1 - - [17/Mar/2026 23:20:56] "GET /socket.io/?EIO=4&transport=polling&t=6f504llb HTTP/1.1" 200 300 0.000194
+127.0.0.1 - - [17/Mar/2026 23:20:56] "POST /socket.io/?EIO=4&transport=polling&t=6f507cib&sid=6i6Zd5kGhBI3oiAdAAHG HTTP/1.1" 200 219 0.000529
+127.0.0.1 - - [17/Mar/2026 23:20:56] "GET /socket.io/?EIO=4&transport=polling&t=6f5086m1&sid=6i6Zd5kGhBI3oiAdAAHG HTTP/1.1" 200 562 0.000123
+(5824) accepted ('127.0.0.1', 63520)
+127.0.0.1 - - [17/Mar/2026 23:20:57] "GET /socket.io/?EIO=4&transport=polling&t=6f50b8l8&sid=6i6Zd5kGhBI3oiAdAAHG HTTP/1.1" 200 181 0.317462

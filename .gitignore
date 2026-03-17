@@ -90,3 +90,5 @@ Mqtttest.py
 heatmaps/wifi.html
 directcom/obj/Debug/net8.0/WorxMqttInterface.AssemblyInfo.cs
 directcom/obj/Debug/net8.0/WorxMqttInterface.AssemblyInfoInputs.cache
+webui_err_latest.log
+webui_err_latest.log
