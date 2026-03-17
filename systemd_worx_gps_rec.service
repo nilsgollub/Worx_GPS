@@ -7,7 +7,7 @@ Documentation=file:///home/nilsgollub/Worx_GPS/RASPBERRY_PI_DEPLOYMENT.md
 [Service]
 Type=simple
 WorkingDirectory=/home/nilsgollub/Worx_GPS
-ExecStart=/home/nilsgollub/Worx_GPS/.venv/bin/python3 /home/nilsgollub/Worx_GPS/Worx_GPS_Rec.py
+ExecStart=/usr/bin/python3 /home/nilsgollub/Worx_GPS/Worx_GPS_Rec.py
 Restart=on-failure
 RestartSec=10
 
