@@ -9,7 +9,8 @@ echo "║    (3-5 Minuten, alles auf einmal durchlaufen)            ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-cd ~/Worx_GPS
+# Wechsle ins Script-Verzeichnis oder nutze aktuelles Verzeichnis
+cd "$(dirname "$0")" 2>/dev/null || true
 
 # 1️⃣ SYSTEM
 echo "1️⃣  SYSTEM INFORMATION"
@@ -36,7 +37,7 @@ if [ -e /dev/ttyACM0 ]; then
     echo "   Berechtigungen: $(ls -l /dev/ttyACM0 | awk '{print $1, $3, $4}')"
 else
     echo "❌ /dev/ttyACM0 NICHT GEFUNDEN"
-    f [ -e /dev/ttyUSB0 ]; then
+    if [ -e /dev/ttyUSB0 ]; then
         echo "   ℹ️  aber /dev/ttyUSB0 vorhanden"
     else
         echo "   ℹ️  Keine USB/Serial Geräte gefunden"
