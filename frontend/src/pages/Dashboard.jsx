@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, RefreshCw } from 'lucide-react';
-import { socket } from '../App';
+import { socket, API_URL } from '../App';
 
 export default function Dashboard() {
   const [data, setData] = useState({
@@ -177,7 +177,7 @@ export default function Dashboard() {
          </h3>
          <div className="map-frame">
            {currentHeatmap ? (
-              <iframe src={`http://${window.location.hostname}:5000${currentHeatmap}`} />
+              <iframe src={`${API_URL}${currentHeatmap}`} />
            ) : (
              <div className="flex-between" style={{height: '100%', justifyContent: 'center', color: '#888'}}>
                No heatmap found or generated yet.

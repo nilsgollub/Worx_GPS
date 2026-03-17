@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WorxMqttInterface")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+90f92084b302c42cccdcecc455eb2e72c7b2bd06")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1d98e5fbaced32ae714413daa5c593237e857e2d")]
 [assembly: System.Reflection.AssemblyProductAttribute("WorxMqttInterface")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WorxMqttInterface")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

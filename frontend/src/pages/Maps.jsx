@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { ExternalLink } from 'lucide-react';
+import { API_URL } from '../App';
 
 export default function Maps() {
   const [maps, setMaps] = useState([]);
@@ -44,7 +45,7 @@ export default function Maps() {
           <h3 style={{margin: 0}}>{selectedMap ? selectedMap.name : 'Keine Karte gewählt'}</h3>
           {selectedMap && (
             <a 
-              href={`http://${window.location.hostname}:5000/heatmaps/${selectedMap.id}.html`} 
+              href={`${API_URL}/heatmaps/${selectedMap.id}.html`} 
               target="_blank" 
               className="btn btn-primary" 
               style={{padding: '6px 12px'}}
@@ -56,7 +57,7 @@ export default function Maps() {
         <div style={{flex: 1, background: '#111'}}>
           {selectedMap ? (
             <iframe 
-               src={`http://${window.location.hostname}:5000/heatmaps/${selectedMap.id}.html`} 
+               src={`${API_URL}/heatmaps/${selectedMap.id}.html`} 
                style={{width: '100%', height:'100%', border: 'none'}} 
             />
           ) : (

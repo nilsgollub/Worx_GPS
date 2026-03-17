@@ -9,7 +9,7 @@ import { io } from 'socket.io-client';
 import axios from 'axios';
 
 // Update with correct port matching backend .env later if needed
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : `http://${window.location.hostname}:5000`;
+export const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5001' : `http://${window.location.hostname}:5001`;
 export const socket = io(API_URL);
 
 axios.defaults.baseURL = API_URL;
