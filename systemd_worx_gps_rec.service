@@ -6,8 +6,8 @@ Documentation=file:///home/nilsgollub/Worx_GPS/RASPBERRY_PI_DEPLOYMENT.md
 
 [Service]
 Type=simple
-WorkingDirectory=/home/nilsgollub/Worx_GPS
-ExecStart=/usr/bin/python3 /home/nilsgollub/Worx_GPS/Worx_GPS_Rec.py
+WorkingDirectory=/home/nilsgollub/Documents/GitHub/Worx_GPS
+ExecStart=/usr/bin/python3 /home/nilsgollub/Documents/GitHub/Worx_GPS/Worx_GPS_Rec.py
 Restart=on-failure
 RestartSec=10
 
@@ -17,7 +17,7 @@ StandardError=journal
 SyslogIdentifier=worx_gps_rec
 
 # Environment
-Environment="PATH=/home/nilsgollub/Worx_GPS/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=/home/nilsgollub/Documents/GitHub/Worx_GPS/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 
