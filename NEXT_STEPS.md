@@ -1,6 +1,14 @@
 # ✅ Debug Session - Status & Nächste Schritte
 
-## 📊 Was wurde erledigt
+## Status nach Funktionscheck
+
+Der erste Funktionscheck-Lauf zeigt folgende Probleme:
+- ❌ GPS-Modul nicht erkannt
+- ❌ Service nicht aktiv
+- ❌ MQTT nicht erreichbar
+- ❌ Keine Fahrtdaten
+
+**Das ist NORMAL beim ersten Start!** Es müssen noch Probleme gelöst werden.
 
 ### 1️⃣ Diagnose-Tools erstellt (Lokal vorhanden)
 - ✅ `run_funktionscheck.sh` - Automatisiertes Diagnose-Script

@@ -22,11 +22,8 @@ Environment="PATH=/home/nilsgollub/Worx_GPS/.venv/bin:/usr/local/bin:/usr/bin:/b
 Environment="PYTHONUNBUFFERED=1"
 Environment="PYTHONDONTWRITEBYTECODE=1"
 
-# Security
+# Security (reduced for user service)
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/nilsgollub/Worx_GPS/data /tmp
 
 # Performance
 CPUQuota=50%

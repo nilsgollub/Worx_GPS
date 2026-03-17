@@ -8,16 +8,21 @@
 
 ## 🔴 DEBUGGING / PROBLEM-LÖSUNG
 
-**→ [FUNKTIONSCHECK_ANLEITUNG.md](FUNKTIONSCHECK_ANLEITUNG.md)** ← **ZUERST LESEN! Schnelle Diagnose**
+**WENN FUNKTIONSCHECK FEHLER ZEIGT:**
+→ **[DEBUG_GUIDE_SCHRITT_FÜR_SCHRITT.md](DEBUG_GUIDE_SCHRITT_FÜR_SCHRITT.md)** ← **ZUERST LESEN!**
 
-Diese Anleitung zeigt Copy-Paste-Befehle für sofortigen Funktionscheck:
-- Schritt-für-Schritt Diagnose
-- Erwartete Ergebnisse für jeden Check
-- Sofort-Behebung häufiger Probleme
-- Erfolgs-Kriterien Checkliste
+Strukturierter Debugging-Guide mit Lösungen für:
+- GPS-Modul nicht gefunden
+- Service nicht aktiv
+- MQTT nicht erreichbar
+- Abhängigkeiten/Berechtigungen
+- Manueller Start & Fehleranalyse
 
-**Danach:**
-→ **[DEBUG_CHECKLIST_SSH.md](DEBUG_CHECKLIST_SSH.md)** - Wenn detailliertere Diag. nötig
+**Für schnelle Tests:**
+→ **[FUNKTIONSCHECK_ANLEITUNG.md](FUNKTIONSCHECK_ANLEITUNG.md)** - Copy-Paste Diagnose
+
+**Für erweiterte Diagnose:**
+→ **[DEBUG_CHECKLIST_SSH.md](DEBUG_CHECKLIST_SSH.md)** - Detaillierte SSH-Befehle
 
 ---
 
