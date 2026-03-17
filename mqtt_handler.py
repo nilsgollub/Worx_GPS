@@ -13,6 +13,9 @@ DEFAULT_MAX_RECONNECT_DELAY = 60
 # DEFAULT_RECONNECT_RATE = 2 # Nicht direkt von Paho verwendet, aber für eigene Logik nlich
 DEFAULT_MAX_QUEUE_SIZE = 1000  # Maximale Anzahl Nachrichten in der Warteschlange, 0 für unbegrenzt
 
+# Spezieller Logger für MQTT
+mqtt_logger = logging.getLogger("mqtt_handler")
+
 
 class MqttHandler:
     """
@@ -39,9 +42,13 @@ class MqttHandler:
                                                         Wenn None, werden Standard-Topics verwendet.
         """
         self.test_mode = test_mode
-        self._host = MQTT_CONFIG.get("host", "localhost")
-        self._port = MQTT_CONFIG.get("port", 1883)
-        self._keepalive = MQTT_CONFIG.get("keepalive", 120)  # Erhöht von 60 auf 120 für mehr Stabilität auf dem Pi Zero
+        is_local = self.test_mode
+        host_key = "host_lokal" if is_local else "host"
+        port_key = "port_lokal" if is_local else "port"
+        
+        self._host = MQTT_CONFIG.get(host_key) or MQTT_CONFIG.get("host", "localhost")
+        self._port = int(MQTT_CONFIG.get(port_key) or MQTT_CONFIG.get("port", 1883))
+        self._keepalive = int(MQTT_CONFIG.get("keepalive", 120))
         self._username = MQTT_CONFIG.get("user")
         self._password = MQTT_CONFIG.get("password")
 
@@ -119,7 +126,11 @@ class MqttHandler:
     # --- Standard Callbacks (on_log, on_message, on_publish bleiben gleich) ---
     def _on_log(self, client, userdata, level, buf):
         """Leitet Paho-Logmeldungen an das Python-Logging weiter."""
-        if level == paho_mqtt_client.MQTT_LOG_INFO:
+        # Wir loggen Paho-Meldungen standardmäßig als DEBUG, 
+        # aber bei Verbindungsproblemen können wir sie hier forcieren.
+        if "Keep alive" in buf or "connection" in buf.lower():
+            log_level = logging.INFO # Wichtige Netzwerkereignisse immer in INFO
+        elif level == paho_mqtt_client.MQTT_LOG_INFO:
             log_level = logging.INFO
         elif level == paho_mqtt_client.MQTT_LOG_NOTICE:
             log_level = logging.INFO
@@ -127,12 +138,10 @@ class MqttHandler:
             log_level = logging.WARNING
         elif level == paho_mqtt_client.MQTT_LOG_ERR:
             log_level = logging.ERROR
-        elif level == paho_mqtt_client.MQTT_LOG_DEBUG:
-            log_level = logging.DEBUG
         else:
             log_level = logging.DEBUG
-        if logging.getLogger().isEnabledFor(log_level):
-            logging.log(log_level, f"[PahoMQTT] {buf}")
+            
+        mqtt_logger.log(log_level, f"[PahoMQTT] {buf}")
 
     def _on_message(self, client, userdata, msg):
         """Callback, der bei Empfang einer Nachricht aufgerufen wird."""
