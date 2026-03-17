@@ -1,0 +1,155 @@
+Konfigurationsvalidierung erfolgreich.
+(12028) wsgi starting up on http://0.0.0.0:5001
+(12028) accepted ('127.0.0.1', 50707)
+127.0.0.1 - - [17/Mar/2026 20:42:02] "GET /api/status HTTP/1.1" 200 564 0.000933
+(12028) accepted ('127.0.0.1', 51814)
+127.0.0.1 - - [17/Mar/2026 21:14:28] "GET /api/status HTTP/1.1" 200 567 0.000616
+(12028) accepted ('127.0.0.1', 62852)
+127.0.0.1 - - [17/Mar/2026 21:14:38] "GET /api/status HTTP/1.1" 200 569 0.000412
+(12028) accepted ('127.0.0.1', 58506)
+(12028) accepted ('127.0.0.1', 50166)
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET / HTTP/1.1" 200 794 0.049202
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /assets/index-Bfkojvc1.js HTTP/1.1" 200 332960 0.004503
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /assets/index-Cvyppjy8.css HTTP/1.1" 200 4395 0.001706
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /socket.io/?EIO=4&transport=polling&t=1xbhrqwl HTTP/1.1" 200 300 0.000269
+127.0.0.1 - - [17/Mar/2026 21:15:07] "POST /socket.io/?EIO=4&transport=polling&t=1xbi50jn&sid=tb3qG8N4D1rezWUYAAAA HTTP/1.1" 200 219 0.001037
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /socket.io/?EIO=4&transport=polling&t=1xbi6p45&sid=tb3qG8N4D1rezWUYAAAA HTTP/1.1" 200 554 0.000187
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /api/status HTTP/1.1" 200 592 0.000462
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /api/heatmaps HTTP/1.1" 200 942 0.001509
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /api/status HTTP/1.1" 200 592 0.000349
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 200 27755 0.001066
+(12028) accepted ('127.0.0.1', 58453)
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /favicon.svg HTTP/1.1" 304 242 0.001263
+(12028) accepted ('127.0.0.1', 52953)
+127.0.0.1 - - [17/Mar/2026 21:15:07] "GET /socket.io/?EIO=4&transport=polling&t=1xbjiwm8&sid=tb3qG8N4D1rezWUYAAAA HTTP/1.1" 200 181 0.291219
+127.0.0.1 - - [17/Mar/2026 21:15:12] "GET /api/status HTTP/1.1" 200 592 0.000387
+127.0.0.1 - - [17/Mar/2026 21:15:17] "GET /api/status HTTP/1.1" 200 593 0.000409
+127.0.0.1 - - [17/Mar/2026 21:15:18] "GET /api/heatmaps HTTP/1.1" 200 942 0.001536
+127.0.0.1 - - [17/Mar/2026 21:15:18] "GET /heatmaps/heatmap_10.html HTTP/1.1" 200 47659 0.002015
+127.0.0.1 - - [17/Mar/2026 21:15:22] "GET /api/status HTTP/1.1" 200 591 0.000949
+127.0.0.1 - - [17/Mar/2026 21:15:27] "GET /api/status HTTP/1.1" 200 593 0.000396
+127.0.0.1 - - [17/Mar/2026 21:15:30] "GET /heatmaps/quality.html HTTP/1.1" 200 258917 0.003109
+127.0.0.1 - - [17/Mar/2026 21:15:32] "GET /api/status HTTP/1.1" 200 590 0.000405
+127.0.0.1 - - [17/Mar/2026 21:15:34] "GET /heatmaps/wifi.html HTTP/1.1" 200 254755 0.003314
+127.0.0.1 - - [17/Mar/2026 21:15:37] "GET /api/status HTTP/1.1" 200 592 0.000558
+127.0.0.1 - - [17/Mar/2026 21:15:37] "GET /socket.io/?EIO=4&transport=websocket&sid=tb3qG8N4D1rezWUYAAAA HTTP/1.1" 200 0 30.048921
+127.0.0.1 - - [17/Mar/2026 21:15:38] "GET /socket.io/?EIO=4&transport=polling&t=1xzk4uel HTTP/1.1" 200 300 0.000198
+127.0.0.1 - - [17/Mar/2026 21:15:38] "POST /socket.io/?EIO=4&transport=polling&t=1xzk7jtz&sid=lfAi_H0W9b8HrbBDAAAC HTTP/1.1" 200 219 0.000614
+127.0.0.1 - - [17/Mar/2026 21:15:38] "GET /socket.io/?EIO=4&transport=polling&t=1xzk8e3n&sid=lfAi_H0W9b8HrbBDAAAC HTTP/1.1" 200 554 0.000120
+(12028) accepted ('127.0.0.1', 59026)
+127.0.0.1 - - [17/Mar/2026 21:15:38] "GET /socket.io/?EIO=4&transport=polling&t=1xzkbgkc&sid=lfAi_H0W9b8HrbBDAAAC HTTP/1.1" 200 181 0.303501
+127.0.0.1 - - [17/Mar/2026 21:15:40] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 304 251 0.000788
+127.0.0.1 - - [17/Mar/2026 21:15:42] "GET /api/status HTTP/1.1" 200 592 0.000396
+127.0.0.1 - - [17/Mar/2026 21:15:43] "GET /heatmaps/heatmap_kumuliert.html HTTP/1.1" 200 24251 0.001176
+127.0.0.1 - - [17/Mar/2026 21:15:46] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 304 251 0.000730
+127.0.0.1 - - [17/Mar/2026 21:15:47] "GET /api/status HTTP/1.1" 200 592 0.000710
+127.0.0.1 - - [17/Mar/2026 21:15:52] "GET /api/status HTTP/1.1" 200 591 0.000399
+127.0.0.1 - - [17/Mar/2026 21:15:54] "GET /heatmaps/heatmap_10.html HTTP/1.1" 304 246 0.001139
+127.0.0.1 - - [17/Mar/2026 21:15:57] "GET /api/status HTTP/1.1" 200 593 0.000400
+127.0.0.1 - - [17/Mar/2026 21:16:02] "GET /api/status HTTP/1.1" 200 591 0.000401
+127.0.0.1 - - [17/Mar/2026 21:16:04] "GET /api/stats HTTP/1.1" 200 914 0.008705
+127.0.0.1 - - [17/Mar/2026 21:16:07] "GET /api/status HTTP/1.1" 200 590 0.000403
+127.0.0.1 - - [17/Mar/2026 21:16:08] "GET /socket.io/?EIO=4&transport=websocket&sid=lfAi_H0W9b8HrbBDAAAC HTTP/1.1" 200 0 30.005645
+127.0.0.1 - - [17/Mar/2026 21:16:08] "GET /socket.io/?EIO=4&transport=polling&t=1yn5lx3t HTTP/1.1" 200 300 0.000171
+127.0.0.1 - - [17/Mar/2026 21:16:08] "POST /socket.io/?EIO=4&transport=polling&t=1yn5p1p6&sid=ddC95cOYCDrtNSvkAAAE HTTP/1.1" 200 219 0.000537
+127.0.0.1 - - [17/Mar/2026 21:16:08] "GET /socket.io/?EIO=4&transport=polling&t=1yn5q2gu&sid=ddC95cOYCDrtNSvkAAAE HTTP/1.1" 200 552 0.000113
+(12028) accepted ('127.0.0.1', 58051)
+127.0.0.1 - - [17/Mar/2026 21:16:09] "GET /socket.io/?EIO=4&transport=polling&t=1yn5sffw&sid=ddC95cOYCDrtNSvkAAAE HTTP/1.1" 200 181 0.305046
+127.0.0.1 - - [17/Mar/2026 21:16:12] "GET /api/status HTTP/1.1" 200 591 0.000619
+127.0.0.1 - - [17/Mar/2026 21:16:12] "GET /api/status HTTP/1.1" 200 591 0.000412
+127.0.0.1 - - [17/Mar/2026 21:16:12] "GET /api/heatmaps HTTP/1.1" 200 942 0.001775
+127.0.0.1 - - [17/Mar/2026 21:16:12] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 304 251 0.001232
+127.0.0.1 - - [17/Mar/2026 21:16:15] "POST /control HTTP/1.1" 200 271 0.000628
+127.0.0.1 - - [17/Mar/2026 21:16:17] "GET /api/status HTTP/1.1" 200 600 0.000412
+127.0.0.1 - - [17/Mar/2026 21:16:19] "POST /control HTTP/1.1" 200 271 0.000557
+127.0.0.1 - - [17/Mar/2026 21:16:22] "GET /api/status HTTP/1.1" 200 602 0.000388
+127.0.0.1 - - [17/Mar/2026 21:16:27] "GET /api/status HTTP/1.1" 200 602 0.000387
+127.0.0.1 - - [17/Mar/2026 21:16:32] "GET /api/status HTTP/1.1" 200 602 0.000385
+127.0.0.1 - - [17/Mar/2026 21:16:33] "POST /control HTTP/1.1" 200 271 0.000565
+127.0.0.1 - - [17/Mar/2026 21:16:37] "GET /api/status HTTP/1.1" 200 599 0.000372
+127.0.0.1 - - [17/Mar/2026 21:16:39] "POST /control HTTP/1.1" 200 273 0.000510
+127.0.0.1 - - [17/Mar/2026 21:16:39] "GET /socket.io/?EIO=4&transport=websocket&sid=ddC95cOYCDrtNSvkAAAE HTTP/1.1" 200 0 30.011271
+127.0.0.1 - - [17/Mar/2026 21:16:39] "GET /socket.io/?EIO=4&transport=polling&t=1zb5ic9r HTTP/1.1" 200 300 0.000172
+127.0.0.1 - - [17/Mar/2026 21:16:39] "POST /socket.io/?EIO=4&transport=polling&t=1zb5lzan&sid=wqphOClrRmbDUE_mAAAG HTTP/1.1" 200 219 0.000499
+127.0.0.1 - - [17/Mar/2026 21:16:39] "GET /socket.io/?EIO=4&transport=polling&t=1zb5lude&sid=wqphOClrRmbDUE_mAAAG HTTP/1.1" 200 561 0.000108
+(12028) accepted ('127.0.0.1', 59367)
+127.0.0.1 - - [17/Mar/2026 21:16:40] "GET /socket.io/?EIO=4&transport=polling&t=1zb5omx2&sid=wqphOClrRmbDUE_mAAAG HTTP/1.1" 200 181 0.304294
+127.0.0.1 - - [17/Mar/2026 21:16:42] "GET /api/status HTTP/1.1" 200 601 0.000382
+127.0.0.1 - - [17/Mar/2026 21:16:45] "POST /control HTTP/1.1" 200 270 0.000603
+127.0.0.1 - - [17/Mar/2026 21:16:47] "GET /api/status HTTP/1.1" 200 600 0.000382
+127.0.0.1 - - [17/Mar/2026 21:16:52] "GET /api/status HTTP/1.1" 200 599 0.000409
+127.0.0.1 - - [17/Mar/2026 21:16:53] "POST /control HTTP/1.1" 200 270 0.000549
+127.0.0.1 - - [17/Mar/2026 21:16:57] "GET /api/status HTTP/1.1" 200 598 0.000471
+127.0.0.1 - - [17/Mar/2026 21:17:02] "GET /api/status HTTP/1.1" 200 597 0.000387
+127.0.0.1 - - [17/Mar/2026 21:17:07] "GET /api/status HTTP/1.1" 200 600 0.000394
+127.0.0.1 - - [17/Mar/2026 21:17:10] "GET /socket.io/?EIO=4&transport=websocket&sid=wqphOClrRmbDUE_mAAAG HTTP/1.1" 200 0 30.006013
+127.0.0.1 - - [17/Mar/2026 21:17:10] "GET /socket.io/?EIO=4&transport=polling&t=1zysc323 HTTP/1.1" 200 300 0.000188
+127.0.0.1 - - [17/Mar/2026 21:17:10] "POST /socket.io/?EIO=4&transport=polling&t=1zysfpbg&sid=QLyhNqUxSukRj7qEAAAI HTTP/1.1" 200 219 0.000500
+127.0.0.1 - - [17/Mar/2026 21:17:10] "GET /socket.io/?EIO=4&transport=polling&t=1zysglby&sid=QLyhNqUxSukRj7qEAAAI HTTP/1.1" 200 561 0.000106
+(12028) accepted ('127.0.0.1', 65277)
+127.0.0.1 - - [17/Mar/2026 21:17:10] "GET /socket.io/?EIO=4&transport=polling&t=1zysjt4e&sid=QLyhNqUxSukRj7qEAAAI HTTP/1.1" 200 181 0.304754
+127.0.0.1 - - [17/Mar/2026 21:17:12] "GET /api/status HTTP/1.1" 200 599 0.000382
+127.0.0.1 - - [17/Mar/2026 21:17:17] "GET /api/status HTTP/1.1" 200 600 0.000393
+127.0.0.1 - - [17/Mar/2026 21:17:18] "POST /control HTTP/1.1" 200 273 0.000639
+127.0.0.1 - - [17/Mar/2026 21:17:22] "GET /api/status HTTP/1.1" 200 600 0.000435
+127.0.0.1 - - [17/Mar/2026 21:17:27] "GET /api/status HTTP/1.1" 200 600 0.000491
+127.0.0.1 - - [17/Mar/2026 21:17:32] "GET /api/status HTTP/1.1" 200 600 0.000432
+127.0.0.1 - - [17/Mar/2026 21:17:34] "GET /api/heatmaps HTTP/1.1" 200 942 0.001568
+127.0.0.1 - - [17/Mar/2026 21:17:34] "GET /heatmaps/heatmap_10.html HTTP/1.1" 304 246 0.001062
+127.0.0.1 - - [17/Mar/2026 21:17:37] "GET /api/status HTTP/1.1" 200 601 0.000409
+127.0.0.1 - - [17/Mar/2026 21:17:38] "GET /heatmaps/quality.html HTTP/1.1" 304 245 0.000729
+127.0.0.1 - - [17/Mar/2026 21:17:40] "GET /socket.io/?EIO=4&transport=websocket&sid=QLyhNqUxSukRj7qEAAAI HTTP/1.1" 200 0 30.014665
+127.0.0.1 - - [17/Mar/2026 21:17:41] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 304 251 0.000804
+127.0.0.1 - - [17/Mar/2026 21:17:41] "GET /socket.io/?EIO=4&transport=polling&t=20mfeu2a HTTP/1.1" 200 300 0.000270
+127.0.0.1 - - [17/Mar/2026 21:17:41] "POST /socket.io/?EIO=4&transport=polling&t=20mfsf07&sid=4s7-BLYuzftW2yJXAAAK HTTP/1.1" 200 219 0.000686
+127.0.0.1 - - [17/Mar/2026 21:17:41] "GET /socket.io/?EIO=4&transport=polling&t=20mft2ax&sid=4s7-BLYuzftW2yJXAAAK HTTP/1.1" 200 562 0.000170
+(12028) accepted ('127.0.0.1', 57512)
+127.0.0.1 - - [17/Mar/2026 21:17:41] "GET /socket.io/?EIO=4&transport=polling&t=20mg14lb&sid=4s7-BLYuzftW2yJXAAAK HTTP/1.1" 200 181 0.301096
+127.0.0.1 - - [17/Mar/2026 21:17:42] "GET /api/status HTTP/1.1" 200 600 0.000392
+127.0.0.1 - - [17/Mar/2026 21:17:44] "GET /api/status HTTP/1.1" 200 600 0.000631
+127.0.0.1 - - [17/Mar/2026 21:17:44] "GET /api/heatmaps HTTP/1.1" 200 942 0.001565
+127.0.0.1 - - [17/Mar/2026 21:17:44] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 304 251 0.001144
+127.0.0.1 - - [17/Mar/2026 21:17:47] "GET /api/status HTTP/1.1" 200 601 0.000399
+127.0.0.1 - - [17/Mar/2026 21:17:47] "POST /control HTTP/1.1" 200 273 0.000569
+127.0.0.1 - - [17/Mar/2026 21:17:49] "POST /control HTTP/1.1" 200 273 0.000546
+127.0.0.1 - - [17/Mar/2026 21:17:52] "GET /api/status HTTP/1.1" 200 601 0.000419
+127.0.0.1 - - [17/Mar/2026 21:17:57] "GET /api/status HTTP/1.1" 200 601 0.000530
+127.0.0.1 - - [17/Mar/2026 21:18:02] "GET /api/status HTTP/1.1" 200 599 0.000407
+127.0.0.1 - - [17/Mar/2026 21:18:03] "GET /api/heatmaps HTTP/1.1" 200 942 0.001384
+127.0.0.1 - - [17/Mar/2026 21:18:03] "GET /heatmaps/heatmap_10.html HTTP/1.1" 304 246 0.000787
+127.0.0.1 - - [17/Mar/2026 21:18:07] "GET /api/status HTTP/1.1" 200 601 0.000388
+127.0.0.1 - - [17/Mar/2026 21:18:11] "GET /api/stats HTTP/1.1" 200 914 0.007818
+127.0.0.1 - - [17/Mar/2026 21:18:11] "GET /socket.io/?EIO=4&transport=websocket&sid=4s7-BLYuzftW2yJXAAAK HTTP/1.1" 200 0 30.004624
+127.0.0.1 - - [17/Mar/2026 21:18:12] "GET /api/status HTTP/1.1" 200 599 0.000381
+127.0.0.1 - - [17/Mar/2026 21:18:12] "GET /socket.io/?EIO=4&transport=polling&t=21aeynh4 HTTP/1.1" 200 300 0.000190
+127.0.0.1 - - [17/Mar/2026 21:18:12] "POST /socket.io/?EIO=4&transport=polling&t=21af14zt&sid=lB1oS-lsjnRK8DSYAAAM HTTP/1.1" 200 219 0.000491
+127.0.0.1 - - [17/Mar/2026 21:18:12] "GET /socket.io/?EIO=4&transport=polling&t=21af1mqh&sid=lB1oS-lsjnRK8DSYAAAM HTTP/1.1" 200 561 0.000104
+(12028) accepted ('127.0.0.1', 57891)
+127.0.0.1 - - [17/Mar/2026 21:18:12] "GET /socket.io/?EIO=4&transport=polling&t=21af6zm9&sid=lB1oS-lsjnRK8DSYAAAM HTTP/1.1" 200 181 0.298668
+127.0.0.1 - - [17/Mar/2026 21:18:17] "GET /api/status HTTP/1.1" 200 598 0.000409
+127.0.0.1 - - [17/Mar/2026 21:18:18] "GET /api/status HTTP/1.1" 200 598 0.000749
+127.0.0.1 - - [17/Mar/2026 21:18:18] "GET /api/heatmaps HTTP/1.1" 200 942 0.001392
+127.0.0.1 - - [17/Mar/2026 21:18:18] "GET /heatmaps/heatmap_aktuell.html HTTP/1.1" 304 251 0.000970
+127.0.0.1 - - [17/Mar/2026 21:18:21] "POST /control HTTP/1.1" 200 273 0.000537
+127.0.0.1 - - [17/Mar/2026 21:18:22] "GET /api/status HTTP/1.1" 200 600 0.000391
+127.0.0.1 - - [17/Mar/2026 21:18:27] "GET /api/status HTTP/1.1" 200 601 0.000390
+127.0.0.1 - - [17/Mar/2026 21:18:32] "GET /api/status HTTP/1.1" 200 601 0.000407
+127.0.0.1 - - [17/Mar/2026 21:18:37] "GET /api/status HTTP/1.1" 200 600 0.000445
+127.0.0.1 - - [17/Mar/2026 21:18:42] "GET /socket.io/?EIO=4&transport=websocket&sid=lB1oS-lsjnRK8DSYAAAM HTTP/1.1" 200 0 30.013717
+127.0.0.1 - - [17/Mar/2026 21:18:42] "GET /api/status HTTP/1.1" 200 600 0.000387
+127.0.0.1 - - [17/Mar/2026 21:18:43] "GET /socket.io/?EIO=4&transport=polling&t=21ytu3gz HTTP/1.1" 200 300 0.000175
+127.0.0.1 - - [17/Mar/2026 21:18:43] "POST /socket.io/?EIO=4&transport=polling&t=21ytwdoq&sid=CWi6G3fRPHvX13aYAAAO HTTP/1.1" 200 219 0.000491
+127.0.0.1 - - [17/Mar/2026 21:18:43] "GET /socket.io/?EIO=4&transport=polling&t=21ytwhth&sid=CWi6G3fRPHvX13aYAAAO HTTP/1.1" 200 563 0.000100
+(12028) accepted ('127.0.0.1', 62677)
+127.0.0.1 - - [17/Mar/2026 21:18:44] "GET /socket.io/?EIO=4&transport=polling&t=21ytzx1z&sid=CWi6G3fRPHvX13aYAAAO HTTP/1.1" 200 181 0.303020
+127.0.0.1 - - [17/Mar/2026 21:18:47] "GET /api/status HTTP/1.1" 200 601 0.000449
+127.0.0.1 - - [17/Mar/2026 21:18:51] "GET /api/heatmaps HTTP/1.1" 200 942 0.001482
+127.0.0.1 - - [17/Mar/2026 21:18:51] "GET /heatmaps/heatmap_10.html HTTP/1.1" 304 246 0.001121
+127.0.0.1 - - [17/Mar/2026 21:18:52] "GET /api/status HTTP/1.1" 200 601 0.000385
+ERROR:__main__:Template 'maps.html' nicht gefunden in C:\Users\gollu\Documents\GitHub\Worx_GPS\frontend\dist
+127.0.0.1 - - [17/Mar/2026 21:18:53] "GET /maps HTTP/1.1" 500 235 0.001367
+127.0.0.1 - - [17/Mar/2026 21:18:53] "GET /favicon.ico HTTP/1.1" 200 794 0.001225
+ERROR:__main__:Template 'maps.html' nicht gefunden in C:\Users\gollu\Documents\GitHub\Worx_GPS\frontend\dist
+127.0.0.1 - - [17/Mar/2026 21:18:55] "GET /maps HTTP/1.1" 500 235 0.001207
+127.0.0.1 - - [17/Mar/2026 21:18:55] "GET /favicon.ico HTTP/1.1" 304 239 0.001147
+127.0.0.1 - - [17/Mar/2026 21:19:14] "GET /socket.io/?EIO=4&transport=websocket&sid=CWi6G3fRPHvX13aYAAAO HTTP/1.1" 200 0 30.015621

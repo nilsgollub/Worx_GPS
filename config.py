@@ -23,13 +23,13 @@ MQTT_CONFIG = {
 
 # GPS (unverändert)
 GEO_CONFIG = {
-    "fake_gps_range": ((46.811819, 46.811919), (7.132838, 7.132938)),
-    "lat_bounds": (46.811818, 46.812104),
-    "lon_bounds": (7.132837, 7.133173),
-    "map_center": (46.811819, 7.132838),
-    "zoom_start": 15,
+    "fake_gps_range": ((46.777540, 46.777709), (7.162430, 7.162690)),
+    "lat_bounds": (46.777500, 46.777800),
+    "lon_bounds": (7.162400, 7.162750),
+    "map_center": (46.777625, 7.162560),
+    "zoom_start": 20,
     "max_zoom": 22,
-    "crop_coordinates": ((46.8115, 7.1325), (46.8120, 7.1330)),
+    "crop_coordinates": ((46.7774, 7.1623), (46.7779, 7.1629)),
     "crop_enabled": True,
     "crop_center_percentage": 90,
     "save_interval": 5,
