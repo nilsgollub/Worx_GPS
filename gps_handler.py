@@ -294,14 +294,23 @@ class GpsHandler:
                     if line.startswith('$'):
                         try:
                             # Basis-Prüfung: Hat die Zeile überhaupt nützliche Felder?
-                            # Zeilen wie '$GPGL,,,,,*4' haben kaum Inhalt.
+                            # Zeilen wie '$GPGL,,,,,*4' oder '$GPRMC,,V,,,,,,,,*3' überspringen
                             parts = line.split(',')
-                            if len(parts) > 1:
-                                # Zähle nicht-leere Felder (ohne den Talker-Teil)
-                                filled_fields = [p for p in parts[1:] if p.split('*')[0].strip()]
-                                if not filled_fields:
-                                    # logger.debug(f"Überspringe leere NMEA-Zeile: '{line}'")
-                                    continue
+                            if len(parts) > 2:
+                                talker = parts[0].upper()
+                                status_field = ""
+                                if "RMC" in talker or "GLL" in talker:
+                                    status_field = parts[2] # RMC/GLL haben Status an Pos 2
+                                elif "GGA" in talker:
+                                    status_field = parts[6] if len(parts) > 6 else "" # GGA hat Qual an Pos 6
+                                
+                                # Wenn 'V' (Void) oder '0' (No Fix) und keine Koordinaten da sind
+                                if status_field in ['V', '0']:
+                                    # Zähle gefüllte Felder abseits von Talker und Status
+                                    filled_data = [p for i, p in enumerate(parts) if i not in [0, 2, 6] and p.split('*')[0].strip()]
+                                    if not filled_data:
+                                        # logger.debug(f"Überspringe Status-nur NMEA-Zeile: '{line}'")
+                                        continue
                             
                             msg = pynmea2.parse(line)
                             if isinstance(msg, pynmea2.types.talker.GGA):
@@ -309,12 +318,13 @@ class GpsHandler:
                                 logger.debug(
                                     f"GGA gefunden: Qual={getattr(msg, 'gps_qual', 'N/A')}, Sats={getattr(msg, 'num_sats', 'N/A')}")
                                 # break # Optional: Nur ersten GGA nehmen
-                        except pynmea2.ParseError as e:
-                            # Nur warnen, wenn die Zeile nicht offensichtlich Schrott ist
-                            if len(line) > 10:
-                                logger.warning(f"Fehler beim Parsen der NMEA-Zeile: {e} - Zeile: '{line}'")
+                        except pynmea2.ParseError:
+                            # Silently ignore parse errors for sentences that look like standard "no data" patterns
+                            if ",V," in line or ",0," in line or line.count(',,') > 3:
+                                # logger.debug(f"Ignoriere erwarteten Parse-Fehler für Such-Phase: '{line}'")
+                                pass
                             else:
-                                logger.debug(f"Ignoriere sehr kurze/unvollständige NMEA-Zeile: '{line}'")
+                                logger.warning(f"Fehler beim Parsen der NMEA-Zeile: '{line}'")
                         except AttributeError as e:
                             logger.error(f"Attributfehler beim Verarbeiten der NMEA-Nachricht: {e} - Zeile: '{line}'")
                     # else: # Zu viel Logspam
