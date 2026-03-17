@@ -294,7 +294,7 @@ class GpsHandler:
                     if line.startswith('$'):
                         try:
                             # Basis-Prüfung: Hat die Zeile überhaupt nützliche Felder?
-                            # Zeilen wie '$GPGL,,,,,*4' oder '$GPRMC,,V,,,,,,,,*3' überspringen
+                            # Zeilen wie '$GPGL,,,,,*4', '$GPRMC,,V,,,,,,,,*3' oder '$PRM,61.0V,,,102,,*7' überspringen
                             parts = line.split(',')
                             if len(parts) > 2:
                                 talker = parts[0].upper()
@@ -304,13 +304,13 @@ class GpsHandler:
                                 elif "GGA" in talker:
                                     status_field = parts[6] if len(parts) > 6 else "" # GGA hat Qual an Pos 6
                                 
-                                # Wenn 'V' (Void) oder '0' (No Fix) und keine Koordinaten da sind
-                                if status_field in ['V', '0']:
-                                    # Zähle gefüllte Felder abseits von Talker und Status
-                                    filled_data = [p for i, p in enumerate(parts) if i not in [0, 2, 6] and p.split('*')[0].strip()]
-                                    if not filled_data:
-                                        # logger.debug(f"Überspringe Status-nur NMEA-Zeile: '{line}'")
-                                        continue
+                                # Wenn 'V' (Void) oder '0' (No Fix) oder proprietäre Mähroboter-Daten ($PRM)
+                                # Zähle gefüllte Felder abseits von Talker und Status
+                                filled_data = [p for i, p in enumerate(parts) if i not in [0, 2, 6] and p.split('*')[0].strip()]
+                                
+                                if "V" in status_field or "0" in status_field or not filled_data or talker.startswith('$PRM'):
+                                    # logger.debug(f"Überspringe unvollständige oder proprietäre NMEA-Zeile: '{line}'")
+                                    continue
                             
                             msg = pynmea2.parse(line)
                             if isinstance(msg, pynmea2.types.talker.GGA):
@@ -320,7 +320,7 @@ class GpsHandler:
                                 # break # Optional: Nur ersten GGA nehmen
                         except pynmea2.ParseError:
                             # Silently ignore parse errors for sentences that look like standard "no data" patterns
-                            if ",V," in line or ",0," in line or line.count(',,') > 3:
+                            if "V" in line or ",0," in line or line.count(',,') > 3 or line.startswith('$PRM'):
                                 # logger.debug(f"Ignoriere erwarteten Parse-Fehler für Such-Phase: '{line}'")
                                 pass
                             else:

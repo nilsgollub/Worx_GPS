@@ -335,7 +335,7 @@ class WorxGpsRec:
                         try:
                             # Sende Temperatur als String
                             self.mqtt_handler.publish_message(pi_status_topic, f"{cpu_temp:.1f}")
-                            logging.debug(f"Sende Pi-Temperatur: {cpu_temp:.1f}°C auf Topic {pi_status_topic}")
+                            logging.info(f"Pi-Temperatur: {cpu_temp:.1f}°C")
                             last_pi_status_send = current_time
                             logging.debug("Pi temperature message published.")
                         except Exception as e:

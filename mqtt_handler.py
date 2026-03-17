@@ -68,9 +68,12 @@ class MqttHandler:
 
         # Client-Setup
         # Eindeutigere Client-ID, um Konflikte zu vermeiden, wenn mehrere Instanzen laufen
-        # (z.B. Worx_GPS_Rec und WebUI)
         client_id = f"worx_gps_client_{os.getpid()}_{int(time.time()) % 1000}"
-        self.client = paho_mqtt_client.Client(client_id=client_id, callback_api_version=paho_mqtt_client.CallbackAPIVersion.VERSION2)
+        self.client = paho_mqtt_client.Client(
+            callback_api_version=paho_mqtt_client.CallbackAPIVersion.VERSION2,
+            client_id=client_id,
+            protocol=paho_mqtt_client.MQTTv311  # Nutze v3.1.1 für weniger Overhead auf dem Pi Zero
+        )
 
         if self._username and self._password:
             self.client.username_pw_set(self._username, self._password)
