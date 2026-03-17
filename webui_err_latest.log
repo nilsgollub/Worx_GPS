@@ -1892,3 +1892,94 @@ ERROR:__main__:Template 'maps.html' nicht gefunden in C:\Users\gollu\Documents\G
 127.0.0.1 - - [17/Mar/2026 23:13:29] "GET /socket.io/?EIO=4&transport=polling&t=65k3mxjg&sid=2x1DUpebuvEjZiYVAAGq HTTP/1.1" 200 562 0.000126
 (5824) accepted ('127.0.0.1', 56711)
 127.0.0.1 - - [17/Mar/2026 23:13:30] "GET /socket.io/?EIO=4&transport=polling&t=65k3p2d6&sid=2x1DUpebuvEjZiYVAAGq HTTP/1.1" 200 181 0.316859
+127.0.0.1 - - [17/Mar/2026 23:14:00] "GET /socket.io/?EIO=4&transport=websocket&sid=2x1DUpebuvEjZiYVAAGq HTTP/1.1" 200 0 30.003551
+127.0.0.1 - - [17/Mar/2026 23:14:01] "GET /socket.io/?EIO=4&transport=polling&t=668sar2n HTTP/1.1" 200 300 0.000211
+127.0.0.1 - - [17/Mar/2026 23:14:01] "POST /socket.io/?EIO=4&transport=polling&t=668scr60&sid=qc_NXAx3eQ1eruYOAAGs HTTP/1.1" 200 219 0.000593
+127.0.0.1 - - [17/Mar/2026 23:14:01] "GET /socket.io/?EIO=4&transport=polling&t=668sdcge&sid=qc_NXAx3eQ1eruYOAAGs HTTP/1.1" 200 563 0.000124
+(5824) accepted ('127.0.0.1', 54872)
+127.0.0.1 - - [17/Mar/2026 23:14:02] "GET /socket.io/?EIO=4&transport=polling&t=668sn1cp&sid=qc_NXAx3eQ1eruYOAAGs HTTP/1.1" 200 181 0.309942
+127.0.0.1 - - [17/Mar/2026 23:14:20] "GET /api/status HTTP/1.1" 200 599 0.000614
+127.0.0.1 - - [17/Mar/2026 23:14:32] "GET /socket.io/?EIO=4&transport=websocket&sid=qc_NXAx3eQ1eruYOAAGs HTTP/1.1" 200 0 30.010117
+127.0.0.1 - - [17/Mar/2026 23:14:33] "GET /socket.io/?EIO=4&transport=polling&t=66xh2lef HTTP/1.1" 200 300 0.000246
+127.0.0.1 - - [17/Mar/2026 23:14:33] "POST /socket.io/?EIO=4&transport=polling&t=66xh51yj&sid=XSen4u3ZTkpMW83jAAGu HTTP/1.1" 200 219 0.000562
+127.0.0.1 - - [17/Mar/2026 23:14:33] "GET /socket.io/?EIO=4&transport=polling&t=66xh67rc&sid=XSen4u3ZTkpMW83jAAGu HTTP/1.1" 200 563 0.000168
+(5824) accepted ('127.0.0.1', 53580)
+127.0.0.1 - - [17/Mar/2026 23:15:03] "GET /socket.io/?EIO=4&transport=polling&t=66xhalqy&sid=XSen4u3ZTkpMW83jAAGu HTTP/1.1" 400 188 30.015194
+127.0.0.1 - - [17/Mar/2026 23:15:04] "GET /socket.io/?EIO=4&transport=websocket&sid=XSen4u3ZTkpMW83jAAGu HTTP/1.1" 200 0 29.702605
+127.0.0.1 - - [17/Mar/2026 23:15:05] "GET /socket.io/?EIO=4&transport=polling&t=67m5tsy6 HTTP/1.1" 200 300 0.000223
+127.0.0.1 - - [17/Mar/2026 23:15:05] "POST /socket.io/?EIO=4&transport=polling&t=67m5woed&sid=3B98KAHA4m7stALmAAGw HTTP/1.1" 200 219 0.000790
+127.0.0.1 - - [17/Mar/2026 23:15:05] "GET /socket.io/?EIO=4&transport=polling&t=67m5wx2m&sid=3B98KAHA4m7stALmAAGw HTTP/1.1" 200 563 0.000196
+(5824) accepted ('127.0.0.1', 59665)
+127.0.0.1 - - [17/Mar/2026 23:15:06] "GET /socket.io/?EIO=4&transport=polling&t=67m68pzp&sid=3B98KAHA4m7stALmAAGw HTTP/1.1" 200 181 0.304760
+127.0.0.1 - - [17/Mar/2026 23:15:20] "GET /api/status HTTP/1.1" 200 598 0.000461
+127.0.0.1 - - [17/Mar/2026 23:15:36] "GET /socket.io/?EIO=4&transport=websocket&sid=3B98KAHA4m7stALmAAGw HTTP/1.1" 200 0 30.015120
+127.0.0.1 - - [17/Mar/2026 23:15:37] "GET /socket.io/?EIO=4&transport=polling&t=68aut506 HTTP/1.1" 200 300 0.000179
+127.0.0.1 - - [17/Mar/2026 23:15:37] "POST /socket.io/?EIO=4&transport=polling&t=68auwsfx&sid=MGjYQtgKB0uLa-3gAAGy HTTP/1.1" 200 219 0.000495
+127.0.0.1 - - [17/Mar/2026 23:15:37] "GET /socket.io/?EIO=4&transport=polling&t=68auwkpd&sid=MGjYQtgKB0uLa-3gAAGy HTTP/1.1" 200 561 0.000199
+(5824) accepted ('127.0.0.1', 53215)
+127.0.0.1 - - [17/Mar/2026 23:15:38] "GET /socket.io/?EIO=4&transport=polling&t=68auz2hv&sid=MGjYQtgKB0uLa-3gAAGy HTTP/1.1" 200 181 0.315954
+127.0.0.1 - - [17/Mar/2026 23:16:08] "GET /socket.io/?EIO=4&transport=websocket&sid=MGjYQtgKB0uLa-3gAAGy HTTP/1.1" 200 0 30.018361
+127.0.0.1 - - [17/Mar/2026 23:16:09] "GET /socket.io/?EIO=4&transport=polling&t=68zjnn6z HTTP/1.1" 200 300 0.000197
+127.0.0.1 - - [17/Mar/2026 23:16:09] "POST /socket.io/?EIO=4&transport=polling&t=68zjqj87&sid=MXnM3gMJjBx9Vl0gAAG0 HTTP/1.1" 200 219 0.001171
+127.0.0.1 - - [17/Mar/2026 23:16:09] "GET /socket.io/?EIO=4&transport=polling&t=68zjrfx1&sid=MXnM3gMJjBx9Vl0gAAG0 HTTP/1.1" 200 561 0.000128
+(5824) accepted ('127.0.0.1', 56578)
+127.0.0.1 - - [17/Mar/2026 23:16:10] "GET /socket.io/?EIO=4&transport=polling&t=68zk1n0q&sid=MXnM3gMJjBx9Vl0gAAG0 HTTP/1.1" 200 181 0.296053
+127.0.0.1 - - [17/Mar/2026 23:16:20] "GET /api/status HTTP/1.1" 200 601 0.000603
+127.0.0.1 - - [17/Mar/2026 23:16:40] "GET /socket.io/?EIO=4&transport=websocket&sid=MXnM3gMJjBx9Vl0gAAG0 HTTP/1.1" 200 0 30.010419
+127.0.0.1 - - [17/Mar/2026 23:16:41] "GET /socket.io/?EIO=4&transport=polling&t=69o8lhgw HTTP/1.1" 200 300 0.000189
+127.0.0.1 - - [17/Mar/2026 23:16:41] "POST /socket.io/?EIO=4&transport=polling&t=69o8odt8&sid=-mDaWWtdaxkviVXmAAG2 HTTP/1.1" 200 219 0.000497
+127.0.0.1 - - [17/Mar/2026 23:16:41] "GET /socket.io/?EIO=4&transport=polling&t=69o8o7e6&sid=-mDaWWtdaxkviVXmAAG2 HTTP/1.1" 200 558 0.000113
+(5824) accepted ('127.0.0.1', 61051)
+127.0.0.1 - - [17/Mar/2026 23:16:42] "GET /socket.io/?EIO=4&transport=polling&t=69o8zz1a&sid=-mDaWWtdaxkviVXmAAG2 HTTP/1.1" 200 181 0.303064
+127.0.0.1 - - [17/Mar/2026 23:17:12] "GET /socket.io/?EIO=4&transport=websocket&sid=-mDaWWtdaxkviVXmAAG2 HTTP/1.1" 200 0 30.008981
+127.0.0.1 - - [17/Mar/2026 23:17:13] "GET /socket.io/?EIO=4&transport=polling&t=6acxs9vx HTTP/1.1" 200 300 0.000218
+127.0.0.1 - - [17/Mar/2026 23:17:13] "POST /socket.io/?EIO=4&transport=polling&t=6acxv1ca&sid=Fqh0FtO_A1b8NMQWAAG4 HTTP/1.1" 200 219 0.000522
+127.0.0.1 - - [17/Mar/2026 23:17:13] "GET /socket.io/?EIO=4&transport=polling&t=6acxvg01&sid=Fqh0FtO_A1b8NMQWAAG4 HTTP/1.1" 200 562 0.000129
+(5824) accepted ('127.0.0.1', 60922)
+127.0.0.1 - - [17/Mar/2026 23:17:14] "GET /socket.io/?EIO=4&transport=polling&t=6acxyioi&sid=Fqh0FtO_A1b8NMQWAAG4 HTTP/1.1" 200 181 0.314726
+127.0.0.1 - - [17/Mar/2026 23:17:20] "GET /api/status HTTP/1.1" 200 601 0.000426
+127.0.0.1 - - [17/Mar/2026 23:17:39] "GET /api/status HTTP/1.1" 200 601 0.000625
+127.0.0.1 - - [17/Mar/2026 23:17:43] "GET /api/status HTTP/1.1" 200 601 0.000404
+127.0.0.1 - - [17/Mar/2026 23:17:44] "GET /socket.io/?EIO=4&transport=websocket&sid=Fqh0FtO_A1b8NMQWAAG4 HTTP/1.1" 200 0 30.006547
+127.0.0.1 - - [17/Mar/2026 23:17:45] "GET /socket.io/?EIO=4&transport=polling&t=6b162j4w HTTP/1.1" 200 300 0.000176
+127.0.0.1 - - [17/Mar/2026 23:17:45] "POST /socket.io/?EIO=4&transport=polling&t=6b1658v8&sid=DILIW9pWPf1V2ACWAAG6 HTTP/1.1" 200 219 0.000575
+127.0.0.1 - - [17/Mar/2026 23:17:45] "GET /socket.io/?EIO=4&transport=polling&t=6b16537z&sid=DILIW9pWPf1V2ACWAAG6 HTTP/1.1" 200 563 0.000139
+(5824) accepted ('127.0.0.1', 52487)
+127.0.0.1 - - [17/Mar/2026 23:17:45] "GET /socket.io/?EIO=4&transport=polling&t=6b16g2b1&sid=DILIW9pWPf1V2ACWAAG6 HTTP/1.1" 200 181 0.295743
+127.0.0.1 - - [17/Mar/2026 23:17:48] "GET /api/status HTTP/1.1" 200 599 0.000406
+127.0.0.1 - - [17/Mar/2026 23:17:53] "GET /api/status HTTP/1.1" 200 600 0.000382
+127.0.0.1 - - [17/Mar/2026 23:17:58] "GET /api/status HTTP/1.1" 200 600 0.000406
+127.0.0.1 - - [17/Mar/2026 23:18:03] "GET /api/status HTTP/1.1" 200 601 0.000727
+127.0.0.1 - - [17/Mar/2026 23:18:08] "GET /api/status HTTP/1.1" 200 601 0.000417
+127.0.0.1 - - [17/Mar/2026 23:18:13] "GET /api/status HTTP/1.1" 200 600 0.000595
+127.0.0.1 - - [17/Mar/2026 23:18:15] "GET /socket.io/?EIO=4&transport=websocket&sid=DILIW9pWPf1V2ACWAAG6 HTTP/1.1" 200 0 30.012589
+127.0.0.1 - - [17/Mar/2026 23:18:17] "GET /socket.io/?EIO=4&transport=polling&t=6bqbjhi2 HTTP/1.1" 200 300 0.000175
+127.0.0.1 - - [17/Mar/2026 23:18:17] "POST /socket.io/?EIO=4&transport=polling&t=6bqblf20&sid=XJ33_PYD6ZoofBi4AAG8 HTTP/1.1" 200 219 0.000527
+127.0.0.1 - - [17/Mar/2026 23:18:17] "GET /socket.io/?EIO=4&transport=polling&t=6bqbmy4y&sid=XJ33_PYD6ZoofBi4AAG8 HTTP/1.1" 200 563 0.000114
+(5824) accepted ('127.0.0.1', 58077)
+127.0.0.1 - - [17/Mar/2026 23:18:18] "GET /socket.io/?EIO=4&transport=polling&t=6bqbwy71&sid=XJ33_PYD6ZoofBi4AAG8 HTTP/1.1" 200 181 0.309146
+127.0.0.1 - - [17/Mar/2026 23:18:18] "GET /api/status HTTP/1.1" 200 601 0.000378
+127.0.0.1 - - [17/Mar/2026 23:18:23] "GET /api/status HTTP/1.1" 200 601 0.000372
+127.0.0.1 - - [17/Mar/2026 23:18:28] "GET /api/status HTTP/1.1" 200 600 0.000422
+127.0.0.1 - - [17/Mar/2026 23:18:33] "GET /api/status HTTP/1.1" 200 601 0.000402
+127.0.0.1 - - [17/Mar/2026 23:18:38] "GET /api/status HTTP/1.1" 200 599 0.000393
+127.0.0.1 - - [17/Mar/2026 23:18:43] "GET /api/status HTTP/1.1" 200 599 0.000398
+127.0.0.1 - - [17/Mar/2026 23:18:48] "GET /socket.io/?EIO=4&transport=websocket&sid=XJ33_PYD6ZoofBi4AAG8 HTTP/1.1" 200 0 30.009310
+127.0.0.1 - - [17/Mar/2026 23:18:49] "GET /socket.io/?EIO=4&transport=polling&t=6cf0bvqn HTTP/1.1" 200 300 0.000180
+127.0.0.1 - - [17/Mar/2026 23:18:49] "POST /socket.io/?EIO=4&transport=polling&t=6cf0eruh&sid=dgFCjmwK4-Zl42jTAAG- HTTP/1.1" 200 219 0.000516
+127.0.0.1 - - [17/Mar/2026 23:18:49] "GET /socket.io/?EIO=4&transport=polling&t=6cf0emgo&sid=dgFCjmwK4-Zl42jTAAG- HTTP/1.1" 200 561 0.000127
+(5824) accepted ('127.0.0.1', 52689)
+127.0.0.1 - - [17/Mar/2026 23:18:50] "GET /socket.io/?EIO=4&transport=polling&t=6cf0obrq&sid=dgFCjmwK4-Zl42jTAAG- HTTP/1.1" 200 181 0.300811
+127.0.0.1 - - [17/Mar/2026 23:19:20] "GET /socket.io/?EIO=4&transport=websocket&sid=dgFCjmwK4-Zl42jTAAG- HTTP/1.1" 200 0 30.017389
+127.0.0.1 - - [17/Mar/2026 23:19:20] "GET /api/status HTTP/1.1" 200 601 0.000679
+127.0.0.1 - - [17/Mar/2026 23:19:21] "GET /socket.io/?EIO=4&transport=polling&t=6d3p3jf6 HTTP/1.1" 200 300 0.000179
+127.0.0.1 - - [17/Mar/2026 23:19:21] "POST /socket.io/?EIO=4&transport=polling&t=6d3p52ko&sid=EXKBHBX97Q6lg4V_AAHA HTTP/1.1" 200 219 0.000495
+127.0.0.1 - - [17/Mar/2026 23:19:21] "GET /socket.io/?EIO=4&transport=polling&t=6d3p6659&sid=EXKBHBX97Q6lg4V_AAHA HTTP/1.1" 200 563 0.000109
+(5824) accepted ('127.0.0.1', 57395)
+127.0.0.1 - - [17/Mar/2026 23:19:22] "GET /socket.io/?EIO=4&transport=polling&t=6d3pf8n1&sid=EXKBHBX97Q6lg4V_AAHA HTTP/1.1" 200 181 0.313829
+127.0.0.1 - - [17/Mar/2026 23:19:52] "GET /socket.io/?EIO=4&transport=websocket&sid=EXKBHBX97Q6lg4V_AAHA HTTP/1.1" 200 0 30.017313
+127.0.0.1 - - [17/Mar/2026 23:19:53] "GET /socket.io/?EIO=4&transport=polling&t=6dsdw5hd HTTP/1.1" 200 300 0.000190
+127.0.0.1 - - [17/Mar/2026 23:19:53] "POST /socket.io/?EIO=4&transport=polling&t=6dsdzrpm&sid=CSovU0skTnhBjRl2AAHC HTTP/1.1" 200 219 0.000544
+127.0.0.1 - - [17/Mar/2026 23:19:53] "GET /socket.io/?EIO=4&transport=polling&t=6dsdzr3e&sid=CSovU0skTnhBjRl2AAHC HTTP/1.1" 200 561 0.000134
+(5824) accepted ('127.0.0.1', 51384)
+127.0.0.1 - - [17/Mar/2026 23:19:54] "GET /socket.io/?EIO=4&transport=polling&t=6dse9led&sid=CSovU0skTnhBjRl2AAHC HTTP/1.1" 200 181 0.302191

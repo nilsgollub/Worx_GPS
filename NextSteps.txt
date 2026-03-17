@@ -1,0 +1,5 @@
+SQLite Migration: Wir könnten deine data_manager.py von langsamen .json/.csv Flatfiles auf eine ultraschnelle SQLite-Datenbank refaktorisieren, um Hunderte von Mähvorgängen ohne Verzögerung querzuverknüpfen.
+"Abdeckungsverhältnis"-Auswertung: Der Server berechnet dann nicht nur die Pfad-Heatmap, sondern eine prozentuale Abdeckung (z.B. "Heute wurden 85% des Grundstücks befahren").
+Visueller Geofencing-Editor: Statt Koordinaten abzutippen, kannst du eine Polygon-Zone exakt per Mausklick in der Karte des UI's zusammenklicken.
+Live positionsanzeige mit Live-Prognose ("Path Prediction"): Die UI zeigt einen transparenten Vektor an, wohin der Mäher sich in den nächsten 5 Sekunden wahrscheinlich bewegen wird. Der Mäher soll bildlich dargstellt werden (worx.png) und in Fahrtrichtung zeigen
+die Karte der letzten 10 Mähvorgänge und die kumulierte Heatmap soll eine Auswahl der dort angezeigten Mähvorgänge ermöglichen.
