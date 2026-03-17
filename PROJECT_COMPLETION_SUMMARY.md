@@ -101,7 +101,7 @@ KOMPONENTEN (Erklärung für jede):
 └─ Services Layer       → MQTT, Data, Status, Monitor
 
 DEPLOYMENT:
-├─ Pi Zero IP:          192.196.1.202
+├─ Pi Zero IP:          192.168.1.202
 ├─ User:                nilsgollub
 ├─ What Runs:           Worx_GPS_Rec.py
 ├─ How to Start:        systemctl --user start worx_gps_rec
@@ -266,7 +266,7 @@ Benutzer sieht: Live-Maps, Heatmaps, Statistiken
 ## 🎓 Nächste Schritte (Priorisiert)
 
 ### 🔴 **KRITISCH (Sofort)**
-- [ ] SSH auf Pi testen: `ssh nilsgollub@192.196.1.202`
+- [ ] SSH auf Pi testen: `ssh nilsgollub@192.168.1.202` (PW: JhiswenP3003!)
 - [ ] Service Status prüfen: `systemctl --user status worx_gps_rec`
 - [ ] Logs ansehen: `journalctl --user -u worx_gps_rec -f`
 
@@ -288,16 +288,16 @@ Benutzer sieht: Live-Maps, Heatmaps, Statistiken
 
 ```bash
 # 1. Pi online?
-ping 192.196.1.202
+ping 192.168.1.202
 
 # 2. Service aktiv?
-ssh nilsgollub@192.196.1.202 "systemctl --user is-active worx_gps_rec"
+ssh nilsgollub@192.168.1.202 "systemctl --user is-active worx_gps_rec"
 
 # 3. Daten ankommen?
 timeout 5 mosquitto_sub -h 192.168.1.100 -t "worx/gps" -v | wc -l
 
 # 4. Speicherplatz?
-ssh nilsgollub@192.196.1.202 "df -h /"
+ssh nilsgollub@192.168.1.202 "df -h /"
 
 # Alle = ✅ → System läuft OK
 ```

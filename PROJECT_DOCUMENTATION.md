@@ -593,7 +593,7 @@ http://<server-ip>:5000
 
 ```javascript
 // Browser Console
-const ws = new WebSocket('ws://192.196.1.202:5001');
+const ws = new WebSocket('ws://192.168.1.202:5001');
 ws.onmessage = (event) => {
   console.log('Position Update:', JSON.parse(event.data));
 };
@@ -661,7 +661,7 @@ REC_STORAGE_INTERVAL=5
 
 ```bash
 # Testen ob Pi online ist
-ping 192.196.1.202
+ping 192.168.1.202
 
 # SSH Verbindung testen
 ssh -v nilsgollub@192.196.1.202
@@ -842,7 +842,7 @@ curl http://192.196.1.202:5000/api/config
 ```bash
 curl -X POST \
   -d "heatmap_radius=15&heatmap_blur=20" \
-  http://192.196.1.202:5000/config/save
+  http://192.168.1.202:5000/config/save
 ```
 
 ---

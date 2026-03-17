@@ -87,7 +87,7 @@ data/maehvorgang_*.json → Status auch gespeichert
                     (zentral)                         │
                          │                            │
 ┌────────────────────────┼────────────────────────────┼──┐
-│         RASPBERRY PI ZERO (192.196.1.202)           │  │
+│         RASPBERRY PI ZERO (192.168.1.202)           │  │
 ├────────────────────────┼────────────────────────────┼──┤
 │                        │                            │  │
 │        MQTT subscribe  │         Serial read        │  │
@@ -226,7 +226,7 @@ Damit Worx_GPS **optimal funktioniert**:
 
 ```bash
 # 1. GPS-Modul
-ssh pi@192.196.1.202
+ssh nilsgollub@192.168.1.202          # Passwort: JhiswenP3003!
 cat /dev/ttyACM0 | head -10          # ✅ NMEA-Daten sichtbar?
 
 # 2. MQTT Broker

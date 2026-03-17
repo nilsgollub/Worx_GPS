@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worx_GPS - Script Upload zum Pi</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { color: white; margin-bottom: 30px; text-align: center; }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .step {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f5f5f5;
+            border-left: 4px solid #667eea;
+            border-radius: 5px;
+        }
+        .step-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .code-block {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            margin: 10px 0;
+            position: relative;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+        .copy-btn:hover {
+            background: #764ba2;
+        }
+        .success-msg {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: none;
+        }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .method {
+            margin: 20px 0;
+            padding: 15px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+        }
+        .method-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .check {
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Worx_GPS Scripts zum Raspberry Pi hochladen</h1>
+
+        <div class="card">
+            <h2>Situation</h2>
+            <p>Die Diagnose-Scripts (<code>run_funktionscheck.sh</code>, <code>check_raspi.sh</code>) sind auf deinem lokalen Rechner vorhanden, müssen aber auf den RPi übertragen werden.</p>
+            <div class="info-box">
+                <strong>RPi Details:</strong><br>
+                Host: 192.168.1.202<br>
+                User: nilsgollub<br>
+                Passwort: JhiswenP3003!<br>
+                Zielordner: ~/Worx_GPS/
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Methode 1: Manuell kopieren (EMPFOHLEN für Windows)</h2>
+            
+            <div class="step">
+                <div class="step-title">Schritt 1: SSH zum Pi verbinden</div>
+                <div class="code-block">
+ssh nilsgollub@192.168.1.202
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+                <p>Gib Passwort ein: <code>JhiswenP3003!</code></p>
+            </div>
+
+            <div class="step">
+                <div class="step-title">Schritt 2: Ins richtige Verzeichnis gehen</div>
+                <div class="code-block">
+cd ~/Worx_GPS
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">Schritt 3: Script-Editor öffnen (wähle eine Option)</div>
+                
+                <p><strong>Option A:</strong> Mit nano (einfacher)</p>
+                <div class="code-block">
+nano run_funktionscheck.sh
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+                
+                <p style="margin-top: 15px;"><strong>Option B:</strong> Mit vi (fortgeschritten)</p>
+                <div class="code-block">
+vi run_funktionscheck.sh
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">Schritt 4: Script-Inhalt kopieren & einfügen</div>
+                <p>Kopiere den ganzen Inhalt von <code>run_funktionscheck.sh</code> von hier:</p>
+                <button onclick="showScriptContent('run_funktionscheck')">📋 run_funktionscheck.sh anzeigen</button>
+                <button onclick="showScriptContent('check_raspi')" style="margin-left: 10px;">📋 check_raspi.sh anzeigen</button>
+                <div id="script-content" style="margin-top: 15px; display: none;"></div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">Schritt 5: Speichern (Wenn nano: Ctrl+X, dann Y)</div>
+                <div class="code-block">
+# Nach dem Einfügen speichern:
+# Wenn nano: Ctrl+X → Y → Enter
+# Wenn vi:   Esc → :wq → Enter
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">Schritt 6: Script ausführbar machen</div>
+                <div class="code-block">
+chmod +x run_funktionscheck.sh
+chmod +x check_raspi.sh
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-title">Schritt 7: Funktionscheck durchführen! 🎉</div>
+                <div class="code-block">
+bash run_funktionscheck.sh
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+                <p style="margin-top: 10px;">Das Script läuft 3-5 Minuten und zeigt dann eine Zusammenfassung.</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📋 Methode 2: Mit SCP (wenn vorhanden)</h2>
+            <div class="warning-box">
+                <strong>Hinweis:</strong> Dies funktioniert nur wenn sshpass oder SSH-Keys konfiguriert sind.
+            </div>
+            <div class="step">
+                <div class="step-title">PowerShell / Bash Terminal</div>
+                <div class="code-block">
+scp run_funktionscheck.sh nilsgollub@192.168.1.202:~/Worx_GPS/
+scp check_raspi.sh nilsgollub@192.168.1.202:~/Worx_GPS/
+ssh nilsgollub@192.168.1.202 "chmod +x ~/Worx_GPS/*.sh"
+                    <button class="copy-btn" onclick="copyToClipboard(this)">Kopieren</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>✅ Erfolgs-Kriterium</h2>
+            <p>Nach <code>bash run_funktionscheck.sh</code> solltest du folgende Ausgabe sehen:</p>
+            <div class="code-block">
+╔════════════════════════════════════════════════════════════╗
+║         WORX_GPS FUNKTIONSCHECK - ALLE TESTS              ║
+║    (3-5 Minuten, alles auf einmal durchlaufen)            ║
+╚════════════════════════════════════════════════════════════╝
+
+1️⃣  SYSTEM INFORMATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+raspi-zero-worx
+5.15.x-xxx
+Python 3.9.x
+
+[... weitere Checks ...]
+
+✅ Bestandene Checks: 9/9
+🎉 ALLES GRÜN! System läuft einwandfrei!
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🛠️ Wenn etwas schiefgeht</h2>
+            <div class="warning-box">
+                <strong>Problem:</strong> Script schreiben schlägt fehl<br>
+                <strong>Lösung:</strong> Prüfe ob du im richtigen Verzeichnis bist: <code>pwd</code> → sollte <code>/home/nilsgollub/Worx_GPS</code> sein
+            </div>
+            <div class="warning-box">
+                <strong>Problem:</strong> Passwort wird immer wieder abgefragt<br>
+                <strong>Lösung:</strong> Das ist normal, gib immer <code>JhiswenP3003!</code> ein
+            </div>
+            <div class="warning-box">
+                <strong>Problem:</strong> Script läuft aber zeigt keine Ausgabe<br>
+                <strong>Lösung:</strong> Warte 10-15 Sekunden, es dauert ein bisschen
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        function copyToClipboard(btn) {
+            const codeBlock = btn.parentElement;
+            const text = codeBlock.textContent.replace('Kopieren', '').trim();
+            navigator.clipboard.writeText(text).then(() => {
+                const oldText = btn.textContent;
+                btn.textContent = '✅ Kopiert!';
+                setTimeout(() => btn.textContent = oldText, 2000);
+            });
+        }
+
+        function showScriptContent(scriptName) {
+            const contentDiv = document.getElementById('script-content');
+            
+            // Hier könnten die Scripts eingebettet werden
+            if (scriptName === 'run_funktionscheck') {
+                contentDiv.innerHTML = '<p>Bitte öffne die Datei run_funktionscheck.sh im Editor und kopiere den kompletten Inhalt.</p>';
+            } else if (scriptName === 'check_raspi') {
+                contentDiv.innerHTML = '<p>Bitte öffne die Datei check_raspi.sh im Editor und kopiere den kompletten Inhalt.</p>';
+            }
+            contentDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

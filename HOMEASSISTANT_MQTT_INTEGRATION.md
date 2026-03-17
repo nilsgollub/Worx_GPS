@@ -186,7 +186,7 @@ TOPICS_TO_SUBSCRIBE = {
 
 ```bash
 # SSH zum Raspi
-ssh nilsgollub@192.196.1.202
+ssh nilsgollub@192.168.1.202          # Passwort: JhiswenP3003!
 
 # MQTT Broker testen
 nc -zv 192.168.1.100 1883

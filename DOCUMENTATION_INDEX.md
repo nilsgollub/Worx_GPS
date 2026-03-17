@@ -6,6 +6,21 @@
 
 ---
 
+## 🔴 DEBUGGING / PROBLEM-LÖSUNG
+
+**→ [FUNKTIONSCHECK_ANLEITUNG.md](FUNKTIONSCHECK_ANLEITUNG.md)** ← **ZUERST LESEN! Schnelle Diagnose**
+
+Diese Anleitung zeigt Copy-Paste-Befehle für sofortigen Funktionscheck:
+- Schritt-für-Schritt Diagnose
+- Erwartete Ergebnisse für jeden Check
+- Sofort-Behebung häufiger Probleme
+- Erfolgs-Kriterien Checkliste
+
+**Danach:**
+→ **[DEBUG_CHECKLIST_SSH.md](DEBUG_CHECKLIST_SSH.md)** - Wenn detailliertere Diag. nötig
+
+---
+
 ## ⚠️ WICHTIG: Datenquellen verstehen
 
 Das System nutzt **ZWEI unabhängige Datenquellen**:
@@ -17,6 +32,23 @@ Das System nutzt **ZWEI unabhängige Datenquellen**:
 **Mäher-Status**: Von HomeAssistant (über MQTT publiziert)
 
 Das System **kombiniert beide** und speichert zusammen ab.
+
+---
+
+## 🎯 Nach Rolle / Aufgabe
+
+## 🚀 Ich möchte SOFORT testen, ob alles läuft
+
+**WICHTIG: Scripts müssen zuerst auf den Pi hochgeladen werden!**
+
+**Schritt 1:**  
+→ **[SCRIPT_UPLOAD_ANLEITUNG.md](SCRIPT_UPLOAD_ANLEITUNG.md)** - Upload-Anleitung (5 Min)
+
+**Schritt 2:**  
+→ **[QUICK_START.md](QUICK_START.md)** - Nach Upload: Schnelltest durchführen
+
+**Komplette Anleitung mit all Befehlen:**  
+→ **[FUNKTIONSCHECK_ANLEITUNG.md](FUNKTIONSCHECK_ANLEITUNG.md)** - Detaillierte Schritt-für-Schritt
 
 ---
 
@@ -53,8 +85,8 @@ Das System **kombiniert beide** und speichert zusammen ab.
 # VORBEREITUNG: Zwei Dinge müssen funktionieren!
 
 # 1️⃣ GPS-Modul (lokal Hardware)
-ssh nilsgollub@192.196.1.202
-cat /dev/ttyACM0 | head -5      # Muss NMEA-Daten zeigen!
+ssh nilsgollub@192.168.1.202        # Passwort: JhiswenP3003!
+cat /dev/ttyACM0 | head -5           # Muss NMEA-Daten zeigen!
 
 # 2️⃣ HomeAssistant + MQTT (externe Datenquelle)
 mosquitto_sub -h 192.168.1.100 -t "worx/#" -v
@@ -305,7 +337,7 @@ Worx_GPS/
 ## ✅ Verifikations-Checklisten
 
 ### Deployment Checkliste
-- [ ] SSH funktioniert: `ssh nilsgollub@192.196.1.202 "echo OK"`
+- [ ] SSH funktioniert: `ssh nilsgollub@192.168.1.202 "echo OK"`
 - [ ] Python venv aktiv: `source .venv/bin/activate`
 - [ ] Dependencies OK: `pip list | grep flask`
 - [ ] .env konfiguriert: `cat .env`

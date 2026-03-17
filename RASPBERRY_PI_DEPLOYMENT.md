@@ -1,7 +1,8 @@
 # 🔧 Raspberry Pi Zero - Deployment & Betriebshandbuch
 
-**IP-Adresse**: 192.196.1.202  
+**IP-Adresse**: 192.168.1.202  
 **Benutzer**: nilsgollub  
+**Passwort**: JhiswenP3003!  
 **Hardwarebeschränkungen**: Minimal (Zero W)  
 **Power**: Via Rasenmäher
 
@@ -97,7 +98,8 @@ ls -la /dev/ttyACM0    # Sollte existieren!
 
 ```bash
 # SSH auf den Pi
-ssh nilsgollub@192.196.1.202
+ssh nilsgollub@192.168.1.202
+# Passwort: JhiswenP3003!
 
 # Raspberry Pi aktualisieren
 sudo apt update
@@ -552,7 +554,7 @@ systemctl --user daemon-reload
 systemctl --user enable worx_webui.service
 systemctl --user start worx_webui.service
 
-# URL: http://192.196.1.202:5000
+# URL: http://192.168.1.202:5000
 ```
 
 ---

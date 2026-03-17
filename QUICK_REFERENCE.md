@@ -4,7 +4,7 @@
 
 ```bash
 # 1. SSH zum Pi
-ssh nilsgollub@192.196.1.202
+ssh nilsgollub@192.168.1.202  # Passwort: JhiswenP3003!
 
 # 2. GPS-Modul überprüfen (WICHTIG!)
 cat /dev/ttyACM0 | head -5      # Sollte NMEA-Daten zeigen!
@@ -127,7 +127,7 @@ mosquitto_sub -h 192.168.1.100 -t "worx/#" -v
 hostname -I
 
 # Ping Pi
-ping 192.196.1.202
+ping 192.168.1.202
 ```
 
 ---
@@ -166,7 +166,7 @@ python3 -m web_ui.webui
 http://localhost:5000
 
 # Vom Pi aus
-http://192.196.1.202:5000
+http://192.168.1.202:5000
 
 # API Status testen
 curl http://localhost:5000/api/status
@@ -331,7 +331,7 @@ Nach Pi-Neustart überprüfen:
 
 ```bash
 # 1. SSH funktioniert
-ssh nilsgollub@192.196.1.202 "echo OK"
+ssh nilsgollub@192.168.1.202 "echo OK"
 
 # 2. Service läuft automatisch
 systemctl --user status worx_gps_rec.service
@@ -354,7 +354,7 @@ journalctl --user -u worx_gps_rec.service -n 10
 
 2. **Schnelles System Status Check:**
    ```bash
-   ssh nilsgollub@192.196.1.202 "systemctl --user status worx_gps_rec && df -h"
+   ssh nilsgollub@192.168.1.202 "systemctl --user status worx_gps_rec && df -h"
    ```
 
 3. **Backup vor großen Änderungen:**
