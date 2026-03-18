@@ -42,6 +42,8 @@ Dieses Dokument beschreibt den aktuellen Status und die zukünftige Entwicklung 
 
 ## 📅 Geplante Features (Zukunft)
 
+
+
 ### 6. Filterbare Heatmaps
 *   **Ziel:** Auswahl spezifischer Mähvorgänge für die kumulierte Ansicht.
 *   **Feature:** Checkboxen/Multiselect in der UI, um nur bestimmte Tage oder Sessions in der Heatmap anzuzeigen.

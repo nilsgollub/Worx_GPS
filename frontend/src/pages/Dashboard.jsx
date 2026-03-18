@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, RefreshCw } from 'lucide-react';
+import { Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, RefreshCw, Navigation } from 'lucide-react';
 import { socket, API_URL } from '../App';
+import LiveMapWidget from '../components/LiveMapWidget';
 
 export default function Dashboard() {
   const [data, setData] = useState({
@@ -167,23 +168,39 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Map Preview */}
-      <div className="glass-card" style={{gridColumn: '1 / -1'}}>
-         <h3 className="flex-between" style={{marginBottom: 20}}>
-           <span>Aktuelle Heatmap</span>
-           <button className="btn" style={{padding: '6px 12px', fontSize: 13, background: 'rgba(255,255,255,0.1)'}}>
-             Vollbild <ExternalLink size={14}/>
-           </button>
-         </h3>
-         <div className="map-frame">
-           {currentHeatmap ? (
-              <iframe src={`${API_URL}${currentHeatmap}`} />
-           ) : (
-             <div className="flex-between" style={{height: '100%', justifyContent: 'center', color: '#888'}}>
-               No heatmap found or generated yet.
-             </div>
-           )}
-         </div>
+      {/* Maps Container - Grid mit 2 Spalten */}
+      <div style={{gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '20px'}}>
+        {/* Live Map Preview */}
+        <div className="glass-card">
+          <h3 className="flex-between" style={{marginBottom: 20}}>
+            <span><Navigation size={20} /> Live Map</span>
+            <button className="btn" onClick={() => window.location.href='/live'} style={{padding: '6px 12px', fontSize: 13, background: 'rgba(255,255,255,0.1)'}}>
+              Vollbild <ExternalLink size={14}/>
+            </button>
+          </h3>
+          <div className="map-frame" style={{height: '400px', border: 'none', background: 'transparent'}}>
+            <LiveMapWidget socket={socket} height="100%" />
+          </div>
+        </div>
+
+        {/* Heatmap Preview */}
+        <div className="glass-card">
+          <h3 className="flex-between" style={{marginBottom: 20}}>
+            <span><Activity size={20} /> Aktuelle Heatmap</span>
+            <button className="btn" onClick={() => window.location.href='/maps'} style={{padding: '6px 12px', fontSize: 13, background: 'rgba(255,255,255,0.1)'}}>
+              Vollbild <ExternalLink size={14}/>
+            </button>
+          </h3>
+          <div className="map-frame" style={{height: '400px'}}>
+            {currentHeatmap ? (
+                <iframe src={`${API_URL}${currentHeatmap}`} style={{width: '100%', height: '100%', border: 'none'}} />
+            ) : (
+              <div className="flex-between" style={{height: '100%', justifyContent: 'center', color: '#888'}}>
+                No heatmap found or generated yet.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

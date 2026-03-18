@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Maps from './pages/Maps';
 import Config from './pages/Config';
 import Stats from './pages/Stats';
+import Live from './pages/Live';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -19,7 +20,8 @@ function Sidebar() {
 
   const links = [
     { to: '/', icon: <Activity size={20} />, label: 'Dashboard' },
-    { to: '/maps', icon: <Map size={20} />, label: 'Karten & Live' },
+    { to: '/live', icon: <Map size={20} />, label: 'Live' },
+    { to: '/maps', icon: <Map size={20} />, label: 'Karten' },
     { to: '/stats', icon: <RadioTower size={20} />, label: 'Statistiken' },
     { to: '/config', icon: <Settings size={20} />, label: 'Einstellungen' },
   ];
@@ -102,6 +104,7 @@ function App() {
           
           <Routes>
             <Route path="/" element={<Dashboard socket={socket} />} />
+            <Route path="/live" element={<Live socket={socket} />} />
             <Route path="/maps" element={<Maps />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/config" element={<Config />} />

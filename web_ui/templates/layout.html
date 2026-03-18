@@ -24,7 +24,7 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
+            <a class="navbar-brand" href="/">
                 <i class="fas fa-robot"></i> Worx GPS
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -33,8 +33,7 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == url_for('index') %}active{% endif %}"
-                           href="{{ url_for('index') }}">
+                        <a class="nav-link" href="/">
                             <i class="fas fa-home"></i> Dashboard
                         </a>
                     </li>
@@ -45,8 +44,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.path == url_for('live_view') %}active{% endif %}"
-                           href="{{ url_for('live_view') }}">
+                        <a class="nav-link" href="/live">
                             <i class="fas fa-location-dot"></i> Live-Ansicht
                         </a>
                     </li>
