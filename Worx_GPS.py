@@ -6,7 +6,7 @@ from data_manager import DataManager
 # Importiere ALLE benötigten Configs und utils
 from config import HEATMAP_CONFIG, REC_CONFIG, POST_PROCESSING_CONFIG, PROBLEM_CONFIG, ASSIST_NOW_CONFIG, GEO_CONFIG
 from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed
-from utils import read_gps_data_from_csv_string, flatten_data
+from utils import read_gps_data_from_csv_string, flatten_data, calculate_area_coverage
 import time
 from collections import deque
 from pathlib import Path
@@ -150,8 +150,15 @@ class WorxGps:
             # Schritt 4: Verarbeitete Daten speichern und für Karten verwenden
             self.maehvorgang_data.append(processed_data)  # Fügt die *neue* Session zum Deque hinzu
             self.alle_maehvorgang_data.append(processed_data)
+            
+            # Abdeckung berechnen
+            l_bounds = GEO_CONFIG.get("lat_bounds")
+            ln_bounds = GEO_CONFIG.get("lon_bounds")
+            session_coverage = calculate_area_coverage(processed_data, l_bounds, ln_bounds)
+            logger.info(f"Berechnete Abdeckung für diese Session: {session_coverage}%")
+            
             filename = self.data_manager.get_next_mow_filename()
-            self.data_manager.save_gps_data(processed_data, filename)
+            self.data_manager.save_gps_data(processed_data, filename, coverage=session_coverage)
 
             logger.info("Starte Karten-Aktualisierung nach neuem Mähvorgang...")
 

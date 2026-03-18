@@ -317,7 +317,7 @@ class DataService:
                 for i in range(len(session_data) - 1):
                     distance_m += calculate_distance(session_data[i], session_data[i+1])
                     
-            coverage = self._calculate_coverage([session_data]) if session_data else 0.0
+            coverage = session.get("coverage", 0.0)
 
             formatted_sessions.append({
                 "filename": session.get("filename"),

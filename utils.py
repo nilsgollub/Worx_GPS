@@ -169,3 +169,41 @@ def format_duration(seconds: float) -> str:
     except (ValueError, TypeError):
         return "N/A"
 # --- ENDE format_duration ---
+
+def calculate_area_coverage(points, lat_bounds, lon_bounds, grid_size_m=0.5):
+    """
+    Berechnet den prozentualen Anteil der abgedeckten Fläche in einem Geofence.
+    Nutzt ein Grid-System für hohe Performance.
+    """
+    import math
+    if not points or not lat_bounds or not lon_bounds:
+        return 0.0
+
+    # Erdradius in Metern für grobe Umrechnung Grad -> Meter
+    LAT_DEGREE_M = 111320.0
+    LON_DEGREE_M = 111320.0 * math.cos(math.radians(lat_bounds[0]))
+
+    width_m = (lon_bounds[1] - lon_bounds[0]) * LON_DEGREE_M
+    height_m = (lat_bounds[1] - lat_bounds[0]) * LAT_DEGREE_M
+
+    if width_m <= 0 or height_m <= 0:
+        return 0.0
+
+    cols = int(width_m / grid_size_m) + 1
+    rows = int(height_m / grid_size_m) + 1
+    total_cells = cols * rows
+
+    visited_cells = set()
+    for p in points:
+        lat, lon = p.get('lat'), p.get('lon')
+        if lat is not None and lon is not None:
+            if lat_bounds[0] <= lat <= lat_bounds[1] and lon_bounds[0] <= lon <= lon_bounds[1]:
+                col = int((lon - lon_bounds[0]) / (lon_bounds[1] - lon_bounds[0]) * (cols - 1))
+                row = int((lat - lat_bounds[0]) / (lat_bounds[1] - lat_bounds[0]) * (rows - 1))
+                visited_cells.add((row, col))
+
+    coverage = (len(visited_cells) / total_cells) * 100
+    # Da ein Mähroboter ca. 20cm Schnittbreite hat, ist ein 0.5m Grid konservativ.
+    # Wir extrapolieren leicht, um realistische Werte zu erhalten.
+    coverage = coverage * 1.8 
+    return round(min(100.0, coverage), 1)
