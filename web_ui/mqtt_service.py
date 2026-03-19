@@ -52,8 +52,8 @@ class MqttService:
 
         subscribe_list_with_qos = [
             (f"{topic_prefix}{base_topic_control}", 1),
-            (f"{topic_prefix}{base_topic_status}", 0)
-            # (f"{topic_prefix}{base_topic_gps}", 0), # Auskommentiert, falls WebUI keine GPS-Rohdaten braucht
+            (f"{topic_prefix}{base_topic_status}", 0),
+            (f"{topic_prefix}{base_topic_gps}", 0),
         ]
         if pi_status_config_topic: # pi_status_config_topic ist bereits der Basisname
             subscribe_list_with_qos.append((f"{topic_prefix}{pi_status_config_topic}", 0))

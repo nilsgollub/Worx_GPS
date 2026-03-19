@@ -358,14 +358,6 @@ if __name__ == '__main__':
         # MqttService benötigt das Pi-Status-Topic aus der config.py
         pi_status_topic_for_mqtt_service = config.PI_STATUS_CONFIG.get("topic_pi_status")
         mqtt_service = MqttService(config.MQTT_CONFIG, pi_status_topic_for_mqtt_service)
-        mqtt_service.set_status_update_callback(lambda payload: status_manager.update_mower_status(payload, config.GEO_CONFIG))
-        mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
-        # Optional: mqtt_service.set_gps_update_callback(...)
-        mqtt_service.connect()
-        
-        # Simulator initialisieren
-        simulator = ChaosSimulator(config.GEO_CONFIG, lambda payload: status_manager.update_mower_status(payload, config.GEO_CONFIG))
-
         data_service = DataService(
             project_root_path=project_root,
             heatmap_config=config.HEATMAP_CONFIG,
@@ -373,6 +365,14 @@ if __name__ == '__main__':
             geo_config_main=config.GEO_CONFIG,
             rec_config_main=config.REC_CONFIG
         )
+
+        mqtt_service.set_status_update_callback(lambda payload: status_manager.update_mower_status(payload, config.GEO_CONFIG))
+        mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
+        mqtt_service.set_gps_update_callback(data_service.handle_gps_data)
+        mqtt_service.connect()
+        
+        # Simulator initialisieren (sendet MQTT-Nachrichten wie der echte Recorder)
+        simulator = ChaosSimulator(config.GEO_CONFIG, mqtt_service)
 
         system_monitor = SystemMonitor(status_manager.update_system_stats)
         system_monitor.start()

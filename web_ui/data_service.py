@@ -18,7 +18,8 @@ try:
     from heatmap_generator import HeatmapGenerator
     import config # Haupt-Konfigurationsdatei
     # Importiere pandas und geopy für Statistiken, falls verfügbar
-    from utils import calculate_distance, format_duration # Importiere Hilfsfunktionen
+    from utils import calculate_distance, format_duration, read_gps_data_from_csv_string, flatten_data, calculate_area_coverage
+    from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed
     STATS_LIBS_AVAILABLE = True
     try:
         import pandas as pd
@@ -46,7 +47,113 @@ class DataService:
 
         self.data_manager = DataManager(data_folder=str(self.data_dir))
         self.heatmap_generator = HeatmapGenerator(heatmaps_base_dir=str(self.heatmaps_dir))
+        
+        # GPS-Datenpuffer für Session-Daten (wie Worx_GPS.py)
+        self._gps_data_buffer = ""
+        # Letzte Sessions für Karten-Generierung
+        self._alle_maehvorgang_data = self.data_manager.load_all_mow_data()
+        from collections import deque
+        self._maehvorgang_data = deque(maxlen=10)
+        if self._alle_maehvorgang_data:
+            num_to_load = min(len(self._alle_maehvorgang_data), 10)
+            for session in self._alle_maehvorgang_data[-num_to_load:]:
+                if isinstance(session, list):
+                    self._maehvorgang_data.append(session)
+        
         logger.info("DataService initialisiert.")
+
+    def handle_gps_data(self, csv_data):
+        """Verarbeitet empfangene GPS-Daten vom MQTT (wie Worx_GPS.handle_gps_data)."""
+        if csv_data != "-1":
+            self._gps_data_buffer += csv_data
+            logger.debug(f"GPS-Puffer aktualisiert, Größe: {len(self._gps_data_buffer)}")
+            return
+        
+        logger.info("End-Marker für GPS-Daten empfangen, verarbeite Puffer...")
+        
+        raw_gps_data = read_gps_data_from_csv_string(self._gps_data_buffer)
+        self._gps_data_buffer = ""
+        
+        if not raw_gps_data:
+            logger.warning("Keine GPS-Daten aus dem Puffer gelesen.")
+            return
+        
+        logger.info(f"{len(raw_gps_data)} GPS-Punkte aus Puffer gelesen.")
+        original_count = len(raw_gps_data)
+        processed_data = raw_gps_data
+        
+        # Ausreißer entfernen
+        outlier_config = config.POST_PROCESSING_CONFIG.get("outlier_detection", {})
+        if outlier_config.get("enable", True):
+            max_speed = outlier_config.get("max_speed_mps", 1.5)
+            processed_data = remove_outliers_by_speed(processed_data, max_speed_mps=max_speed)
+            logger.info(f"{len(processed_data)} Punkte nach Ausreißererkennung.")
+            if not processed_data:
+                return
+        
+        # Filterung
+        method = config.POST_PROCESSING_CONFIG.get("method", "none").lower()
+        if method == "moving_average":
+            window = config.POST_PROCESSING_CONFIG.get("moving_average_window", 5)
+            processed_data = apply_moving_average(processed_data, window)
+        elif method == "kalman":
+            r_noise = config.POST_PROCESSING_CONFIG.get("kalman_measurement_noise", 5.0)
+            q_noise = config.POST_PROCESSING_CONFIG.get("kalman_process_noise", 0.05)
+            processed_data = apply_kalman_filter(processed_data, measurement_noise=r_noise, process_noise=q_noise)
+        
+        if not processed_data:
+            logger.warning("Nach Filterung keine GPS-Daten übrig.")
+            return
+        
+        logger.info(f"Verarbeitung: {len(processed_data)} Punkte (von {original_count}).")
+        
+        # Session speichern
+        self._maehvorgang_data.append(processed_data)
+        self._alle_maehvorgang_data.append(processed_data)
+        
+        l_bounds = self.geo_config_main.get("lat_bounds")
+        ln_bounds = self.geo_config_main.get("lon_bounds")
+        session_coverage = calculate_area_coverage(processed_data, l_bounds, ln_bounds)
+        
+        filename = self.data_manager.get_next_mow_filename()
+        self.data_manager.save_gps_data(processed_data, filename, coverage=session_coverage)
+        
+        # Karten generieren
+        logger.info("Starte Karten-Aktualisierung nach neuem Mähvorgang...")
+        self._update_map("heatmap_aktuell", processed_data, draw_path=True, is_multi=False)
+        
+        current_last_10 = list(self._maehvorgang_data)
+        self._update_map("heatmap_10_maehvorgang", current_last_10, draw_path=True, is_multi=True)
+        self._update_map("quality_path_10", current_last_10, draw_path=True, is_multi=True)
+        self._update_map("wifi_heatmap", current_last_10, draw_path=True, is_multi=True)
+        
+        flat_all = flatten_data(self._alle_maehvorgang_data)
+        self._update_map("heatmap_kumuliert", flat_all, draw_path=False, is_multi=False)
+        
+        problemzonen = self.data_manager.read_problemzonen_data()
+        if problemzonen:
+            self._update_map("problemzonen_heatmap", problemzonen, draw_path=False, is_multi=False)
+        
+        logger.info("Karten-Aktualisierung abgeschlossen.")
+
+    def _update_map(self, config_key, data, draw_path, is_multi=False):
+        """Aktualisiert eine einzelne Karte (wie Worx_GPS.update_single_map)."""
+        if config_key not in self.heatmap_config:
+            logger.warning(f"Karten-Key '{config_key}' nicht in HEATMAP_CONFIG.")
+            return
+        
+        map_config = self.heatmap_config[config_key]
+        html_output = map_config["output"]
+        
+        if not data:
+            logger.warning(f"Keine Daten für Karte '{config_key}'.")
+            return
+        
+        try:
+            self.heatmap_generator.create_heatmap(data, html_output, draw_path, is_multi_session=is_multi)
+            logger.info(f"Karte '{config_key}' aktualisiert -> {html_output}")
+        except Exception as e:
+            logger.error(f"Fehler bei Karte '{config_key}': {e}", exc_info=True)
 
     def get_available_heatmaps(self):
         """Gibt eine Liste der verfügbaren Heatmap-Dateien zurück."""
@@ -55,9 +162,19 @@ class DataService:
             logger.warning(f"Heatmap-Verzeichnis {self.heatmaps_dir} nicht gefunden.")
             return heatmaps
 
+        # Sprechende Namen für die Karten (Keys = Dateiname ohne .html)
+        display_names = {
+            "heatmap_aktuell": "Aktueller Mähvorgang",
+            "heatmap_10": "Letzte 10 Mähvorgänge",
+            "heatmap_kumuliert": "Alle Mähvorgänge (Kumuliert)",
+            "quality": "GPS Qualität (Satelliten)",
+            "wifi": "WiFi Signalstärke (dBm)",
+            "problemzonen": "Problemzonen",
+        }
+
         for html_file in self.heatmaps_dir.glob("*.html"):
             map_id = html_file.stem
-            map_name = map_id.replace("_", " ").title()
+            map_name = display_names.get(map_id, map_id.replace("_", " ").title())
             png_path = html_file.with_suffix(".png")
             heatmaps.append({
                 "id": map_id,
