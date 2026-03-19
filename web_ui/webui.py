@@ -36,6 +36,7 @@ from web_ui.mqtt_service import MqttService
 from web_ui.status_manager import StatusManager
 from web_ui.data_service import DataService
 from web_ui.system_monitor import SystemMonitor
+from web_ui.simulator import ChaosSimulator
 
 # --- Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s') # Geändert auf DEBUG und detaillierteres Format
@@ -57,6 +58,7 @@ mqtt_service = None
 status_manager = None
 data_service = None
 system_monitor = None
+simulator = None
 
 # --- Flask Routen (Interagieren mit Service-Instanzen) ---
 
@@ -259,6 +261,16 @@ def control():
                 return jsonify({"success": True, "message": f"Befehl '{command}' gesendet."})
             else:
                 return jsonify({"success": False, "message": "MQTT Sende-Fehler: Befehl konnte nicht veröffentlicht werden."}), 500
+        elif command == 'start_simulator':
+            if simulator and not simulator.is_running():
+                simulator.start()
+                return jsonify({"success": True, "message": "Simulator gestartet"})
+            return jsonify({"success": False, "message": "Simulator läuft bereits oder ist nicht initialisiert"})
+        elif command == 'stop_simulator':
+            if simulator and simulator.is_running():
+                simulator.stop()
+                return jsonify({"success": True, "message": "Simulator gestoppt"})
+            return jsonify({"success": False, "message": "Simulator läuft nicht"})
         else:
             logger.warning(f"Unbekannter Steuerbefehl empfangen: {command}")
             return jsonify({"success": False, "message": f"Unbekannter Befehl: {command}"}), 400
@@ -350,6 +362,9 @@ if __name__ == '__main__':
         mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
         # Optional: mqtt_service.set_gps_update_callback(...)
         mqtt_service.connect()
+        
+        # Simulator initialisieren
+        simulator = ChaosSimulator(config.GEO_CONFIG, lambda payload: status_manager.update_mower_status(payload, config.GEO_CONFIG))
 
         data_service = DataService(
             project_root_path=project_root,

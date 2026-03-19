@@ -101,8 +101,23 @@ const Live = ({ socket }) => {
               <Button variant="danger" size="sm" className="me-2 mb-1" onClick={() => handleControl('stop_recording')}>
                 <i className="fas fa-stop"></i> Aufnahme Stop
               </Button>
-              <Button variant="info" size="sm" className="mb-1" onClick={() => handleControl('generate_heatmaps')}>
+              <Button variant="info" size="sm" className="me-2 mb-1" onClick={() => handleControl('generate_heatmaps')}>
                 <i className="fas fa-fire"></i> Heatmaps Generieren
+              </Button>
+            </Card.Body>
+          </Card>
+
+          <Card className="status-card mt-3">
+            <Card.Body>
+              <Card.Title>Simulator (Chaos-Prinzip)</Card.Title>
+              <Card.Text className="text-muted" style={{fontSize: '0.85rem'}}>
+                Simuliert einen Mähvorgang innerhalb der in config.py definierten Grundstücksgrenzen.
+              </Card.Text>
+              <Button variant="outline-success" size="sm" className="me-2 mb-1" onClick={() => handleControl('start_simulator')}>
+                <i className="fas fa-robot"></i> Simulator Start
+              </Button>
+              <Button variant="outline-danger" size="sm" className="mb-1" onClick={() => handleControl('stop_simulator')}>
+                <i className="fas fa-power-off"></i> Simulator Stop
               </Button>
             </Card.Body>
           </Card>

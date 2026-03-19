@@ -9,8 +9,8 @@ import Live from './pages/Live';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
-// Update with correct port matching backend .env later if needed
-export const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5001' : `http://${window.location.hostname}:5001`;
+// Update mit aktueller Hostname/IP für den Zugriff im Netzwerk
+export const API_URL = `http://${window.location.hostname}:5001`;
 export const socket = io(API_URL);
 
 axios.defaults.baseURL = API_URL;

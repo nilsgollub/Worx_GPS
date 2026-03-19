@@ -246,13 +246,13 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
         maxZoom: mapConfig.max_zoom,
         maxNativeZoom: 19,
         attribution: mapConfig.osm_attr
-      }).addTo(mapInstanceRef.current);
+      });
 
       const satelliteLayer = L.tileLayer(mapConfig.satellite_tiles, {
         maxZoom: mapConfig.max_zoom,
         maxNativeZoom: 20,
         attribution: mapConfig.satellite_attr
-      });
+      }).addTo(mapInstanceRef.current); // Default layer
 
       const baseLayers = {
         "OpenStreetMap": osmLayer,
