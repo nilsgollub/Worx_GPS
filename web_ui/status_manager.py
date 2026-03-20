@@ -43,7 +43,7 @@ class StatusManager:
         else:
             logger.warning(f"SocketIO Instanz nicht verfügbar für {description} Event '{event_name}'.")
 
-    def update_mower_status(self, payload_str, geo_config):
+    def update_mower_status(self, payload_str, geo_config, data_manager=None):
         """Aktualisiert den Mäherstatus basierend auf dem MQTT-Payload und sendet Update."""
         status_to_emit = None # Variable, um den Status nach dem Lock zu speichern
 
@@ -57,8 +57,6 @@ class StatusManager:
                         lat_str = parts[3]
                         lon_str = parts[4]
                         
-                        # Extrahiere HDOP (könnte an 6. Stelle stehen: status,fix,sats,lat,lon,agps,hdop)
-                        # Wir schauen, ob agps oder hdop vorhanden sind
                         agps_status = "N/A"
                         hdop_val = 0.0
                         if len(parts) > 5:
@@ -75,14 +73,47 @@ class StatusManager:
                             try:
                                 temp_lat = float(lat_str)
                                 temp_lon = float(lon_str)
+                                
+                                # 1. Grober rechteckiger Bounds-Check (Schnellfilter)
                                 lat_bounds = geo_config.get("lat_bounds")
                                 lon_bounds = geo_config.get("lon_bounds")
-                                if (not lat_bounds or (lat_bounds[0] <= temp_lat <= lat_bounds[1])) and \
-                                   (not lon_bounds or (lon_bounds[0] <= temp_lon <= lon_bounds[1])):
+                                
+                                is_inside = True
+                                if lat_bounds and (not (lat_bounds[0] <= temp_lat <= lat_bounds[1])):
+                                    is_inside = False
+                                if lon_bounds and (not (lon_bounds[0] <= temp_lon <= lon_bounds[1])):
+                                    is_inside = False
+                                
+                                # 2. Feiner Polygon-Geofence-Check (Präzisionsfilter)
+                                if is_inside and data_manager:
+                                    from utils import is_point_in_polygon
+                                    geofences = data_manager.get_geofences()
+                                    mow_areas = [f['coordinates'] for f in geofences if f.get('type') == 'mow_area']
+                                    forbidden_areas = [f['coordinates'] for f in geofences if f.get('type') == 'forbidden_area']
+                                    
+                                    if mow_areas or forbidden_areas:
+                                        # Wenn Erlaubt-Zonen da sind, MUSS er in einer sein
+                                        if mow_areas:
+                                            allowed = False
+                                            for area in mow_areas:
+                                                if is_point_in_polygon(temp_lat, temp_lon, area):
+                                                    allowed = True
+                                                    break
+                                            if not allowed:
+                                                is_inside = False
+                                        
+                                        # Wenn Verboten-Zonen da sind, darf er in KEINER sein
+                                        if is_inside and forbidden_areas:
+                                            for area in forbidden_areas:
+                                                if is_point_in_polygon(temp_lat, temp_lon, area):
+                                                    is_inside = False
+                                                    break
+
+                                if is_inside:
                                     lat_val = temp_lat
                                     lon_val = temp_lon
                                 else:
-                                    logger.warning(f"Koordinaten außerhalb der Grenzen: Lat '{temp_lat}', Lon '{temp_lon}'")
+                                    logger.warning(f"Koordinaten durch Geofence gefiltert: Lat '{temp_lat}', Lon '{temp_lon}'")
                             except ValueError:
                                 logger.warning(f"Konnte Lat/Lon nicht in Float konvertieren: '{lat_str}', '{lon_str}'")
 

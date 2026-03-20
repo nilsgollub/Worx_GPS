@@ -5,7 +5,7 @@ from heatmap_generator import HeatmapGenerator
 from data_manager import DataManager
 # Importiere ALLE benötigten Configs und utils
 from config import HEATMAP_CONFIG, REC_CONFIG, POST_PROCESSING_CONFIG, PROBLEM_CONFIG, ASSIST_NOW_CONFIG, GEO_CONFIG
-from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed, remove_drift_at_standstill
+from processing import process_gps_data, filter_by_geofence
 from utils import read_gps_data_from_csv_string, flatten_data, calculate_area_coverage
 import time
 from collections import deque
@@ -24,6 +24,7 @@ class WorxGps:
         self.gps_data_buffer = ""
         self.maehvorgang_data = deque(maxlen=10)  # Hält die letzten 10 Sessions
         self.alle_maehvorgang_data = self.data_manager.load_all_mow_data()
+        self.geofences = self.data_manager.get_geofences()
         self.problemzonen_data = self.data_manager.read_problemzonen_data()
         self.mqtt_handler.set_message_callback(self.on_mqtt_message)
         self.mqtt_handler.connect()
@@ -35,38 +36,35 @@ class WorxGps:
         """Aktualisiert Karten beim Start, falls Daten vorhanden sind."""
         logger.info("Führe initiale Karten-Aktualisierung durch...")
 
-        # Fülle das deque 'maehvorgang_data' (unverändert)
-        if not self.maehvorgang_data and self.alle_maehvorgang_data:
-            num_to_load = min(len(self.alle_maehvorgang_data), 10)
-            for mow_session in self.alle_maehvorgang_data[-num_to_load:]:
-                if isinstance(mow_session, list):
-                    self.maehvorgang_data.append(mow_session)
-                else:
-                    logger.warning(f"Unerwarteter Datentyp in alle_maehvorgang_data: {type(mow_session)}.")
-            logger.info(f"{len(self.maehvorgang_data)} Mähvorgänge in das 'letzte 10'-Deque geladen.")
+        # Geofences laden
+        self.geofences = self.data_manager.get_geofences()
 
-        # --- Letzte 10 Mähvorgänge (Heatmap UND Qualitäts-Pfade) ---
+        # Alle Daten vorverarbeiten
+        processed_all = [
+            process_gps_data(session, POST_PROCESSING_CONFIG, self.geofences) 
+            for session in self.alle_maehvorgang_data
+        ]
+
+        # Fülle das deque 'maehvorgang_data' (gefilterte Daten)
+        if not self.maehvorgang_data and processed_all:
+            num_to_load = min(len(processed_all), 10)
+            for session in processed_all[-num_to_load:]:
+                self.maehvorgang_data.append(session)
+            logger.info(f"{len(self.maehvorgang_data)} (gefilterte) Mähvorgänge geladen.")
+
+        # --- Letzte 10 Mähvorgänge ---
         if self.maehvorgang_data:
-            current_last_10_sessions = list(self.maehvorgang_data)
-            self.update_single_map("heatmap_10_maehvorgang", current_last_10_sessions, draw_path=True,
-                                   is_multi=True)
-            # NEU: Aufruf für quality_path_10 und wifi_heatmap
-            self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True,
-                                   is_multi=True)
-            self.update_single_map("wifi_heatmap", current_last_10_sessions, draw_path=True,
-                                   is_multi=True)
-        else:
-            logger.info("Keine Daten für 'heatmap_10_maehvorgang', 'quality_path_10' und 'wifi_heatmap'.")
+            current_last_10 = list(self.maehvorgang_data)
+            self.update_single_map("heatmap_10_maehvorgang", current_last_10, draw_path=True, is_multi=True)
+            self.update_single_map("quality_path_10", current_last_10, draw_path=True, is_multi=True)
+            self.update_single_map("wifi_heatmap", current_last_10, draw_path=True, is_multi=True)
 
-        # --- Kumulierte Daten (Nur Heatmap) ---
-        if self.alle_maehvorgang_data:
-            flat_all_data = flatten_data(self.alle_maehvorgang_data)
-            self.update_single_map("heatmap_kumuliert", flat_all_data, draw_path=False, is_multi=False)
-            # Der Aufruf für quality_path_cumulative wurde entfernt
-        else:
-            logger.info("Keine Daten für 'heatmap_kumuliert'.")
+        # --- Kumulierte Daten ---
+        if processed_all:
+            flat_all = flatten_data(processed_all)
+            self.update_single_map("heatmap_kumuliert", flat_all, draw_path=False, is_multi=False)
 
-        # --- Problemzonen (Heatmap) ---
+        # --- Problemzonen ---
         if self.problemzonen_data:
             self.update_single_map("problemzonen_heatmap", self.problemzonen_data, draw_path=False, is_multi=False)
         else:
@@ -122,33 +120,33 @@ class WorxGps:
             
             # Daten neu aus der DB laden, um konsistent zu sein
             self.alle_maehvorgang_data = self.data_manager.load_all_mow_data()
-            if self.alle_maehvorgang_data:
-                new_processed_data = self.alle_maehvorgang_data[-1]
-                self.maehvorgang_data.append(new_processed_data)
-            else:
-                logger.warning("Keine Daten in der DB gefunden nach Mähvorgang.")
+            # Geofences neu laden, falls sie im WebU bearbeitet wurden
+            self.geofences = self.data_manager.get_geofences()
+            
+            # Verarbeite ALLE verfügbaren Daten mit der neuen Pipeline (inkl. Geofence)
+            processed_sessions = [process_gps_data(session, POST_PROCESSING_CONFIG, self.geofences) for session in self.alle_maehvorgang_data]
+            
+            if not processed_sessions:
+                logger.warning("Keine Daten nach der Verarbeitung übrig.")
                 return
 
-            logger.info("Starte Karten-Aktualisierung (Evaluation-Mode)...")
-            processed_data = self.maehvorgang_data[-1]
-
-            logger.info("Starte Karten-Aktualisierung nach neuem Mähvorgang...")
-
-            # Letzte 10 Mähvorgänge vorverarbeiten (Drift im Stillstand entfernen)
-            # Wir wenden den Filter auf jede Session einzeln an
-            filtered_last_10 = [remove_drift_at_standstill(session) for session in self.maehvorgang_data]
-            processed_data_filtered = filtered_last_10[-1] if filtered_last_10 else []
+            # Letzte 10 Sessions für die Deque
+            num_to_display = min(len(processed_sessions), 10)
+            self.maehvorgang_data = deque(processed_sessions[-num_to_display:], maxlen=10)
+            
+            processed_data_filtered = processed_sessions[-1]
 
             # Aktueller Mähvorgang (Heatmap + Pfad)
             self.update_single_map("heatmap_aktuell", processed_data_filtered, draw_path=True, is_multi=False)
 
             # Letzte 10 Mähvorgänge (Heatmap UND Qualitäts-Pfade)
-            self.update_single_map("heatmap_10_maehvorgang", filtered_last_10, draw_path=True, is_multi=True)
-            self.update_single_map("quality_path_10", filtered_last_10, draw_path=True, is_multi=True)
-            self.update_single_map("wifi_heatmap", filtered_last_10, draw_path=True, is_multi=True)
+            last_10_processed = list(self.maehvorgang_data)
+            self.update_single_map("heatmap_10_maehvorgang", last_10_processed, draw_path=True, is_multi=True)
+            self.update_single_map("quality_path_10", last_10_processed, draw_path=True, is_multi=True)
+            self.update_single_map("wifi_heatmap", last_10_processed, draw_path=True, is_multi=True)
 
             # Kumulierte Daten (Nur Heatmap)
-            flat_all_data = flatten_data(self.alle_maehvorgang_data)
+            flat_all_data = flatten_data(processed_sessions)
             self.update_single_map("heatmap_kumuliert", flat_all_data, draw_path=False, is_multi=False)
             # Der Aufruf für quality_path_cumulative wurde entfernt
 

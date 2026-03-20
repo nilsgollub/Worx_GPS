@@ -173,7 +173,7 @@ def validate_config():
     required_mqtt = ["topic_gps", "topic_status", "topic_control"]
     required_rec = ["baudrate", "storage_interval"]
     required_problem = ["problem_json", "max_problemzonen", "problem_threshold_time"]
-    required_assist = ["assist_now_offline_url", "assist_now_token"]
+    required_assist = [] # Wir nutzen jetzt AssistNow Autonomous (kein Token nötig)
 
     missing = []
 

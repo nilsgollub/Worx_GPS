@@ -77,6 +77,17 @@ class DataManager:
                     )
                 ''')
                 
+                # Tabelle für Geofences (Zäune)
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS geofences (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT,
+                        type TEXT,
+                        coordinates TEXT, -- JSON-Array von [lat, lon]
+                        active INTEGER DEFAULT 1
+                    )
+                ''')
+                
                 # Indices für Performance
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_mow_points_session ON mow_points(session_id)')
                 conn.commit()
@@ -252,4 +263,54 @@ class DataManager:
                 return cursor.rowcount > 0
         except Exception as e:
             logger.error(f"Fehler beim Löschen der Session {filename}: {e}")
+            return False
+    # Geofencing Methoden
+    def get_geofences(self):
+        """Lädt alle Geofences aus der Datenbank."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM geofences")
+                rows = cursor.fetchall()
+                
+                geofences = []
+                for row in rows:
+                    geo = dict(row)
+                    try:
+                        geo['coordinates'] = json.loads(geo['coordinates'])
+                    except:
+                        geo['coordinates'] = []
+                    geofences.append(geo)
+                return geofences
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Laden der Geofences: {e}")
+            return []
+
+    def save_geofence(self, name, type, coordinates):
+        """Speichert einen neuen oder aktualisiert einen bestehenden Geofence."""
+        try:
+            coords_json = json.dumps(coordinates)
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO geofences (name, type, coordinates) VALUES (?, ?, ?)",
+                    (name, type, coords_json)
+                )
+                conn.commit()
+                return cursor.lastrowid
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Speichern des Geofence: {e}")
+            return None
+
+    def delete_geofence(self, geofence_id):
+        """Löscht einen Geofence anhand der ID."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM geofences WHERE id = ?", (geofence_id,))
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Fehler beim Löschen des Geofence: {e}")
             return False

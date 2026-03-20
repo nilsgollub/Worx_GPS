@@ -98,6 +98,33 @@ def api_heatmaps():
         "current_heatmap": data_service.get_current_heatmap_path()
     })
 
+# --- GEOFENCING API ---
+@app.route('/api/geofences', methods=['GET'])
+def api_get_geofences():
+    if not data_service: return jsonify({"error": "Service not ready"}), 503
+    fences = data_service.data_manager.get_geofences()
+    return jsonify(fences)
+
+@app.route('/api/geofences', methods=['POST'])
+def api_save_geofence():
+    if not data_service: return jsonify({"error": "Service not ready"}), 503
+    data = request.json
+    name = data.get('name', 'Neuer Zaun')
+    type = data.get('type', 'mow_area')
+    coords = data.get('coordinates', [])
+    
+    new_id = data_service.data_manager.save_geofence(name, type, coords)
+    if new_id:
+        return jsonify({"status": "success", "id": new_id})
+    return jsonify({"error": "Fehler beim Speichern"}), 500
+
+@app.route('/api/geofences/<int:fence_id>', methods=['DELETE'])
+def api_delete_geofence(fence_id):
+    if not data_service: return jsonify({"error": "Service not ready"}), 503
+    if data_service.data_manager.delete_geofence(fence_id):
+        return jsonify({"status": "success"})
+    return jsonify({"error": "Fehler beim Löschen"}), 500
+
 @app.route('/api/stats')
 def api_stats():
     if not data_service: return jsonify({"error": "Service not ready"}), 503
@@ -366,7 +393,7 @@ if __name__ == '__main__':
             rec_config_main=config.REC_CONFIG
         )
 
-        mqtt_service.set_status_update_callback(lambda payload: status_manager.update_mower_status(payload, config.GEO_CONFIG))
+        mqtt_service.set_status_update_callback(lambda payload: status_manager.update_mower_status(payload, config.GEO_CONFIG, data_service.data_manager))
         mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
         mqtt_service.set_gps_update_callback(data_service.handle_gps_data)
         mqtt_service.connect()

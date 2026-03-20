@@ -8,6 +8,35 @@ import math  # NEU: Für Distanzberechnung
 logger = logging.getLogger(__name__)
 
 
+def is_point_in_polygon(lat, lon, polygon):
+    """
+    Ray-casting Algorithmus zur Prüfung, ob ein Punkt in einem Polygon liegt.
+    polygon: Liste von [lat, lon] Paaren.
+    """
+    if not polygon or len(polygon) < 3:
+        return False
+        
+    n = len(polygon)
+    inside = False
+    
+    try:
+        # Sicherstellen, dass die Punkte Zahlen sind
+        p1lat, p1lon = float(polygon[0][0]), float(polygon[0][1])
+        for i in range(n + 1):
+            p2lat, p2lon = float(polygon[i % n][0]), float(polygon[i % n][1])
+            if lat > min(p1lat, p2lat):
+                if lat <= max(p1lat, p2lat):
+                    if lon <= max(p1lon, p2lon):
+                        if p1lat != p2lat:
+                            xints = (lat - p1lat) * (p2lon - p1lon) / (p2lat - p1lat) + p1lon
+                            if p1lon == p2lon or lon <= xints:
+                                inside = not inside
+            p1lat, p1lon = p2lat, p2lon
+    except (ValueError, TypeError, IndexError):
+        return False
+    return inside
+
+
 # ... (read_gps_data_from_csv_string und flatten_data bleiben unverändert) ...
 def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, Any]]:
     """

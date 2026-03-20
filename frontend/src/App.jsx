@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { RadioTower, Map, Activity, Settings, Server, Menu, X, Power, PowerOff } from 'lucide-react';
+import { RadioTower, Map, Activity, Settings, Server, Menu, X, Power, PowerOff, Shield } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Maps from './pages/Maps';
 import Config from './pages/Config';
 import Stats from './pages/Stats';
 import Live from './pages/Live';
+import Geofence from './pages/Geofence';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -21,6 +22,7 @@ function Sidebar() {
   const links = [
     { to: '/', icon: <Activity size={20} />, label: 'Dashboard' },
     { to: '/live', icon: <Map size={20} />, label: 'Live' },
+    { to: '/geofence', icon: <Shield size={20} />, label: 'Geofencing' },
     { to: '/maps', icon: <Map size={20} />, label: 'Karten' },
     { to: '/stats', icon: <RadioTower size={20} />, label: 'Statistiken' },
     { to: '/config', icon: <Settings size={20} />, label: 'Einstellungen' },
@@ -105,6 +107,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard socket={socket} />} />
             <Route path="/live" element={<Live socket={socket} />} />
+            <Route path="/geofence" element={<Geofence />} />
             <Route path="/maps" element={<Maps />} />
             <Route path="/stats" element={<Stats />} />
             <Route path="/config" element={<Config />} />
