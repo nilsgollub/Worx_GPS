@@ -109,13 +109,14 @@ def api_get_geofences():
 def api_save_geofence():
     if not data_service: return jsonify({"error": "Service not ready"}), 503
     data = request.json
+    fence_id = data.get('id')
     name = data.get('name', 'Neuer Zaun')
     type = data.get('type', 'mow_area')
     coords = data.get('coordinates', [])
     
-    new_id = data_service.data_manager.save_geofence(name, type, coords)
-    if new_id:
-        return jsonify({"status": "success", "id": new_id})
+    saved_id = data_service.data_manager.save_geofence(name, type, coords, fence_id)
+    if saved_id:
+        return jsonify({"status": "success", "id": saved_id})
     return jsonify({"error": "Fehler beim Speichern"}), 500
 
 @app.route('/api/geofences/<int:fence_id>', methods=['DELETE'])

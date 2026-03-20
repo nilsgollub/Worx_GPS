@@ -68,7 +68,10 @@ ASSIST_NOW_ENABLED=True  # Gilt für den autonomen Modus und Online-Fallbacks
 
 ### ✅ Erledigt
 *   **Visueller Geofencing-Editor:** Zonen direkt auf der Karte einzeichnen (Erlaubt/Verboten).
-*   **Präzise Punkt-Editierung:** Draggable Markers ermöglichen das nachträgliche Verschieben jedes Eckpunkts.
+*   **Präzise Punkt-Editierung:** Kleine Circle-Dots für maximale Übersicht, Draggable Markers und Löschen von Eckpunkten per Rechtsklick.
+*   **Simulator mit Geocfence:** Simulator (Chaos-Prinzip) beachtet Geofences (Mow & Forbidden Areas) und stoppt automatisch nach 10 Minuten.
+*   **Simulator UI-Steuerung:** Start/Stop und Echtzeit-Statusanzeige (Pulsierendes Badge/Overlay) direkt im Dashboard und auf der Live-Karte.
+*   **Live-Position & Path Prediction:** Echtzeit-Anzeige der Position und Bewegungs-Vorhersage (Pfad-Vektor).
 *   **Zweistufige Filterung:** Kombination aus schnellem Bounds-Check und präzisem Polygon-Check (Ray-Casting).
 *   **Zentrale Datenhaltung:** Migration aller Flatfiles in die SQLite-DB `worx_gps.db`.
 *   **GPS-Optimierung:** Kalman-Filter, HDOP-Validierung, Stillstands-Drift-Sperre (siehe [GPS_OPTIMIZATION_STRATEGY.md](GPS_OPTIMIZATION_STRATEGY.md)).
@@ -77,12 +80,9 @@ ASSIST_NOW_ENABLED=True  # Gilt für den autonomen Modus und Online-Fallbacks
 
 ### 🚀 In Arbeit
 *   **Automatisierte Exclusion:** Automatisches Ausblenden von Punkten in Verbotszonen (Teiche, Beete) in der Heatmap-Generierung.
-*   **Live-Position & Path Prediction:** Echtzeit-Vektoren zur Bewegungs-Vorhersage.
 
 ### 📅 Geplant
-*   **Simulator mit Geocfence:** Simulator (Chaos-Prinzip) beachtet nun Geofences (Mow & Forbidden Areas).
-*   **Simulator UI-Steuerung:** Start/Stop und Statusanzeige (Pulsierendes Badge) direkt im Dashboard.
-*   **Wartungs-Dashboard (Geplant):** Klingenwechsel-Erinnerung basierend auf GPS-Betriebsstunden.
+*   **Wartungs-Dashboard:** Klingenwechsel-Erinnerung basierend auf GPS-Betriebsstunden.
 
 ---
 
@@ -94,7 +94,7 @@ Das System nutzt eine kombinierte Filter-Logik (`processing.py` / `utils.py`):
 
 **Editor-Funktionen:**
 *   **Polygon-Drawing:** Punkte per Klick auf der Karte setzen.
-*   **Vertex-Dragging:** Jeden Punkt einer bestehenden Zone einzeln verschieben.
+*   **Vertex-Dragging:** Jeden Punkt einer bestehenden Zone einzeln verschieben (präzise Circle-Dots).
+*   **Point-Deletion:** Eckpunkte per Rechtsklick aus bestehenden Zonen entfernen.
 *   **Type-Switch:** Bestehende Zonen jederzeit zwischen Erlaubt/Verboten umschalten.
 *   **Echtzeit-Anwendung:** Geofences werden sofort auf den MQTT-Statusstream und die Heatmap-Generierung angewendet.
-

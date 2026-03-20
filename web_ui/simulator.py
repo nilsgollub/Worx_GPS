@@ -38,7 +38,7 @@ class ChaosSimulator:
         self.heading = random.uniform(0, 360)
         
         # Mäh-Parameter
-        self.speed_ms = 0.35  # Landroid fährt ca. 35cm pro Sekunde
+        self.speed_ms = 0.7  # Doppelte Geschwindigkeit für schnelleres Testen
         self.update_interval = 1.0  # Update jede Sekunde
         
         # Erdradius für Entfernungsberechnung (Meter)
@@ -52,6 +52,8 @@ class ChaosSimulator:
         self._stall_threshold = random.randint(45, 120)  # Nach 45-120s ein Problem simulieren
         self._last_problem_time = 0
         self._problem_cooldown = 60  # Min. 60s zwischen Problemen
+        
+        self.start_time = 0
 
     def _publish_status(self, payload):
         """Publiziert eine Nachricht auf dem Status-Topic (worx/status)."""
@@ -83,7 +85,7 @@ class ChaosSimulator:
         return math.degrees(new_lat_rad), math.degrees(new_lon_rad)
 
     def is_out_of_bounds(self, lat, lon):
-        """Prüft ob die Koordinaten außerhalb der Geofences oder forbidden_areas sind"""
+        """Prüft ob die Koordinaten außerhalb der Geofences oder forbidden_areas sind."""
         # 1. Grober Check gegen Rechteck (Performance)
         if not (self.lat_min <= lat <= self.lat_max and self.lon_min <= lon <= self.lon_max):
             return True
@@ -161,9 +163,9 @@ class ChaosSimulator:
                 time.sleep(1)
 
     def _send_session_data(self):
-        """Sendet die gepufferten GPS-Daten als CSV auf worx/gps (wie DataRecorder.send_buffer_data)."""
+        """Sendet die gepufferten GPS-Daten als CSV auf worx/gps."""
         if not self.gps_buffer:
-            logger.info("[Simulator] Kein GPS-Daten im Puffer, sende nur End-Marker.")
+            logger.info("[Simulator] Keine GPS-Daten im Puffer, sende nur End-Marker.")
             self._publish_gps_data("-1")
             return
         
@@ -176,6 +178,11 @@ class ChaosSimulator:
         logger.info("[Simulator] Simulations-Loop gestartet.")
         
         while self.running:
+            # Laufzeit-Check (max 10 Minuten)
+            if time.time() - self.start_time > 600:
+                logger.info("[Simulator] Maximale Laufzeit von 10 Min erreicht, stoppe automatisch.")
+                break
+
             # Berechne potentielle neue Position
             distance_to_travel = self.speed_ms * self.update_interval
             new_lat, new_lon = self.calculate_new_position(
@@ -201,7 +208,7 @@ class ChaosSimulator:
             self.current_lat = new_lat
             self.current_lon = new_lon
             
-            # GPS-Status via MQTT senden (wie der echte Recorder)
+            # GPS-Status via MQTT senden
             try:
                 self._publish_status(self._generate_status_payload())
                 self._buffer_gps_point()
@@ -213,10 +220,15 @@ class ChaosSimulator:
                 
             time.sleep(self.update_interval)
 
+        # Cleanup am Ende (Timeout oder Stop)
+        self._send_session_data()
+        self._publish_status("recording stopped")
+        logger.info(f"[Simulator] Simulation beendet, {len(self.gps_buffer)} Punkte verarbeitet.")
+        self.gps_buffer = []
+
     def start(self):
-        """Startet die Simulation und sendet 'recording started' via MQTT."""
+        """Startet die Simulation."""
         if not self.running:
-            # Position zurücksetzen
             self.current_lat = (self.lat_min + self.lat_max) / 2
             self.current_lon = (self.lon_min + self.lon_max) / 2
             self.heading = random.uniform(0, 360)
@@ -225,28 +237,19 @@ class ChaosSimulator:
             self._stall_threshold = random.randint(45, 120)
             
             self.running = True
+            self.start_time = time.time()
             
-            # "recording started" senden (wie Worx_GPS_Rec.start_recording)
             self._publish_status("recording started")
-            logger.info("[Simulator] Chaos-Simulation gestartet, 'recording started' gesendet.")
+            logger.info("[Simulator] Chaos-Simulation gestartet (Timeout: 10 Min).")
             
             self.thread = threading.Thread(target=self.simulation_loop, daemon=True)
             self.thread.start()
 
     def stop(self):
-        """Stoppt die Simulation, sendet Session-Daten und 'recording stopped' via MQTT."""
+        """Signaliert manuellen Stop."""
         if self.running:
+            logger.info("[Simulator] Manueller Stop angefordert.")
             self.running = False
-            if self.thread:
-                self.thread.join(timeout=2)
-            
-            # Session-Daten senden (wie Worx_GPS_Rec.stop_recording → DataRecorder.send_buffer_data)
-            self._send_session_data()
-            
-            # "recording stopped" senden (wie Worx_GPS_Rec.stop_recording)
-            self._publish_status("recording stopped")
-            logger.info(f"[Simulator] Chaos-Simulation gestoppt, {len(self.gps_buffer)} Punkte gesendet.")
-            self.gps_buffer = []
 
     def is_running(self):
         return self.running

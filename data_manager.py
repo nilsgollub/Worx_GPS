@@ -287,18 +287,26 @@ class DataManager:
             logger.error(f"Fehler beim Laden der Geofences: {e}")
             return []
 
-    def save_geofence(self, name, type, coordinates):
+    def save_geofence(self, name, type, coordinates, fence_id=None):
         """Speichert einen neuen oder aktualisiert einen bestehenden Geofence."""
         try:
             coords_json = json.dumps(coordinates)
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO geofences (name, type, coordinates) VALUES (?, ?, ?)",
-                    (name, type, coords_json)
-                )
-                conn.commit()
-                return cursor.lastrowid
+                if fence_id:
+                    cursor.execute(
+                        "UPDATE geofences SET name = ?, type = ?, coordinates = ? WHERE id = ?",
+                        (name, type, coords_json, fence_id)
+                    )
+                    conn.commit()
+                    return fence_id
+                else:
+                    cursor.execute(
+                        "INSERT INTO geofences (name, type, coordinates) VALUES (?, ?, ?)",
+                        (name, type, coords_json)
+                    )
+                    conn.commit()
+                    return cursor.lastrowid
         except sqlite3.Error as e:
             logger.error(f"Fehler beim Speichern des Geofence: {e}")
             return None

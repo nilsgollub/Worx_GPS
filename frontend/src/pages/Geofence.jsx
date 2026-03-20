@@ -49,6 +49,16 @@ const CustomDrawTool = ({ onFinished, active, editPoints, onEditChange }) => {
         if (onEditChange) onEditChange(newPoints);
     };
 
+    const handleMarkerDelete = (index) => {
+        if (points.length <= 3) {
+            alert("Ein Polygon benötigt mindestens 3 Punkte!");
+            return;
+        }
+        const newPoints = points.filter((_, i) => i !== index);
+        setPoints(newPoints);
+        if (onEditChange) onEditChange(newPoints);
+    };
+
     const reset = () => {
         setPoints([]);
         setMousePos(null);
@@ -93,11 +103,18 @@ const CustomDrawTool = ({ onFinished, active, editPoints, onEditChange }) => {
             {/* Draggable markers for vertices in Edit/Draw mode */}
             {(active || editPoints) && points.map((p, i) => (
                 <Marker 
-                    key={`${i}-${p[0]}`} 
+                    key={`vertex-${i}`} 
                     position={p} 
                     draggable={true}
+                    icon={L.divIcon({
+                        className: 'custom-div-icon',
+                        html: `<div style="background-color: ${editPoints ? '#3fb950' : '#ff6b6b'}; width: 10px; height: 10px; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`,
+                        iconSize: [10, 10],
+                        iconAnchor: [5, 5]
+                    })}
                     eventHandlers={{
-                        dragend: (e) => handleMarkerDrag(i, e)
+                        dragend: (e) => handleMarkerDrag(i, e),
+                        contextmenu: () => handleMarkerDelete(i)
                     }}
                 />
             ))}
@@ -113,7 +130,7 @@ const CustomDrawTool = ({ onFinished, active, editPoints, onEditChange }) => {
                             {editPoints ? 'Zone bearbeiten' : 'Neue Zone'} ({points.length} Punkte)
                         </span>
                         <button className="btn btn-success" style={{ padding: '6px 15px' }} onClick={finish}>
-                            <Check size={16} /> {editPoints ? 'Übernehmen' : 'Fertig'}
+                            <Check size={16} /> {editPoints ? 'Eckpunkte übernehmen' : 'Geometrie fixieren'}
                         </button>
                         <button className="btn btn-danger" style={{ padding: '6px 15px' }} onClick={reset}>
                             <XCircle size={16} /> Abbrechen
@@ -322,7 +339,7 @@ const Geofence = () => {
                                     onChange={(e) => setNewFenceName(e.target.value)}
                                 />
                                 <div className="flex-between gap-2 mt-2">
-                                    <button className="btn btn-success flex-1" onClick={saveFence}>
+                                    <button className={`btn btn-success flex-1 ${!isDrawing && !isEditing ? 'pulse' : ''}`} onClick={saveFence}>
                                         <Save size={18} /> Speichern
                                     </button>
                                     <button className="btn btn-primary" onClick={() => setIsEditing(true)} title="Punkte bearbeiten">
