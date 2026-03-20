@@ -60,6 +60,24 @@ body {
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
 }
 
+/* Animations */
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.border-primary {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 15px rgba(47, 129, 247, 0.2) !important;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Typography */
 h1, h2, h3, h4, h5, h6 {
   color: #fff;

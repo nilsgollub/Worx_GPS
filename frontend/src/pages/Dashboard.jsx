@@ -10,7 +10,8 @@ export default function Dashboard() {
     system: {},
     pi: {},
     heatmaps: [],
-    currentHeatmap: null
+    currentHeatmap: null,
+    simulator: { running: false, exists: false }
   });
 
   const [loading, setLoading] = useState(true);
@@ -27,8 +28,10 @@ export default function Dashboard() {
         system: statusRes.data.system || {},
         pi: statusRes.data.pi || {},
         heatmaps: heatmapsRes.data.heatmaps || [],
-        currentHeatmap: heatmapsRes.data.current_heatmap
+        currentHeatmap: heatmapsRes.data.current_heatmap,
+        simulator: { running: false, exists: false } // Will fetch separately
       }));
+      fetchSimStatus();
     } catch(err) {
       console.error(err);
     } finally {
@@ -56,6 +59,21 @@ export default function Dashboard() {
     await axios.post('/control', { command: cmd });
   };
 
+  const fetchSimStatus = async () => {
+    try {
+      const res = await axios.get('/api/simulator/status');
+      setData(prev => ({ ...prev, simulator: res.data }));
+    } catch(err) { console.error(err); }
+  };
+
+  const toggleSimulator = async () => {
+    try {
+      const res = await axios.post('/api/simulator/toggle');
+      setData(prev => ({ ...prev, simulator: { ...prev.simulator, running: res.data.running } }));
+      setTimeout(fetchStatus, 500); // Re-fetch status to see simulator activity
+    } catch(err) { console.error(err); }
+  };
+
   if (loading) {
     return <div className="glass-panel" style={{padding: 40, textAlign: 'center'}}><RefreshCw className="spinner" /></div>
   }
@@ -69,9 +87,14 @@ export default function Dashboard() {
       <div className="glass-card">
         <h3 className="flex-between mb-4" style={{marginBottom: 20}}>
           <span><Activity size={20} className="text-primary mr-2" /> Live Status</span>
-          <span className={`badge ${mower.is_recording ? 'success' : 'secondary'}`}>
-            {mower.is_recording ? 'Aufzeichnung Aktiv' : 'Gestoppt'}
-          </span>
+          <div className="flex-center" style={{gap: 8}}>
+            {mower.is_simulated && (
+              <span className="badge danger" style={{animation: 'pulse 2s infinite'}}>SIMULATION</span>
+            )}
+            <span className={`badge ${mower.is_recording ? 'success' : 'secondary'}`}>
+              {mower.is_recording ? 'Aufzeichnung Aktiv' : 'Gestoppt'}
+            </span>
+          </div>
         </h3>
 
         <div className="flex-column gap-3">
@@ -134,6 +157,38 @@ export default function Dashboard() {
           >
             <RefreshCw size={18} /> Heatmaps generieren
           </button>
+        </div>
+      </div>
+
+      {/* Simulator Control Panel */}
+      <div className={`glass-card ${data.simulator.running ? 'border-primary' : ''}`}>
+        <h3 className="flex-between mb-4" style={{marginBottom: 20}}>
+          <span className="flex-center" style={{gap: 8}}><Cpu size={20} className={data.simulator.running ? 'text-primary' : ''} /> Simulator</span>
+          <span className={`badge ${data.simulator.running ? 'success' : 'secondary'}`}>
+            {data.simulator.running ? 'Simuliert...' : 'Inaktiv'}
+          </span>
+        </h3>
+        
+        <p className="text-small text-muted mb-4" style={{minHeight: 40}}>
+          {data.simulator.running 
+            ? 'Virtueller Mäher fährt nach dem Chaos-Prinzip innerhalb der Geofences.' 
+            : 'Simuliert GPS-Daten via MQTT für Testzwecke ohne echte Hardware.'}
+        </p>
+
+        <div className="flex-column gap-3">
+          <button 
+            className={`btn ${data.simulator.running ? 'btn-danger' : 'btn-primary'}`}
+            onClick={toggleSimulator}
+          >
+            {data.simulator.running ? <Square size={18} /> : <Play size={18} />}
+            {data.simulator.running ? ' Simulation beenden' : ' Simulation starten'}
+          </button>
+          
+          {data.simulator.running && (
+            <div className="status-row text-small mt-2" style={{opacity: 0.8}}>
+               <Navigation size={14}/> {data.simulator.lat?.toFixed(6)}, {data.simulator.lon?.toFixed(6)}
+            </div>
+          )}
         </div>
       </div>
 

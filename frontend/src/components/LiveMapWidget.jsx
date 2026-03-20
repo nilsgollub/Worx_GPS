@@ -136,7 +136,7 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
       predictionLineRef.current = null;
     }
     
-    if (speed < 0.1 || !mapInstanceRef.current) return;
+    if (speed < 0.01 || !mapInstanceRef.current) return;
     
     const predictionDistance = speed * PREDICTION_SECONDS;
     const predictionPoints = [];
@@ -149,8 +149,8 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
     
     predictionLineRef.current = L.polyline(predictionPoints, {
       color: '#ff6b6b',
-      weight: 3,
-      opacity: 0.6,
+      weight: 4,
+      opacity: 0.8,
       dashArray: '10, 5'
     }).addTo(mapInstanceRef.current);
   };
@@ -205,7 +205,7 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
         icon: mowerIcon,
         rotationAngle: 0,
         rotationOrigin: 'center center'
-      }).addTo(mapInstanceRef.current).bindPopup("Aktuelle Position").openPopup();
+      }).addTo(mapInstanceRef.current);
       
       startInterpolation();
     } else {
@@ -275,7 +275,30 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
   }
 
   return (
-    <div ref={mapRef} style={{ height: height, width: '100%', borderRadius: '8px', border: '1px solid #dee2e6', zIndex: 1 }}></div>
+    <div style={{ position: 'relative', height: height, width: '100%' }}>
+      <div ref={mapRef} style={{ height: '100%', width: '100%', borderRadius: '8px', border: '1px solid #dee2e6', zIndex: 1 }}></div>
+      {status.is_simulated && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          zIndex: 1000,
+          backgroundColor: 'rgba(215, 25, 28, 0.9)',
+          color: 'white',
+          padding: '5px 15px',
+          borderRadius: '20px',
+          fontSize: '11px',
+          fontWeight: 'bold',
+          letterSpacing: '0.5px',
+          pointerEvents: 'none',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(255,255,255,0.4)',
+          textTransform: 'uppercase'
+        }}>
+          ● Simulation aktiv
+        </div>
+      )}
+    </div>
   );
 };
 

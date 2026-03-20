@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChaosSimulator:
-    def __init__(self, geo_config, mqtt_service):
+    def __init__(self, geo_config, mqtt_service, data_manager=None):
         """
         Simuliert einen Mähroboter nach dem Chaos-Prinzip.
         Sendet alle MQTT-Nachrichten wie der echte Recorder (Worx_GPS_Rec.py):
@@ -19,12 +19,14 @@ class ChaosSimulator:
         
         :param geo_config: Dictionary mit Grundstücksgrenzen (lat_bounds, lon_bounds)
         :param mqtt_service: MqttService-Instanz zum Publizieren von MQTT-Nachrichten
+        :param data_manager: Optionaler DataManager zum Laden der Geofences
         """
         self.running = False
         self.thread = None
         self.mqtt_service = mqtt_service
+        self.data_manager = data_manager
         
-        # Grundstücksgrenzen
+        # Grundstücksgrenzen (Fallback auf config)
         self.lat_min, self.lat_max = geo_config.get("lat_bounds", (46.777500, 46.777800))
         self.lon_min, self.lon_max = geo_config.get("lon_bounds", (7.162400, 7.162750))
         
@@ -81,8 +83,35 @@ class ChaosSimulator:
         return math.degrees(new_lat_rad), math.degrees(new_lon_rad)
 
     def is_out_of_bounds(self, lat, lon):
-        """Prüft ob die Koordinaten außerhalb der konfigurierten Grenzen sind"""
-        return not (self.lat_min <= lat <= self.lat_max and self.lon_min <= lon <= self.lon_max)
+        """Prüft ob die Koordinaten außerhalb der Geofences oder forbidden_areas sind"""
+        # 1. Grober Check gegen Rechteck (Performance)
+        if not (self.lat_min <= lat <= self.lat_max and self.lon_min <= lon <= self.lon_max):
+            return True
+            
+        # 2. Feiner Check gegen Polygone
+        if self.data_manager:
+            from utils import is_point_in_polygon
+            geofences = self.data_manager.get_geofences()
+            mow_areas = [f['coordinates'] for f in geofences if f.get('type') == 'mow_area']
+            forbidden_areas = [f['coordinates'] for f in geofences if f.get('type') == 'forbidden_area']
+            
+            if mow_areas or forbidden_areas:
+                # Prüfe auf erlaubte Zonen
+                if mow_areas:
+                    allowed = False
+                    for area in mow_areas:
+                        if is_point_in_polygon(lat, lon, area):
+                            allowed = True
+                            break
+                    if not allowed:
+                        return True
+                
+                # Prüfe auf Verbotszonen
+                for area in forbidden_areas:
+                    if is_point_in_polygon(lat, lon, area):
+                        return True
+        
+        return False
 
     def _generate_status_payload(self):
         """Generiert ein Payload im Format des echten Roboters ('status,...')"""

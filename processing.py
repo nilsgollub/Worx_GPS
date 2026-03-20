@@ -188,8 +188,24 @@ def process_gps_data(gps_data, config, geofences=None):
     if not gps_data:
         return []
 
+    # 0. Vor-Filterung: Entferne korrupte Punkte (None-Values)
+    cleaned_data = []
+    for p in gps_data:
+        try:
+            if p.get('lat') is not None and p.get('lon') is not None and p.get('timestamp') is not None:
+                # Teste Konvertierbarkeit
+                float(p['lat'])
+                float(p['lon'])
+                float(p['timestamp'])
+                cleaned_data.append(p)
+        except (ValueError, TypeError):
+            continue
+    
+    if not cleaned_data:
+        return []
+
     # 1. Grober HDOP Filter
-    data = filter_by_hdop(gps_data, config.get('hdop_threshold', 2.5))
+    data = filter_by_hdop(cleaned_data, config.get('hdop_threshold', 2.5))
     
     # 2. Geofencing Filter (NEU)
     if geofences:

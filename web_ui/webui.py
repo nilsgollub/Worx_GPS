@@ -141,6 +141,33 @@ def api_config():
         "config": data_service.get_editable_config(),
         "info": data_service.get_config_info()
     })
+
+# --- SIMULATOR API ---
+@app.route('/api/simulator/status')
+def api_simulator_status():
+    global simulator
+    if not simulator:
+        return jsonify({"running": False, "exists": False})
+    return jsonify({
+        "running": simulator.running,
+        "exists": True,
+        "lat": simulator.current_lat,
+        "lon": simulator.current_lon,
+        "heading": simulator.heading
+    })
+
+@app.route('/api/simulator/toggle', methods=['POST'])
+def api_simulator_toggle():
+    global simulator
+    if not simulator:
+        return jsonify({"error": "Simulator not initialized"}), 503
+    
+    if simulator.running:
+        simulator.stop()
+    else:
+        simulator.start()
+        
+    return jsonify({"running": simulator.running})
 # --- ENDE NEUE API ROUTEN ---
 
 @app.route('/maps')
@@ -399,7 +426,7 @@ if __name__ == '__main__':
         mqtt_service.connect()
         
         # Simulator initialisieren (sendet MQTT-Nachrichten wie der echte Recorder)
-        simulator = ChaosSimulator(config.GEO_CONFIG, mqtt_service)
+        simulator = ChaosSimulator(config.GEO_CONFIG, mqtt_service, data_service.data_manager)
 
         system_monitor = SystemMonitor(status_manager.update_system_stats)
         system_monitor.start()

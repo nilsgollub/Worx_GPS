@@ -107,11 +107,14 @@ const Live = ({ socket }) => {
             </Card.Body>
           </Card>
 
-          <Card className="status-card mt-3">
+          <Card className={`status-card mt-3 ${status.is_simulated ? 'border-danger' : ''}`}>
             <Card.Body>
-              <Card.Title>Simulator (Chaos-Prinzip)</Card.Title>
+              <Card.Title className="d-flex justify-content-between align-items-center">
+                Simulator
+                {status.is_simulated && <Badge bg="danger" style={{animation: 'pulse 2s infinite'}}>SIMULIERT</Badge>}
+              </Card.Title>
               <Card.Text className="text-muted" style={{fontSize: '0.85rem'}}>
-                Simuliert einen Mähvorgang innerhalb der in config.py definierten Grundstücksgrenzen.
+                Simuliert MQTT-Daten (GPS & Status) innerhalb der Geofences für Testzwecke.
               </Card.Text>
               <Button variant="outline-success" size="sm" className="me-2 mb-1" onClick={() => handleControl('start_simulator')}>
                 <i className="fas fa-robot"></i> Simulator Start

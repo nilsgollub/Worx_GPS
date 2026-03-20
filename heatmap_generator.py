@@ -229,14 +229,15 @@ class HeatmapGenerator:
                         # Farbsegmentierung
                         if val is not None:
                             try:
-                                segment_color = colormap(int(val))
-                            except ValueError:
-                                if int(val) < colormap.vmin:
+                                f_val = float(val)
+                                if f_val < colormap.vmin:
                                     segment_color = colormap(colormap.vmin)
-                                elif int(val) > colormap.vmax:
+                                elif f_val > colormap.vmax:
                                     segment_color = colormap(colormap.vmax)
                                 else:
-                                    segment_color = default_color
+                                    segment_color = colormap(f_val)
+                            except (ValueError, TypeError):
+                                segment_color = default_color
                         else:
                             segment_color = default_color
                         locations = [(lat1, lon1), (lat2, lon2)]
@@ -761,14 +762,15 @@ class HeatmapGenerator:
                             sats = p1.get('satellites')
                             if sats is not None:
                                 try:
-                                    segment_color = colormap_png(int(sats))
-                                except ValueError:
-                                    if int(sats) < colormap_png.vmin:
+                                    f_sats = float(sats)
+                                    if f_sats < colormap_png.vmin:
                                         segment_color = colormap_png(colormap_png.vmin)
-                                    elif int(sats) > colormap_png.vmax:
+                                    elif f_sats > colormap_png.vmax:
                                         segment_color = colormap_png(colormap_png.vmax)
                                     else:
-                                        segment_color = default_color
+                                        segment_color = colormap_png(f_sats)
+                                except (ValueError, TypeError):
+                                    segment_color = default_color
                             else:
                                 segment_color = default_color
                             locations = [(lat1, lon1), (lat2, lon2)]

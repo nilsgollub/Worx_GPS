@@ -67,18 +67,34 @@ ASSIST_NOW_ENABLED=True  # Gilt für den autonomen Modus und Online-Fallbacks
 ## 🗺 5. Projekt-Roadmap
 
 ### ✅ Erledigt
+*   **Visueller Geofencing-Editor:** Zonen direkt auf der Karte einzeichnen (Erlaubt/Verboten).
+*   **Präzise Punkt-Editierung:** Draggable Markers ermöglichen das nachträgliche Verschieben jedes Eckpunkts.
+*   **Zweistufige Filterung:** Kombination aus schnellem Bounds-Check und präzisem Polygon-Check (Ray-Casting).
 *   **Zentrale Datenhaltung:** Migration aller Flatfiles in die SQLite-DB `worx_gps.db`.
 *   **GPS-Optimierung:** Kalman-Filter, HDOP-Validierung, Stillstands-Drift-Sperre (siehe [GPS_OPTIMIZATION_STRATEGY.md](GPS_OPTIMIZATION_STRATEGY.md)).
 *   **Hardware-Tuning:** Aktivierung von Pedestrian-Mode und AssistNow Autonomous auf dem u-blox Modul.
 *   **Architektur:** Saubere Trennung von Pi-Recorder, WebUI-DataService und Evaluierung.
-*   **Service Starter:** Zentrales Skript für den parallelen Start aller Dienste.
 
 ### 🚀 In Arbeit
-*   **Visueller Geofencing-Editor:** Zonen direkt auf der Karte einzeichnen.
+*   **Automatisierte Exclusion:** Automatisches Ausblenden von Punkten in Verbotszonen (Teiche, Beete) in der Heatmap-Generierung.
 *   **Live-Position & Path Prediction:** Echtzeit-Vektoren zur Bewegungs-Vorhersage.
 
 ### 📅 Geplant
-*   **Wartungs-Dashboard:** Klingenwechsel-Erinnerung basierend auf GPS-Betriebsstunden.
+*   **Simulator mit Geocfence:** Simulator (Chaos-Prinzip) beachtet nun Geofences (Mow & Forbidden Areas).
+*   **Simulator UI-Steuerung:** Start/Stop und Statusanzeige (Pulsierendes Badge) direkt im Dashboard.
+*   **Wartungs-Dashboard (Geplant):** Klingenwechsel-Erinnerung basierend auf GPS-Betriebsstunden.
 
 ---
+
+## 📐 6. Geofencing System
+
+Das System nutzt eine kombinierte Filter-Logik (`processing.py` / `utils.py`):
+1.  **Mow Areas (Blau):** Der Mäher MUSS in mindestens einer dieser Zonen liegen.
+2.  **Forbidden Areas (Rot):** Der Mäher darf in KEINER dieser Zonen liegen.
+
+**Editor-Funktionen:**
+*   **Polygon-Drawing:** Punkte per Klick auf der Karte setzen.
+*   **Vertex-Dragging:** Jeden Punkt einer bestehenden Zone einzeln verschieben.
+*   **Type-Switch:** Bestehende Zonen jederzeit zwischen Erlaubt/Verboten umschalten.
+*   **Echtzeit-Anwendung:** Geofences werden sofort auf den MQTT-Statusstream und die Heatmap-Generierung angewendet.
 

@@ -19,6 +19,7 @@ class StatusManager:
             'agps_status': "N/A",
             'mower_status': "Unbekannt",
             'is_recording': False, 
+            'is_simulated': False,
             'last_update': datetime.now().strftime("%H:%M:%S")
         }
         self.current_pi_status = {
@@ -68,6 +69,13 @@ class StatusManager:
                                 pass
 
                         lat_val, lon_val = None, None
+                        is_simulated = "Sim" in agps_status
+                        
+                        self.current_mower_status.update({
+                            'agps_status': agps_status,
+                            'hdop': hdop_val,
+                            'is_simulated': is_simulated
+                        })
                         if lat_str and lat_str.lower() != 'n/a' and \
                            lon_str and lon_str.lower() != 'n/a':
                             try:
