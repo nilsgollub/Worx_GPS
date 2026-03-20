@@ -168,112 +168,70 @@ class HeatmapGenerator:
             return
 
         # --- Logik für Kartentyp ---
+        # --- Logik für Kartentyp (QUALITÄT / WIFI als HEATMAP) ---
         if visualize_quality_path or visualize_wifi_path:
             is_wifi = visualize_wifi_path
-            # --- Farbkodierten Pfad zeichnen (Multi-Session Support) ---
-            logger.info(f"Zeichne farbkodierten {'WiFi' if is_wifi else 'Qualitäts'}pfad für {html_file}.")
+            logger.info(f"Erstelle gewichtete Heatmap für {'WiFi' if is_wifi else 'Qualität'} ({html_file}).")
+            
+            # Heatmap Parameter aus Config oder Standard
+            hm_radius = map_config.get("radius", 15) if map_config.get("radius", 0) > 0 else 15
+            hm_blur = map_config.get("blur", 15) if map_config.get("blur", 0) > 0 else 15
+            
+            # Gradient: Rot (#d7191c) -> Gelb (#fdae61) -> Grün (#1a9641)
+            gradient = {0.2: '#d7191c', 0.4: '#fdae61', 0.7: '#a6d96a', 1.0: '#1a9641'}
+            
+            val_key = 'wifi' if is_wifi else 'satellites'
+            heat_data = []
+            
+            for p in flat_data_list:
+                try:
+                    lat, lon = float(p.get('lat')), float(p.get('lon'))
+                    val = p.get(val_key)
+                    if val is not None:
+                        # Gewichtung berechnen (0.0 bis 1.0)
+                        if is_wifi:
+                            # WiFi: -90 (bad) bis -30 (good) -> Skaliere auf 0.1 bis 1.0
+                            # Formel: (dBm + 95) / 65 -> -90 ergibt ~0.07, -30 ergibt 1.0
+                            weight = max(0.01, min(1.0, (float(val) + 95) / 65))
+                        else:
+                            # GPS: 0 (bad) bis 12 (good) -> Skaliere auf 0.1 bis 1.0
+                            weight = max(0.01, min(1.0, float(val) / 12))
+                        heat_data.append([lat, lon, weight])
+                except (ValueError, TypeError, KeyError):
+                    continue
+
+            # Heatmap Layer hinzufügen
+            heatmap_layer_name = f"{'WiFi' if is_wifi else 'GPS Qualität'} (Heatmap)"
+            plugins.HeatMap(heat_data, name=heatmap_layer_name, radius=hm_radius, blur=hm_blur, 
+                            gradient=gradient, min_opacity=0.2).add_to(map_obj)
+            
+            # Legende (Colormap) hinzufügen als visuelle Hilfe
+            # Wir nutzen die bestehende colormap Logik für die Legende
             colors = map_config.get('wifi_colormap_colors' if is_wifi else 'quality_colormap_colors', 
-                                    ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'] if is_wifi else ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'])
+                                    ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'])
             index = map_config.get('wifi_colormap_index' if is_wifi else 'quality_colormap_index', 
                                    [-85, -75, -65] if is_wifi else [4, 6, 8, 10])
             caption = map_config.get('wifi_legend_caption' if is_wifi else 'quality_legend_caption', 
                                      'WiFi Signal (dBm)' if is_wifi else 'GPS Qualität (Satelliten)')
-            default_color = 'grey'
-            val_key = 'wifi' if is_wifi else 'satellites'
-
+            
             val_values = [p.get(val_key) for p in flat_data_list if p.get(val_key) is not None]
-            min_val_data = min(val_values) if val_values else min(index) if index else (-100 if is_wifi else 0)
-            max_val_data = max(val_values) if val_values else max(index) if index else (-30 if is_wifi else 12)
-            full_index = sorted(list(set([min_val_data] + index + [max_val_data + 1])))
-            colormap = cm.StepColormap(colors, index=full_index, vmin=min_val_data, vmax=max_val_data,
-                                       caption=caption)
+            min_v = min(val_values) if val_values else min(index)
+            max_v = max(val_values) if val_values else max(index)
+            f_index = sorted(list(set([min_v] + index + [max_v + 1])))
+            
+            legend_colormap = cm.StepColormap(colors, index=f_index, vmin=min_v, vmax=max_v, caption=caption)
+            legend_colormap.add_to(map_obj)
+            
+            # Falls draw_path=True, können wir den Pfad trotzdem als dünne graue Linie drunterlegen
+            if draw_path:
+                for idx, session_data in enumerate(reversed(sessions_to_draw)):
+                    if not session_data or len(session_data) < 2: continue
+                    coords = [[float(p['lat']), float(p['lon'])] for p in session_data if 'lat' in p and 'lon' in p]
+                    if len(coords) > 1:
+                        folium.PolyLine(coords, color='white', weight=1, opacity=0.3, 
+                                        name=f"Pfad-Skelett {idx}").add_to(map_obj)
 
-            path_groups = []
-            for idx, session_data in enumerate(reversed(sessions_to_draw)):
-                if not session_data or len(session_data) < 2: continue
-
-                session_index_display = len(sessions_to_draw) - idx
-                session_date_str = self._get_session_date_str(session_data, session_index_display)
-                path_layer_name = f"{'WiFi' if is_wifi else 'Qualität'} {session_date_str}"
-                show_layer = (idx == 0)
-                path_feature_group = folium.FeatureGroup(name=path_layer_name, show=show_layer)
-                session_points_coords = []
-                total_distance_m = 0.0
-                start_time_ts = None
-                end_time_ts = None
-                try:
-                    # Zeitstempel extrahieren
-                    timestamps = [float(p['timestamp']) for p in session_data if 'timestamp' in p]
-                    if timestamps:
-                        start_time_ts = min(timestamps)
-                        end_time_ts = max(timestamps)
-                except (ValueError, TypeError, KeyError, IndexError):
-                    logger.warning(f"Konnte Start-/Endzeit für Session {session_date_str} nicht ermitteln.")
-                    start_time_ts = None;
-                    end_time_ts = None
-                # Dauer berechnen
-                duration_seconds = (end_time_ts - start_time_ts) if start_time_ts and end_time_ts else -1.0
-                duration_str = format_duration(duration_seconds)
-
-                for i in range(len(session_data) - 1):
-                    p1 = session_data[i];
-                    p2 = session_data[i + 1]
-                    try:
-                        lat1, lon1 = float(p1['lat']), float(p1['lon'])
-                        lat2, lon2 = float(p2['lat']), float(p2['lon'])
-                        val = p1.get(val_key)
-                        # Distanz aufsummieren
-                        total_distance_m += calculate_distance(p1, p2)
-                        if i == 0: session_points_coords.append([lat1, lon1])
-                        session_points_coords.append([lat2, lon2])
-                        # Farbsegmentierung
-                        if val is not None:
-                            try:
-                                f_val = float(val)
-                                if f_val < colormap.vmin:
-                                    segment_color = colormap(colormap.vmin)
-                                elif f_val > colormap.vmax:
-                                    segment_color = colormap(colormap.vmax)
-                                else:
-                                    segment_color = colormap(f_val)
-                            except (ValueError, TypeError):
-                                segment_color = default_color
-                        else:
-                            segment_color = default_color
-                        locations = [(lat1, lon1), (lat2, lon2)]
-                        folium.PolyLine(locations=locations, color=segment_color, weight=path_weight,
-                                        opacity=path_opacity).add_to(path_feature_group)
-                    except (ValueError, KeyError, TypeError) as e:
-                        logger.warning(f"Überspringe Pfadsegment in Session {session_date_str} wegen Fehler: {e}")
-                        continue
-
-                # Distanz formatieren
-                distance_str = f"{total_distance_m / 1000:.2f} km" if total_distance_m > 0 else "N/A"
-                if show_markers and len(session_points_coords) > 1:
-                    start_ts = session_data[0].get('timestamp');
-                    end_ts = session_data[-1].get('timestamp')
-                    # Popups mit Distanz/Dauer
-                    start_popup = (f"<b>Start {session_date_str}</b><br>"
-                                   f"Zeit: {self._format_timestamp(start_ts)}<br>"
-                                   f"Dauer: {duration_str}<br>"
-                                   f"Strecke: {distance_str}")
-                    end_popup = (f"<b>Ende {session_date_str}</b><br>"
-                                 f"Zeit: {self._format_timestamp(end_ts)}<br>"
-                                 f"Dauer: {duration_str}<br>"
-                                 f"Strecke: {distance_str}")
-                    marker_color = 'darkblue'
-                    folium.CircleMarker(location=session_points_coords[0], radius=3, color=marker_color,
-                                        fill=True, fill_color=marker_color, fill_opacity=0.9,
-                                        popup=folium.Popup(start_popup, max_width=200)).add_to(path_feature_group)
-                    folium.CircleMarker(location=session_points_coords[-1], radius=3, color=marker_color,
-                                        fill=True, fill_color=marker_color, fill_opacity=0.9,
-                                        popup=folium.Popup(end_popup, max_width=200)).add_to(path_feature_group)
-                path_groups.append(path_feature_group)
-
-            for pg in path_groups: pg.add_to(map_obj)
-            colormap.add_to(map_obj)
-            all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if
-                                     'lat' in p and 'lon' in p]
+            all_points_for_bounds = [[float(p['lat']), float(p['lon'])] for p in flat_data_list if 'lat' in p and 'lon' in p]
 
         else:
             # --- Logik für separate Heatmaps UND separate Pfade ---
