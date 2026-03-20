@@ -38,7 +38,7 @@ class ChaosSimulator:
         self.heading = random.uniform(0, 360)
         
         # Mäh-Parameter
-        self.speed_ms = 0.7  # Doppelte Geschwindigkeit für schnelleres Testen
+        self.speed_ms = 1.5  # Warp-Geschwindigkeit für ultraschnelles Testen
         self.update_interval = 1.0  # Update jede Sekunde
         
         # Erdradius für Entfernungsberechnung (Meter)
