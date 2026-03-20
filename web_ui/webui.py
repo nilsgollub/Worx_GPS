@@ -420,16 +420,30 @@ def ha_polling_loop():
                     # Dashboard aktualisieren
                     status_manager.update_ha_mower_status(current_state)
                     
-                    # Automatisierungs-Logik: Auto-Start/Stop
+                    # Automatisierungs-Logik: Auto-Start/Stop (Neue robuste Klassen)
                     # Normalisiere Status (HA liefert oft Kleinbuchstaben)
                     s = current_state.lower()
-                    if s in ["mowing", "starting", "edge cutting"] and last_state not in ["mowing", "starting", "edge cutting"]:
+                    
+                    # Stati, bei denen die Aufnahme STARTEN soll
+                    # mowing: offizieller HA-Status
+                    # starting, edge cutting: detailstati von Landroid
+                    start_states = ["mowing", "starting", "edge cutting", "running", "mowing the yard"]
+                    
+                    # Stati, bei denen die Aufnahme STOPPEN soll
+                    # docked, returning, paused: offizielle HA-Stati
+                    # charging, idle, rain delay: detailstati von Landroid
+                    stop_states = ["docked", "charging", "idle", "rain delay", "returning", "paused", "at home"]
+                    
+                    # Problem / Alarm Stati
+                    problem_states = ["error", "trapped", "locked", "manual stop", "out of bounds", "wires missing"]
+
+                    if s in start_states and last_state not in start_states:
                         mqtt_service.publish_command("start")
                         logger.info(f"[HA-Autopilot] Status '{current_state}' erkannt -> Sende START an Mäher.")
-                    elif s in ["docked", "charging", "idle", "rain delay"] and last_state in ["mowing", "starting", "edge cutting"]:
+                    elif s in stop_states and last_state in start_states:
                         mqtt_service.publish_command("stop")
                         logger.info(f"[HA-Autopilot] Status '{current_state}' erkannt -> Sende STOP an Mäher.")
-                    elif s in ["error", "trapped", "locked", "manual stop"]:
+                    elif s in problem_states:
                         mqtt_service.publish_command("PROBLEM")
                         logger.warning(f"[HA-Autopilot] Problem-Status '{current_state}' erkannt -> Sende PROBLEM-Signal.")
                     
