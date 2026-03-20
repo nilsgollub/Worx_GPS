@@ -2,12 +2,10 @@
 import sys
 import logging
 import serial
-# import paho.mqtt.client as paho_mqtt_client # Nicht mehr direkt hier benötigt
 from mqtt_handler import MqttHandler  # Annahme: MqttHandler behandelt Reconnects intern
 from gps_handler import GpsHandler
 from data_recorder import DataRecorder
 from problem_detection import ProblemDetector
-# PI_STATUS_CONFIG importieren
 from config import REC_CONFIG, MQTT_CONFIG, PI_STATUS_CONFIG
 import time
 import subprocess
@@ -23,8 +21,6 @@ except ImportError:
         "psutil nicht gefunden. Pi-Temperatur kann nicht gelesen werden. Installiere mit 'pip install psutil'")
 
 # Logging konfigurieren
-# Stelle sicher, dass das Level auf DEBUG steht, um alle Meldungen zu sehen
-# In einer Produktionsumgebung vielleicht auf INFO setzen
 log_level = logging.DEBUG if REC_CONFIG.get("debug_logging", False) else logging.INFO
 logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
 
@@ -431,9 +427,8 @@ if __name__ == "__main__":
     except Exception as global_e:
         # Fängt Fehler während der Initialisierung ab
         logging.critical(f"Kritischer Fehler beim Starten oder während der Laufzeit: {global_e}", exc_info=True)
-        # Optional: Versuche noch aufzuräumen, falls Instanz existiert
         try:
-            if 'worx_gps_rec' in locals() and worx_gps_rec:
+            if 'worx_gps_rec' in locals():
                 worx_gps_rec.cleanup()
         except Exception as cleanup_e:
             logging.error(f"Fehler während des Cleanup nach kritischem Fehler: {cleanup_e}", exc_info=True)

@@ -15,9 +15,10 @@ class StatusManager:
             'lon': initial_map_center[1],
             'status_text': "Initialisiere...",
             'satellites': 0,
+            'hdop': 0.0,
             'agps_status': "N/A",
             'mower_status': "Unbekannt",
-            'is_recording': False, # Wird von der WebUI oder einem anderen Service gesetzt
+            'is_recording': False, 
             'last_update': datetime.now().strftime("%H:%M:%S")
         }
         self.current_pi_status = {
@@ -52,13 +53,21 @@ class StatusManager:
                     parts = payload_str.split(',')
                     if len(parts) >= 5: # status,fix_desc,sats,lat,lon[,agps_info]
                         status_text = parts[1]
-                        satellites = int(parts[2]) if parts[2] else 0
+                        satellites = int(parts[2]) if parts[2] and parts[2].lower() != 'n/a' else 0
                         lat_str = parts[3]
                         lon_str = parts[4]
-                        agps_status = parts[5] if len(parts) > 5 else "N/A"
-                        # mower_status wird hier nicht direkt aus dem GPS-String gelesen,
-                        # könnte aber aus einem anderen Teil des Payloads kommen oder
-                        # durch Befehle (START_REC/STOP_REC) beeinflusst werden.
+                        
+                        # Extrahiere HDOP (könnte an 6. Stelle stehen: status,fix,sats,lat,lon,agps,hdop)
+                        # Wir schauen, ob agps oder hdop vorhanden sind
+                        agps_status = "N/A"
+                        hdop_val = 0.0
+                        if len(parts) > 5:
+                            agps_status = parts[5]
+                        if len(parts) > 6:
+                            try:
+                                hdop_val = float(parts[6])
+                            except (ValueError, TypeError):
+                                pass
 
                         lat_val, lon_val = None, None
                         if lat_str and lat_str.lower() != 'n/a' and \
@@ -80,6 +89,7 @@ class StatusManager:
                         self.current_mower_status.update({
                             'status_text': status_text,
                             'satellites': satellites,
+                            'hdop': hdop_val,
                             'lat': lat_val,
                             'lon': lon_val,
                             'agps_status': agps_status,

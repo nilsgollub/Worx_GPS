@@ -140,7 +140,7 @@ PROBLEM_CONFIG = {
 # Assist now (unverändert)
 ASSIST_NOW_CONFIG = {
     "assist_now_enabled": os.getenv("ASSIST_NOW_ENABLED", "False").lower() == "true",
-    "assist_now_offline_url": "https://offline-live1.services.u-blox.com/GetOfflineData.ashx",
+    "assist_now_url": os.getenv("ASSIST_NOW_URL", "https://api.thingstream.io/assistnow/online"),  # Standard auf Online
     "assist_now_token": os.getenv("ASSIST_NOW_TOKEN"),
     "days": 7
 }

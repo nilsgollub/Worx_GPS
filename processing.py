@@ -2,8 +2,8 @@
 import logging
 from math import radians, cos, sin, asin, sqrt, atan2, degrees
 import numpy as np
-from filterpy.kalman import KalmanFilter
 import time  # Für Zeitstempel
+from kalman_filter import GpsKalmanFilter
 
 logger = logging.getLogger(__name__)
 
@@ -131,109 +131,73 @@ def apply_moving_average(gps_data, window_size=5):
     return smoothed_data
 
 
-def apply_kalman_filter(gps_data, measurement_noise=5.0, process_noise=0.05):
+def apply_kalman_filter(gps_data, measurement_noise=5.0, process_noise=0.1):
     """
-    Wendet einen Kalman-Filter auf Lat/Lon an, um die Position zu schätzen.
-    Verwendet ein Modell mit konstanter Geschwindigkeit.
-
-    Args:
-        gps_data (list): Liste von GPS-Daten-Dictionaries.
-                         Erwartet Keys: 'lat', 'lon', 'timestamp'.
-        measurement_noise (float): Standardabweichung des Messrauschens (GPS-Ungenauigkeit in Metern).
-        process_noise (float): Standardabweichung des Prozessrauschens (Wie stark kann sich die Geschwindigkeit ändern?).
-
-    Returns:
-        list: Liste von GPS-Daten-Dictionaries mit gefilterten 'lat'/'lon'.
+    Wendet den neuen GpsKalmanFilter an, der HDOP berücksichtigt.
+    Integriert interne Umrechnung von Metern in Grad-Varianz.
     """
     if not gps_data:
         return []
 
-    # Zustand x = [latitude, longitude, lat_velocity, lon_velocity] (4 Dimensionen)
-    # Messung z = [latitude, longitude] (2 Dimensionen)
-    kf = KalmanFilter(dim_x=4, dim_z=2)
+    # Umrechnung: 1 Grad ca. 111.320 Meter
+    # R/Q sind Varianzen (Standardabweichung zum Quadrat)
+    r_deg2 = (measurement_noise / 111320.0) ** 2
+    q_deg2 = (process_noise / 111320.0) ** 2
 
-    # --- Initialisierung ---
-    try:
-        initial_lat = float(gps_data[0]['lat'])
-        initial_lon = float(gps_data[0]['lon'])
-        # Verwende time.time() als Fallback
-        initial_ts = float(gps_data[0].get('timestamp', time.time()))
-        kf.x = np.array(
-            [initial_lat, initial_lon, 0., 0.])  # Startzustand: Position vom ersten Punkt, Geschwindigkeit 0
-    except (KeyError, ValueError, TypeError, IndexError) as e:
-        logger.error(
-            f"Kann Kalman Filter nicht initialisieren, ungültiger erster GPS-Punkt: {e}. Daten: {gps_data[0] if gps_data else 'leer'}")
-        return gps_data  # Gib Originaldaten zurück bei Fehler
-
-    # Unsicherheit des Startzustands (P) - relativ hoch ansetzen
-    kf.P = np.eye(4) * 50.
-
-    # Messfunktion (H) - Wir messen nur die Position
-    kf.H = np.array([[1., 0., 0., 0.],
-                     [0., 1., 0., 0.]])
-
-    # Messrauschen (R) - Kovarianzmatrix der Messung
-    # Annahme: Rauschen in Lat/Lon ist unabhängig und hat Varianz measurement_noise^2
-    # Die Einheit hier ist problematisch (Grad vs Meter). Für kleine Bereiche ist die Annahme
-    # einer konstanten Varianz in Grad^2 *okay*, aber nicht ideal.
-    # Besser wäre Umrechnung in lokales Koordinatensystem (UTM), Filterung dort, und Rückrechnung.
-    # Hier vereinfacht:
-    kf.R = np.eye(2) * (measurement_noise / 111000) ** 2  # Grobe Umrechnung Meter in Grad
-
-    # Prozessrauschen (Q) - Kovarianzmatrix des Prozessrauschens
-    # Modelliert die Unsicherheit in der Annahme konstanter Geschwindigkeit.
-    # Verwendung von filterpy.common.Q_discrete_white_noise ist üblich.
-    # Hier manuell für Verständnis, Annahme: Rauschen beeinflusst Beschleunigung.
-    # dt wird später dynamisch gesetzt.
-
-    # --- Filterung ---
+    kf = GpsKalmanFilter(process_noise=q_deg2, measurement_noise=r_deg2)
     filtered_data = []
-    last_ts = initial_ts
 
     for i, point in enumerate(gps_data):
         try:
             lat = float(point['lat'])
             lon = float(point['lon'])
-            current_ts = float(point.get('timestamp', last_ts + 1.0))  # Fallback: 1 Sekunde
+            ts = float(point.get('timestamp', time.time()))
+            hdop = point.get('hdop')
+            if hdop is not None:
+                try:
+                    hdop = float(hdop)
+                except (ValueError, TypeError):
+                    hdop = None
 
-            # Berechne Zeitdifferenz dt
-            dt = current_ts - last_ts
-            if dt <= 0:  # Vermeide ungültige oder Null-Zeitschritte
-                dt = 1.0  # Fallback auf 1 Sekunde
-            last_ts = current_ts
+            f_lat, f_lon = kf.update(lat, lon, ts, hdop=hdop)
 
-            # --- Zustandsübergangsmatrix (F) aktualisieren ---
-            # Position = alte Position + Geschwindigkeit * dt
-            # Geschwindigkeit = alte Geschwindigkeit (Annahme: konstante Geschwindigkeit)
-            kf.F = np.array([[1., 0., dt, 0.],
-                             [0., 1., 0., dt],
-                             [0., 0., 1., 0.],
-                             [0., 0., 0., 1.]])
-
-            # --- Prozessrauschen (Q) aktualisieren (optional, aber besser) ---
-            # Annahme: Rauschen wirkt auf Beschleunigung -> beeinflusst Geschw. und Pos.
-            # Einfaches Modell: Q proportional zu dt
-            q_val = process_noise * dt
-            kf.Q = np.diag([q_val, q_val, q_val, q_val])  # Vereinfacht
-
-            # --- Vorhersage (Predict) ---
-            kf.predict()
-
-            # --- Messung (Update) ---
-            z = np.array([lat, lon])  # Aktuelle Messung
-            kf.update(z)
-
-            # Speichere den gefilterten Zustand (Position)
             new_point = point.copy()
-            new_point['lat'] = kf.x[0]
-            new_point['lon'] = kf.x[1]
-            # Optional: Geschwindigkeit speichern
-            # new_point['vel_lat'] = kf.x[2]
-            # new_point['vel_lon'] = kf.x[3]
+            new_point['lat'] = f_lat
+            new_point['lon'] = f_lon
             filtered_data.append(new_point)
 
-        except (KeyError, ValueError, TypeError) as e:
-            logger.warning(f"Fehler bei Kalman Filter für Punkt {i}: {e}. Punkt wird übersprungen. Daten: {point}")
-            # Optional: Originalpunkt hinzufügen? filtered_data.append(point)
+        except Exception as e:
+            logger.warning(f"Kalman-Fehler in Punkt {i}: {e}")
+            filtered_data.append(point)
 
+    return filtered_data
+
+
+def remove_drift_at_standstill(gps_data, min_dist_m=0.25):
+    """
+    Verhindert das GPS-Driften im Stillstand. Wenn die Distanz zum letzten
+    Punkt zu gering ist, wird die Position 'festgehalten'.
+    """
+    if not gps_data or len(gps_data) < 2:
+        return gps_data
+
+    # Wir behalten den ersten Punkt immer
+    filtered_data = [gps_data[0]]
+    
+    for i in range(1, len(gps_data)):
+        prev = filtered_data[-1]
+        curr = gps_data[i]
+        
+        # Distanzberechnung
+        dist = haversine(float(prev['lat']), float(prev['lon']), 
+                         float(curr['lat']), float(curr['lon']))
+        
+        # Wenn Bewegung > Schwellwert ist (z.B. 25cm), Punkt akzeptieren
+        if dist >= min_dist_m:
+            filtered_data.append(curr)
+        else:
+            # Im Stillstand: Wir überspringen den Punkt, um Zick-Zack Linien zu vermeiden.
+            pass
+
+    logger.debug(f"Drift-Filter: {len(gps_data) - len(filtered_data)} Punkte im Stillstand gruppiert.")
     return filtered_data

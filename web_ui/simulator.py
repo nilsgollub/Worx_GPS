@@ -91,16 +91,21 @@ class ChaosSimulator:
         lat_str = str(round(self.current_lat, 8))
         lon_str = str(round(self.current_lon, 8))
         agps = "AGPS: On (Sim)"
+        # HDOP Simulation: ca 1.0 (sehr gut)
+        hdop = str(round(random.uniform(0.8, 1.3), 2))
         
-        return f"status,{status_text},{sats},{lat_str},{lon_str},{agps}"
+        # Format: status,fix,sats,lat,lon,agps,hdop
+        return f"status,{status_text},{sats},{lat_str},{lon_str},{agps},{hdop}"
 
     def _buffer_gps_point(self):
-        """Puffert den aktuellen GPS-Punkt für die Session-Daten (wie DataRecorder)."""
+        """Puffert den aktuellen GPS-Punkt für die Session-Daten (inkl. HDOP)."""
         timestamp = time.time()
         sats = random.randint(8, 12)
         wifi_dbm = random.randint(-75, -45)
+        # HDOP Simulation: Meist sehr gut (0.8 - 1.2), seltener Sprünge (bis 5.0)
+        hdop = random.uniform(0.8, 1.2) if random.random() > 0.1 else random.uniform(2.0, 5.0)
         self.gps_buffer.append(
-            f"{self.current_lat:.8f},{self.current_lon:.8f},{timestamp:.3f},{sats},{wifi_dbm}"
+            f"{self.current_lat:.8f},{self.current_lon:.8f},{timestamp:.3f},{sats},{wifi_dbm},{hdop:.2f}"
         )
 
     def _check_simulate_problem(self):

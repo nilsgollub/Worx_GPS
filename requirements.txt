@@ -3,7 +3,6 @@
 flask>=3.0
 flask-socketio>=5.3
 flask-cors>=4.0
-eventlet>=0.36
 
 # MQTT Communication
 paho-mqtt>=2.0
@@ -28,6 +27,7 @@ selenium>=4.0
 Pillow>=10.0
 webdriver-manager>=4.0
 
-filterpy
-pynmea2
-pyserial
+# Hardware & API
+requests>=2.31
+pynmea2>=1.19
+pyserial>=3.5

@@ -26,7 +26,8 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
 
     csvfile = io.StringIO(csv_string)
     try:
-        reader = csv.DictReader(csvfile, fieldnames=["lat", "lon", "timestamp", "satellites", "wifi"])
+        # Erweitertes Feldnamen-Array
+        reader = csv.DictReader(csvfile, fieldnames=["lat", "lon", "timestamp", "satellites", "wifi", "hdop"])
         for i, row in enumerate(reader):
             if row.get("lat") == "-1":
                 logging.debug("End-Marker (-1) in CSV-Daten gefunden, Verarbeitung beendet.")
@@ -37,6 +38,7 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
                 ts_str = row.get("timestamp")
                 sat_str = row.get("satellites")
                 wifi_str = row.get("wifi")
+                hdop_str = row.get("hdop")
 
                 if lat_str is None or lon_str is None or ts_str is None:
                     logging.warning(
@@ -62,7 +64,15 @@ def read_gps_data_from_csv_string(csv_string: Optional[str]) -> List[Dict[str, A
                     except (ValueError, TypeError):
                         pass
 
-                data.append({"lat": lat, "lon": lon, "timestamp": timestamp, "satellites": satellites, "wifi": wifi})
+                hdop: Optional[float] = None
+                if hdop_str is not None and hdop_str.strip():
+                    try:
+                        hdop = float(hdop_str)
+                    except (ValueError, TypeError):
+                        pass
+
+                data.append({"lat": lat, "lon": lon, "timestamp": timestamp, 
+                             "satellites": satellites, "wifi": wifi, "hdop": hdop})
             except (ValueError, TypeError) as e:
                 logging.warning(f"Zeile {i + 1}: Fehler bei Wertkonvertierung: {e} - Zeile: {row}. Überspringe.")
                 continue

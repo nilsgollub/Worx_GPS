@@ -57,12 +57,13 @@ class DataRecorder:
             lon = gps_data.get('lon', '')
             time_stamp = gps_data.get('timestamp', '')
             satellites = gps_data.get('satellites', '')
+            hdop = gps_data.get('hdop', '')
             wifi_dbm = self._get_wifi_signal_strength()
             wifi_str = wifi_dbm if wifi_dbm is not None else ''
 
             try:
                 with open(self.buffer_file, "a") as f:
-                    f.write(f"{lat},{lon},{time_stamp},{satellites},{wifi_str}\n")
+                    f.write(f"{lat},{lon},{time_stamp},{satellites},{wifi_str},{hdop}\n")
             except Exception as e:
                 logging.error(f"DataRecorder: Fehler beim Schreiben in Datei: {e}")
         elif gps_data is not None:

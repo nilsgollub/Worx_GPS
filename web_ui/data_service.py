@@ -118,23 +118,8 @@ class DataService:
         filename = self.data_manager.get_next_mow_filename()
         self.data_manager.save_gps_data(processed_data, filename, coverage=session_coverage)
         
-        # Karten generieren
-        logger.info("Starte Karten-Aktualisierung nach neuem Mähvorgang...")
-        self._update_map("heatmap_aktuell", processed_data, draw_path=True, is_multi=False)
-        
-        current_last_10 = list(self._maehvorgang_data)
-        self._update_map("heatmap_10_maehvorgang", current_last_10, draw_path=True, is_multi=True)
-        self._update_map("quality_path_10", current_last_10, draw_path=True, is_multi=True)
-        self._update_map("wifi_heatmap", current_last_10, draw_path=True, is_multi=True)
-        
-        flat_all = flatten_data(self._alle_maehvorgang_data)
-        self._update_map("heatmap_kumuliert", flat_all, draw_path=False, is_multi=False)
-        
-        problemzonen = self.data_manager.read_problemzonen_data()
-        if problemzonen:
-            self._update_map("problemzonen_heatmap", problemzonen, draw_path=False, is_multi=False)
-        
-        logger.info("Karten-Aktualisierung abgeschlossen.")
+        # Karten-Aktualisierung wird jetzt exklusiv von Worx_GPS.py (Evaluation) übernommen.
+        logger.info(f"Session {filename} in DB gespeichert. Evaluation (Worx_GPS.py) übernimmt Karten-Update.")
 
     def _update_map(self, config_key, data, draw_path, is_multi=False):
         """Aktualisiert eine einzelne Karte (wie Worx_GPS.update_single_map)."""

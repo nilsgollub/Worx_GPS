@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from config import GEO_CONFIG, ASSIST_NOW_CONFIG, REC_CONFIG
 import math
 
-# --- pyubx2 Import entfernt ---
+
 
 # Hole den Logger, anstatt basicConfig hier aufzurufen
 logger = logging.getLogger(__name__)
@@ -23,14 +23,16 @@ class GpsHandler:
         self.lon_bounds = GEO_CONFIG["lon_bounds"]
         self.map_center = GEO_CONFIG["map_center"]
         self.assist_now_token = ASSIST_NOW_CONFIG["assist_now_token"]
-        self.assist_now_offline_url = ASSIST_NOW_CONFIG["assist_now_offline_url"]
+        self.assist_now_url = ASSIST_NOW_CONFIG["assist_now_url"]
         self.assist_now_enabled = ASSIST_NOW_CONFIG["assist_now_enabled"]
         self.serial_port = REC_CONFIG["serial_port"]
         self.baudrate = REC_CONFIG["baudrate"]
         self.ser_gps = None
         self.mode = "real"
-        # --- Aufruf von _configure_ublox entfernt ---
+
         self._connect_serial()
+        if self.mode == "real":
+            self._configure_ublox_pedestrian()
 
         # Zeitstempel des letzten erfolgreichen AssistNow-Updates
         self.last_assist_now_update = datetime.now() - timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1)
@@ -44,7 +46,6 @@ class GpsHandler:
         self.route_simulator = None
         self.last_valid_fix_time = 0
         self.last_known_position = None
-        # --- Initialer Status auf -1 (Connecting) gesetzt, wird durch erste GGA-Nachricht aktualisiert ---
         self.last_gga_info = {'qual': -1 if self.mode == "real" else 0, 'sats': 0, 'timestamp': time.time()}
         logger.info("GpsHandler initialisiert.")
 
@@ -75,7 +76,7 @@ class GpsHandler:
                 # Wird jetzt in __init__ gesetzt und hier ggf. zurückgesetzt
                 self.last_gga_info = {'qual': -1, 'sats': 0, 'timestamp': time.time()}
 
-                # --- Block für U-BLOX Konfiguration entfernt ---
+
 
             except serial.SerialException as ser_e:
                 logger.error(f"Serieller Fehler beim Herstellen der Verbindung zu {self.serial_port}: {ser_e}",
@@ -91,6 +92,56 @@ class GpsHandler:
             logger.info("Fake-Modus aktiv, keine serielle Verbindung erforderlich.")
             self.ser_gps = None
             self.last_gga_info = {'qual': 1, 'sats': 8, 'timestamp': time.time()}  # Fake GPS hat sofort Fix
+
+    def _configure_ublox_pedestrian(self):
+        """Konfiguriert das Modul für den Pedestrian-Modus (optimiert für langsame Bewegungen)."""
+        if self.ser_gps is None or not self.ser_gps.is_open:
+            return
+
+        logger.info("Konfiguriere u-blox Modul (Pedestrian-Modus & Elevation 10°)...")
+        # UBX-CFG-NAV5 (Navigation Engine Settings)
+        # Class: 0x06, ID: 0x24, Length: 36
+        # Mask: 0x0011 (DynModel & MinElev bit 0 & 4)
+        # DynModel: 3 (Pedestrian)
+        # MinElev: 10
+        payload = (
+            b'\x06\x24\x24\x00'  # Header + Length (36)
+            b'\x11\x00'          # Mask (bit 0 & 4)
+            b'\x03'              # DynModel (3 = Pedestrian)
+            b'\x00'              # FixMode (Auto)
+            b'\x00\x00\x00\x00'  # FixedAlt
+            b'\x00\x00\x00\x00'  # FixedAltVar
+            b'\x0a'              # MinElev (10 Grad)
+            b'\x00'              # DrLimit
+            b'\x00\x00'          # pDop
+            b'\x00\x00'          # tDop
+            b'\x00\x00'          # pAcc
+            b'\x00\x00'          # tAcc
+            b'\x00'              # staticHoldThresh
+            b'\x00'              # dgpsTimeOut
+            b'\x00' * 12         # Reserved
+        )
+        self._send_ubx_command(payload)
+
+    def _send_ubx_command(self, payload):
+        """Baut ein UBX-Paket zusammen und sendet es."""
+        if self.ser_gps is None or not self.ser_gps.is_open:
+            return
+
+        header = b'\xb5\x62'
+        ck_a = 0
+        ck_b = 0
+        for byte in payload:
+            ck_a = (ck_a + byte) & 0xFF
+            ck_b = (ck_b + ck_a) & 0xFF
+        
+        packet = header + payload + bytes([ck_a, ck_b])
+        try:
+            self.ser_gps.write(packet)
+            self.ser_gps.flush()
+            logger.debug(f"UBX Command gesendet: {packet.hex().upper()}")
+        except Exception as e:
+            logger.error(f"Fehler beim Senden des UBX Commands: {e}")
 
     def _reconnect_serial(self):
         """Wrapper für _connect_serial für den Einsatz bei Fehlern."""
@@ -141,24 +192,22 @@ class GpsHandler:
             return None
         try:
             headers = {"useragent": "Thingstream Client"}
-            requested_days = ASSIST_NOW_CONFIG.get("days", 7)
-            valid_u7_days = [1, 2, 3, 5, 7, 10, 14]
-            if requested_days not in valid_u7_days:
-                logger.warning(
-                    f"Ungültiger Wert für 'days' ({requested_days}) in ASSIST_NOW_CONFIG für u-blox 7. Verwende Standardwert 7.")
-                effective_days = 7
-            else:
-                effective_days = requested_days
-
+            is_online = "online" in self.assist_now_url.lower()
+            
             params = {
                 "token": self.assist_now_token,
                 "gnss": "gps",
-                "format": "aid",
-                "days": effective_days
+                "format": "mga"
             }
+            
+            # Bei Offline-Modus (falls konfiguriert) Tage mitschicken
+            if not is_online:
+                requested_days = ASSIST_NOW_CONFIG.get("days", 7)
+                params["days"] = requested_days
+
             logger.info(
-                f"Lade AssistNow Offline Daten von {self.assist_now_offline_url} mit Token {self.assist_now_token[:5]}... (Params: {params})")
-            response = requests.get(self.assist_now_offline_url, headers=headers, params=params, timeout=15)
+                f"Lade AssistNow {'Online' if is_online else 'Offline'} Daten von {self.assist_now_url} mit Token {self.assist_now_token[:5]}...")
+            response = requests.get(self.assist_now_url, headers=headers, params=params, timeout=15)
             response.raise_for_status()
 
             if not response.content:
@@ -368,12 +417,21 @@ class GpsHandler:
                                 gga_msg.latitude is not None and gga_msg.longitude is not None:
                             lat = float(gga_msg.latitude)
                             lon = float(gga_msg.longitude)
+                            
+                            # --- NEU: HDOP extrahieren ---
+                            hdop = 10.0  # Hoher Standardwert für Sicherheit
+                            try:
+                                if hasattr(gga_msg, 'horizontal_dil') and gga_msg.horizontal_dil:
+                                    hdop = float(gga_msg.horizontal_dil)
+                            except (ValueError, TypeError):
+                                pass
+
                             self.last_known_position = {
                                 'lat': lat, 'lon': lon, 'timestamp': current_time,
-                                'satellites': sats, 'mode': self.mode
+                                'satellites': sats, 'hdop': hdop, 'mode': self.mode
                             }
                             logger.debug(
-                                f"Gültige GGA-Daten verarbeitet: Qual={qual}, Sats={sats}, Pos=({lat:.6f}, {lon:.6f})")
+                                f"Gültige GGA-Daten verarbeitet: Qual={qual}, Sats={sats}, HDOP={hdop}, Pos=({lat:.6f}, {lon:.6f})")
                             return self.last_known_position
                         else:
                             logger.warning(f"GGA mit Qual={qual} hat keine gültigen Lat/Lon-Attribute: {gga_msg}")
@@ -432,7 +490,12 @@ class GpsHandler:
         else:
             agps_status_str = ",AGPS: Off"
 
-        status_message = f"status,{fix_description},{sats},{lat_str},{lon_str}{agps_status_str}"
+        # HDOP extrahieren
+        hdop_val = 0.0
+        if self.last_known_position:
+            hdop_val = self.last_known_position.get('hdop', 0.0)
+
+        status_message = f"status,{fix_description},{sats},{lat_str},{lon_str}{agps_status_str},{hdop_val:.2f}"
         # logger.debug(f"Generierter GPS Status String: {status_message} (Qual={qual}, Sats={sats}, TS={ts})") # Zu viel Logspam
         return status_message
 
@@ -441,7 +504,8 @@ class GpsHandler:
         lat_range, lon_range = GEO_CONFIG["fake_gps_range"]
         fake_pos = {
             'lat': random.uniform(*lat_range), 'lon': random.uniform(*lon_range),
-            'timestamp': time.time(), 'satellites': random.randint(4, 12), 'mode': self.mode
+            'timestamp': time.time(), 'satellites': random.randint(4, 12), 
+            'hdop': round(random.uniform(0.8, 1.2), 2), 'mode': self.mode
         }
         logger.debug(f"Generiere Fake-Daten (random): {fake_pos}")
         return fake_pos
@@ -454,7 +518,8 @@ class GpsHandler:
             lat, lon = self.route_simulator.move()
             fake_pos = {
                 'lat': lat, 'lon': lon, 'timestamp': time.time(),
-                'satellites': random.randint(7, 12), 'mode': self.mode
+                'satellites': random.randint(7, 12), 
+                'hdop': round(random.uniform(0.8, 1.1), 2), 'mode': self.mode
             }
             logger.debug(f"Generiere Fake-Daten (route): {fake_pos}")
             return fake_pos

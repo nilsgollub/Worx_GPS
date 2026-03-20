@@ -5,7 +5,7 @@ from heatmap_generator import HeatmapGenerator
 from data_manager import DataManager
 # Importiere ALLE benötigten Configs und utils
 from config import HEATMAP_CONFIG, REC_CONFIG, POST_PROCESSING_CONFIG, PROBLEM_CONFIG, ASSIST_NOW_CONFIG, GEO_CONFIG
-from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed
+from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed, remove_drift_at_standstill
 from utils import read_gps_data_from_csv_string, flatten_data, calculate_area_coverage
 import time
 from collections import deque
@@ -109,68 +109,43 @@ class WorxGps:
             logger.info("End-Marker für GPS-Daten empfangen, verarbeite Puffer...")
             logging.debug(f"Processing buffer content (first 200 chars): {self.gps_data_buffer[:200]}...")
 
-            # Schritte 1-3: Daten lesen und verarbeiten (unverändert)
+            # Schritte 1-3: Daten lesen und verarbeiten
             raw_gps_data = read_gps_data_from_csv_string(self.gps_data_buffer)
             self.gps_data_buffer = ""
             if not raw_gps_data:
-                logger.error("Fehler: Konnte keine GPS-Daten aus dem Puffer lesen oder Puffer war leer.")
-                self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_gps_parsing")
                 return
-            logger.info(f"{len(raw_gps_data)} GPS-Punkte aus Puffer gelesen.")
-            original_point_count = len(raw_gps_data)
-            processed_data = raw_gps_data
-            # ... (Ausreißererkennung und Filterung wie vorher) ...
-            outlier_config = POST_PROCESSING_CONFIG.get("outlier_detection", {})
-            if outlier_config.get("enable", True):
-                max_speed = outlier_config.get("max_speed_mps", 1.5)
-                logger.info(f"Anwendung: Ausreißererkennung (max_speed={max_speed} m/s)...")
-                processed_data = remove_outliers_by_speed(processed_data, max_speed_mps=max_speed)
-                logger.info(f"{len(processed_data)} Punkte nach Ausreißererkennung verblieben.")
-                if not processed_data:
-                    logger.warning("Nach Ausreißererkennung sind keine GPS-Daten mehr übrig.")
-                    return
-            method = POST_PROCESSING_CONFIG.get("method", "none").lower()
-            if method == "moving_average":
-                window = POST_PROCESSING_CONFIG.get("moving_average_window", 5)
-                logger.info(f"Anwendung: Gleitender Durchschnitt (Fenster={window})...")
-                processed_data = apply_moving_average(processed_data, window)
-            elif method == "kalman":
-                logger.info("Anwendung: Kalman Filter...")
-                r_noise = POST_PROCESSING_CONFIG.get("kalman_measurement_noise", 5.0)
-                q_noise = POST_PROCESSING_CONFIG.get("kalman_process_noise", 0.05)
-                processed_data = apply_kalman_filter(processed_data, measurement_noise=r_noise, process_noise=q_noise)
-            elif method != "none":
-                logger.warning(f"Unbekannte Post-Processing Methode '{method}' in Config. Überspringe Filterung.")
-            if not processed_data:
-                logger.warning("Nach Filterung/Glättung sind keine GPS-Daten mehr übrig.")
+            
+            logger.info(f"End-Marker empfangen. {len(raw_gps_data)} Punkte empfangen. Warte auf WebUI-Speicherung...")
+            
+            # Kurze Pause, damit DataService (WebUI) den Speichervorgang abschließen kann
+            time.sleep(2)
+            
+            # Daten neu aus der DB laden, um konsistent zu sein
+            self.alle_maehvorgang_data = self.data_manager.load_all_mow_data()
+            if self.alle_maehvorgang_data:
+                new_processed_data = self.alle_maehvorgang_data[-1]
+                self.maehvorgang_data.append(new_processed_data)
+            else:
+                logger.warning("Keine Daten in der DB gefunden nach Mähvorgang.")
                 return
-            logger.info(
-                f"Verarbeitung abgeschlossen. {len(processed_data)} Punkte werden verwendet (ursprünglich {original_point_count}).")
 
-            # Schritt 4: Verarbeitete Daten speichern und für Karten verwenden
-            self.maehvorgang_data.append(processed_data)  # Fügt die *neue* Session zum Deque hinzu
-            self.alle_maehvorgang_data.append(processed_data)
-            
-            # Abdeckung berechnen
-            l_bounds = GEO_CONFIG.get("lat_bounds")
-            ln_bounds = GEO_CONFIG.get("lon_bounds")
-            session_coverage = calculate_area_coverage(processed_data, l_bounds, ln_bounds)
-            logger.info(f"Berechnete Abdeckung für diese Session: {session_coverage}%")
-            
-            filename = self.data_manager.get_next_mow_filename()
-            self.data_manager.save_gps_data(processed_data, filename, coverage=session_coverage)
+            logger.info("Starte Karten-Aktualisierung (Evaluation-Mode)...")
+            processed_data = self.maehvorgang_data[-1]
 
             logger.info("Starte Karten-Aktualisierung nach neuem Mähvorgang...")
 
-            # Aktueller Mähvorgang (Heatmap)
-            self.update_single_map("heatmap_aktuell", processed_data, draw_path=True, is_multi=False)
+            # Letzte 10 Mähvorgänge vorverarbeiten (Drift im Stillstand entfernen)
+            # Wir wenden den Filter auf jede Session einzeln an
+            filtered_last_10 = [remove_drift_at_standstill(session) for session in self.maehvorgang_data]
+            processed_data_filtered = filtered_last_10[-1] if filtered_last_10 else []
+
+            # Aktueller Mähvorgang (Heatmap + Pfad)
+            self.update_single_map("heatmap_aktuell", processed_data_filtered, draw_path=True, is_multi=False)
 
             # Letzte 10 Mähvorgänge (Heatmap UND Qualitäts-Pfade)
-            # Wichtig: Immer die aktuelle Liste aus dem Deque übergeben
-            current_last_10_sessions = list(self.maehvorgang_data)
-            self.update_single_map("heatmap_10_maehvorgang", current_last_10_sessions, draw_path=True, is_multi=True)
-            self.update_single_map("quality_path_10", current_last_10_sessions, draw_path=True, is_multi=True)
-            self.update_single_map("wifi_heatmap", current_last_10_sessions, draw_path=True, is_multi=True)
+            self.update_single_map("heatmap_10_maehvorgang", filtered_last_10, draw_path=True, is_multi=True)
+            self.update_single_map("quality_path_10", filtered_last_10, draw_path=True, is_multi=True)
+            self.update_single_map("wifi_heatmap", filtered_last_10, draw_path=True, is_multi=True)
 
             # Kumulierte Daten (Nur Heatmap)
             flat_all_data = flatten_data(self.alle_maehvorgang_data)
@@ -191,11 +166,10 @@ class WorxGps:
             try:
                 _, lat_str, lon_str = parts[:3]
                 problem_data = {"lat": float(lat_str), "lon": float(lon_str), "timestamp": time.time()}
-                added = self.data_manager.add_problemzone(problem_data)
-                if added:
-                    self.problemzonen_data = self.data_manager.read_problemzonen_data()
-                    self.update_single_map("problemzonen_heatmap", self.problemzonen_data, draw_path=False,
-                                           is_multi=False)
+                # Nur Karten-Update triggern, kein Speichern (macht WebUI)
+                self.problemzonen_data = self.data_manager.read_problemzonen_data()
+                self.update_single_map("problemzonen_heatmap", self.problemzonen_data, draw_path=False,
+                                        is_multi=False)
             except ValueError:
                 logger.error(f"Fehler beim Konvertieren der Problemzonen-Koordinaten: {csv_data}")
             except Exception as e:

@@ -53,9 +53,17 @@ class DataManager:
                         heading REAL,
                         battery REAL,
                         status TEXT,
+                        hdop REAL,
                         FOREIGN KEY (session_id) REFERENCES mow_sessions(id) ON DELETE CASCADE
                     )
                 ''')
+                
+                # Migration: Prüfen ob hdop Spalte existiert, falls nicht hinzufügen
+                cursor.execute("PRAGMA table_info(mow_points)")
+                columns = [info[1] for info in cursor.fetchall()]
+                if 'hdop' not in columns:
+                    logger.info("Migriere Datenbank: Füge 'hdop' Spalte zu 'mow_points' hinzu.")
+                    cursor.execute("ALTER TABLE mow_points ADD COLUMN hdop REAL")
                 
                 # Tabelle für Problemzonen
                 cursor.execute('''
@@ -106,13 +114,14 @@ class DataManager:
                         p.get('speed'),
                         p.get('heading'),
                         p.get('battery'),
-                        p.get('status')
+                        p.get('status'),
+                        p.get('hdop')
                     )
                     for p in data
                 ]
                 
                 cursor.executemany(
-                    "INSERT INTO mow_points (session_id, timestamp, lat, lon, satellites, wifi, speed, heading, battery, status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO mow_points (session_id, timestamp, lat, lon, satellites, wifi, speed, heading, battery, status, hdop) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     points_to_insert
                 )
                 conn.commit()
