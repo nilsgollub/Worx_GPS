@@ -1,6 +1,7 @@
 # web_ui/status_manager.py
 import logging
 import threading
+import json
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -9,6 +10,8 @@ class StatusManager:
     def __init__(self, socketio_instance, initial_map_center=(0.0, 0.0)):
         self.socketio = socketio_instance
         self.lock = threading.Lock()
+        self.ha_service = None
+        self.mqtt_service = None
 
         self.current_mower_status = {
             'lat': initial_map_center[0],
@@ -134,7 +137,20 @@ class StatusManager:
                             'agps_status': agps_status,
                             'last_update': datetime.now().strftime("%H:%M:%S")
                         })
-                        logger.debug(f"Mäher-Statusdaten aktualisiert (ohne is_recording/mower_status): {self.current_mower_status}")
+                        
+                        # --- NEU: Verarbeitete Daten an HA via MQTT senden ---
+                        if self.mqtt_service:
+                            ha_payload = {
+                                "geofence_ok": lat_val is not None,
+                                "satellites": satellites,
+                                "hdop": hdop_val,
+                                "status": status_text,
+                                "is_simulated": is_simulated,
+                                "latitude": lat_val if lat_val is not None else self.current_mower_status.get('lat'),
+                                "longitude": lon_val if lon_val is not None else self.current_mower_status.get('lon')
+                            }
+                            self.mqtt_service.publish("worx/processed", json.dumps(ha_payload))
+                        # --- Ende NEU ---
                     else:
                         logger.warning(f"Status-Payload hat nicht genügend Teile: {payload_str}")
                 elif "recording started" in payload_str:
@@ -215,3 +231,40 @@ class StatusManager:
     def get_current_system_stats(self):
         with self.lock:
             return self.current_system_stats.copy()
+
+    def set_ha_service(self, service):
+        """Setzt den Home Assistant Service für ausgehende Updates."""
+        with self.lock:
+            self.ha_service = service
+
+    def set_mqtt_service(self, service):
+        """Setzt den MQTT Service für ausgehende Updates."""
+        with self.lock:
+            self.mqtt_service = service
+
+    def trigger_ha_mqtt_update(self):
+        """Erzwingt ein Update der HA-Daten via MQTT (basierend auf aktuellen Werten)."""
+        with self.lock:
+            if self.mqtt_service:
+                ha_payload = {
+                    "geofence_ok": self.current_mower_status.get('lat') is not None,
+                    "satellites": self.current_mower_status.get('satellites', 0),
+                    "hdop": self.current_mower_status.get('hdop', 0.0),
+                    "status": self.current_mower_status.get('mower_status', 'unknown'),
+                    "is_simulated": self.current_mower_status.get('is_simulated', False),
+                    "latitude": self.current_mower_status.get('lat'),
+                    "longitude": self.current_mower_status.get('lon')
+                }
+                self.mqtt_service.publish("worx/processed", json.dumps(ha_payload))
+
+    def update_ha_mower_status(self, state):
+        """Aktualisiert den Mäher-Status basierend auf HA-Daten."""
+        status_to_emit = None
+        with self.lock:
+            if self.current_mower_status['mower_status'] != state:
+                self.current_mower_status['mower_status'] = state
+                self.current_mower_status['last_update'] = datetime.now().strftime("%H:%M:%S")
+                status_to_emit = self.current_mower_status.copy()
+        
+        if status_to_emit:
+            self._emit_socketio_event('status_update', status_to_emit, "Mäher-Status (HA)")

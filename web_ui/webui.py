@@ -37,6 +37,7 @@ from web_ui.status_manager import StatusManager
 from web_ui.data_service import DataService
 from web_ui.system_monitor import SystemMonitor
 from web_ui.simulator import ChaosSimulator
+from web_ui.home_assistant_service import HomeAssistantService
 
 # --- Logging ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s') # Geändert auf DEBUG und detaillierteres Format
@@ -59,6 +60,8 @@ status_manager = None
 data_service = None
 system_monitor = None
 simulator = None
+ha_service = None
+ha_thread = None
 
 # --- Flask Routen (Interagieren mit Service-Instanzen) ---
 
@@ -403,6 +406,42 @@ def handle_disconnect():
     logger.info(f'Web-Client getrennt (SID: {request.sid})')
 
 
+def ha_polling_loop():
+    """Hintergrund-Thread, der den Status von HA abfragt und Automatisierungen triggert."""
+    global ha_service, status_manager, mqtt_service
+    logger.info("[HA-Polling] Wachhund-Thread gestartet.")
+    last_state = None
+    
+    while True:
+        try:
+            if ha_service and status_manager and mqtt_service:
+                current_state = ha_service.get_mower_state()
+                if current_state:
+                    # Dashboard aktualisieren
+                    status_manager.update_ha_mower_status(current_state)
+                    
+                    # Automatisierungs-Logik: Auto-Start/Stop
+                    # Normalisiere Status (HA liefert oft Kleinbuchstaben)
+                    s = current_state.lower()
+                    if s in ["mowing", "starting", "edge cutting"] and last_state not in ["mowing", "starting", "edge cutting"]:
+                        mqtt_service.publish_command("start")
+                        logger.info(f"[HA-Autopilot] Status '{current_state}' erkannt -> Sende START an Mäher.")
+                    elif s in ["docked", "charging", "idle", "rain delay"] and last_state in ["mowing", "starting", "edge cutting"]:
+                        mqtt_service.publish_command("stop")
+                        logger.info(f"[HA-Autopilot] Status '{current_state}' erkannt -> Sende STOP an Mäher.")
+                    elif s in ["error", "trapped", "locked", "manual stop"]:
+                        mqtt_service.publish_command("PROBLEM")
+                        logger.warning(f"[HA-Autopilot] Problem-Status '{current_state}' erkannt -> Sende PROBLEM-Signal.")
+                    
+                    # Positions-Update an HA forcieren (damit er auf der Karte bleibt)
+                    status_manager.trigger_ha_mqtt_update()
+                    
+                    last_state = s
+        except Exception as e:
+            logger.error(f"[HA-Polling] Fehler: {e}")
+        
+        time.sleep(15) # Alle 15 Sekunden prüfen
+
 # --- Start ---
 if __name__ == '__main__':
     logger.info("Worx GPS WebUI wird gestartet...")
@@ -431,6 +470,17 @@ if __name__ == '__main__':
 
         system_monitor = SystemMonitor(status_manager.update_system_stats)
         system_monitor.start()
+
+        # HA Service & Polling starten
+        ha_service = HomeAssistantService()
+        status_manager.set_ha_service(ha_service)
+        status_manager.set_mqtt_service(mqtt_service) # Verknüpfung für MQTT-Rückkanal
+        if ha_service.url and ha_service.token:
+            ha_thread = threading.Thread(target=ha_polling_loop, daemon=True)
+            ha_thread.start()
+            logger.info("[HA-Service] API-Polling aktiviert.")
+        else:
+            logger.info("[HA-Service] API-Polling deaktiviert (Konfiguration fehlt).")
 
     except Exception as e:
         logger.critical(f"Fehler bei der Initialisierung der Services: {e}", exc_info=True)
