@@ -85,9 +85,31 @@ logger = logging.getLogger(__name__)
 
 
 
+# --- Home Assistant Ingress Middleware ---
+class IngressMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        # logging.debug(f"[IngressMiddleware] Raw Environ: {environ}")
+        path_info = environ.get('PATH_INFO', '')
+        ingress_path = environ.get('HTTP_X_INGRESS_PATH')
+        
+        logger.debug(f"[IngressMiddleware] Request: {environ.get('REQUEST_METHOD')} {path_info}")
+        logger.debug(f"[IngressMiddleware] X-Ingress-Path Header: {ingress_path}")
+
+        if ingress_path:
+            environ['SCRIPT_NAME'] = ingress_path
+            if path_info.startswith(ingress_path):
+                environ['PATH_INFO'] = path_info[len(ingress_path):]
+                logger.debug(f"[IngressMiddleware] Adjusted Path: {environ['PATH_INFO']}")
+        
+        return self.app(environ, start_response)
+
 # --- Flask & SocketIO Setup ---
 
 app = Flask(__name__)
+app.wsgi_app = IngressMiddleware(app.wsgi_app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
@@ -126,6 +148,10 @@ system_monitor = None
 
 
 
+@app.route('/ping')
+def ping():
+    return "PONG", 200
+
 @app.route('/', defaults={'path': ''})
 
 @app.route('/<path:path>')
@@ -141,19 +167,29 @@ def serve_react(path):
     """
 
     if path and path.startswith('api/'):
-
         return jsonify({"error": "API route not found"}), 404
 
-        
+    # Wenn wir in Home Assistant Ingress sind, schickt der Browser oft Pfade RELATIV zum Ingress-Root.
+    # Wir müssen prüfen, ob die Datei im static_folder existiert.
+    
+    # Ingress-Fix: Falls der Pfad mit dem Ingress-Präfix beginnt, schneiden wir ihn ab
+    ingress_path = request.headers.get('X-Ingress-Path', '').strip('/')
+    clean_path = path
+    if ingress_path and path.startswith(ingress_path):
+        clean_path = path[len(ingress_path):].lstrip('/')
 
-    full_path = os.path.join(app.static_folder, path)
+    # Mappe den Pfad auf das Dateisystem
+    # Benutze normpath, um Pfad-Traversierung zu verhindern und Konsistenz zu wahren
+    target_file = os.path.normpath(clean_path) if clean_path else 'index.html'
+    full_path = os.path.join(app.static_folder, target_file)
 
-    if path != "" and os.path.exists(full_path):
+    logger.debug(f"[ServeReact] Checking existence: {full_path}")
 
-        return send_from_directory(app.static_folder, path)
-
+    if os.path.exists(full_path) and os.path.isfile(full_path):
+        logger.debug(f"[ServeReact] Serving file: {target_file}")
+        return send_from_directory(app.static_folder, target_file)
     else:
-
+        logger.debug(f"[ServeReact] File not found or is index: fallback to index.html")
         return send_from_directory(app.static_folder, 'index.html')
 
 
