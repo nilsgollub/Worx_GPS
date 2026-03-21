@@ -1,14 +1,12 @@
 # gps_handler.py
 import logging
-import datetime
 import random
 import time
 import serial
 import pynmea2
-import requests
 import platform
-from datetime import datetime, timedelta
-from config import GEO_CONFIG, ASSIST_NOW_CONFIG, REC_CONFIG
+from datetime import datetime
+from config import GEO_CONFIG, REC_CONFIG
 import math
 
 
@@ -22,9 +20,6 @@ class GpsHandler:
         self.lat_bounds = GEO_CONFIG["lat_bounds"]
         self.lon_bounds = GEO_CONFIG["lon_bounds"]
         self.map_center = GEO_CONFIG["map_center"]
-        self.assist_now_token = ASSIST_NOW_CONFIG["assist_now_token"]
-        self.assist_now_url = ASSIST_NOW_CONFIG["assist_now_url"]
-        self.assist_now_enabled = ASSIST_NOW_CONFIG["assist_now_enabled"]
         self.serial_port = REC_CONFIG["serial_port"]
         self.baudrate = REC_CONFIG["baudrate"]
         self.ser_gps = None
@@ -33,15 +28,12 @@ class GpsHandler:
         self._connect_serial()
         if self.mode == "real":
             self._configure_ublox_pedestrian()
+            self._configure_ublox_sbas()
+            self._configure_ublox_autonomous()
 
-        # Zeitstempel des letzten erfolgreichen AssistNow-Updates
-        self.last_assist_now_update = datetime.now() - timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1)
-        # NEU: Backoff für fehlgeschlagene AssistNow-Downloads
-        self._assist_now_fail_count = 0
-        self._assist_now_last_attempt = None
-        self._assist_now_backoff_base = 300  # 5 Minuten Basis-Backoff
-        self._assist_now_max_backoff = 21600  # Max 6 Stunden
-
+        # AssistNow Autonomous (AOP) läuft on-chip, kein Server nötig
+        self.assist_now_enabled = False
+        
         self.is_fake_gps = False
         self.route_simulator = None
         self.last_valid_fix_time = 0
@@ -123,6 +115,43 @@ class GpsHandler:
         )
         self._send_ubx_command(payload)
 
+    def _configure_ublox_sbas(self):
+        """Aktiviert SBAS (EGNOS in Europa) für verbesserte Genauigkeit (~1-2m)."""
+        if self.ser_gps is None or not self.ser_gps.is_open:
+            return
+
+        logger.info("Aktiviere SBAS/EGNOS...")
+        # UBX-CFG-SBAS: Class 0x06, ID 0x16, Length 8
+        # mode: 0x01 (Enabled)
+        # usage: 0x07 (Range + DiffCorr + Integrity)
+        # maxSBAS: 3 (max 3 SBAS-Satelliten gleichzeitig)
+        # scanmode2: 0x00
+        # scanmode1: 0x00006200 (PRN 120, 121, 123, 126 = EGNOS Europa)
+        payload = (
+            b'\x06\x16\x08\x00'  # Header + Length (8)
+            b'\x01'              # mode: Enabled
+            b'\x07'              # usage: Range + DiffCorr + Integrity
+            b'\x03'              # maxSBAS: 3
+            b'\x00'              # scanmode2
+            b'\x00\x62\x00\x00' # scanmode1: EGNOS PRNs (120,121,123,126)
+        )
+        self._send_ubx_command(payload)
+
+    def _configure_ublox_autonomous(self):
+        """Aktiviert AssistNow Autonomous (AOP) auf dem u-blox Modul."""
+        if self.ser_gps is None or not self.ser_gps.is_open:
+            return
+
+        logger.info("Aktiviere AssistNow Autonomous (AOP)...")
+        # UBX-CFG-AOP: Class 0x06, ID 0x33, Length 4
+        # Payload: [0x01, 0x00, 0x00, 0x00] -> Enable (Bit 0 = 1)
+        cfg_aop_payload = b'\x06\x33\x04\x00\x01\x00\x00\x00'
+        self._send_ubx_command(cfg_aop_payload)
+        
+        # Konfiguration dauerhaft speichern (UBX-CFG-CFG)
+        cfg_save_payload = b'\x06\x09\x0d\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00\x00\x00\x01'
+        self._send_ubx_command(cfg_save_payload)
+
     def _send_ubx_command(self, payload):
         """Baut ein UBX-Paket zusammen und sendet es."""
         if self.ser_gps is None or not self.ser_gps.is_open:
@@ -184,98 +213,13 @@ class GpsHandler:
         return (self.lat_bounds[0] <= lat <= self.lat_bounds[1] and
                 self.lon_bounds[0] <= lon <= self.lon_bounds[1])
 
-    # --- download_assist_now_data bleibt ---
     def download_assist_now_data(self):
-        """Lädt AssistNow Offline Daten herunter (für u-blox 7 optimiert)."""
-        if not self.assist_now_token:
-            logger.error("AssistNow Token fehlt in der Konfiguration.")
-            return None
-        try:
-            headers = {"useragent": "Thingstream Client"}
-            is_online = "online" in self.assist_now_url.lower()
-            
-            params = {
-                "token": self.assist_now_token,
-                "gnss": "gps",
-                "format": "mga"
-            }
-            
-            # Bei Offline-Modus (falls konfiguriert) Tage mitschicken
-            if not is_online:
-                requested_days = ASSIST_NOW_CONFIG.get("days", 7)
-                params["days"] = requested_days
+        """Nicht mehr benötigt — AOP läuft on-chip."""
+        return None
 
-            logger.info(
-                f"Lade AssistNow {'Online' if is_online else 'Offline'} Daten von {self.assist_now_url} mit Token {self.assist_now_token[:5]}...")
-            response = requests.get(self.assist_now_url, headers=headers, params=params, timeout=15)
-            response.raise_for_status()
-
-            if not response.content:
-                logger.warning("Keine AssistNow Offline-Daten erhalten (leere Antwort).")
-                return None
-            try:
-                response_text = response.content.decode('utf-8', errors='ignore')
-                if "error" in response_text.lower() or "invalid token" in response_text.lower() or "bad request" in response_text.lower():
-                    logger.error(f"Fehler von AssistNow Service erhalten: {response_text}")
-                    return None
-            except UnicodeDecodeError:
-                pass
-            logger.info(f"AssistNow Offline-Daten erfolgreich heruntergeladen ({len(response.content)} Bytes).")
-            return response.content
-        except requests.exceptions.Timeout:
-            logger.error("Timeout beim Herunterladen der AssistNow Offline-Daten.")
-            return None
-        except requests.exceptions.RequestException as e:
-            status_code = e.response.status_code if e.response is not None else "N/A"
-            req_url = e.request.url if e.request is not None else "N/A"
-            logger.error(
-                f"Fehler beim Herunterladen der AssistNow Offline-Daten (Status: {status_code}) für URL {req_url}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unerwarteter Fehler beim AssistNow Download: {e}", exc_info=True)
-            return None
-
-    # --- send_assist_now_data bleibt ---
     def send_assist_now_data(self, data):
-        """Sendet die heruntergeladenen AssistNow Daten an das GPS-Modul."""
-        logger.debug("send_assist_now_data aufgerufen.")
-        if self.ser_gps is None:
-            logger.warning("send_assist_now_data: self.ser_gps ist None. Breche ab.")
-            return False
-        if not self.ser_gps.is_open:
-            logger.warning(f"send_assist_now_data: Serielle Verbindung {self.ser_gps.name} ist nicht offen. Breche ab.")
-            return False
-
-        logger.debug(f"Versuche, {len(data)} Bytes auf {self.ser_gps.name} zu schreiben...")
-        try:
-            start_write = time.monotonic()
-            bytes_written = self.ser_gps.write(data)
-            duration_write = time.monotonic() - start_write
-            logger.debug(
-                f"self.ser_gps.write abgeschlossen nach {duration_write:.2f}s. Bytes geschrieben: {bytes_written}")
-
-            logger.debug("Führe self.ser_gps.flush() aus...")
-            start_flush = time.monotonic()
-            self.ser_gps.flush()
-            duration_flush = time.monotonic() - start_flush
-            logger.debug(f"self.ser_gps.flush() abgeschlossen nach {duration_flush:.2f}s.")
-
-            logger.info(f"AssistNow Offline-Daten ({bytes_written} Bytes) erfolgreich gesendet.")
-            return True
-        except serial.SerialTimeoutException:
-            duration_timeout = time.monotonic() - start_write
-            write_timeout_val = getattr(self.ser_gps, 'write_timeout', 'N/A')
-            logger.error(
-                f"Timeout ({write_timeout_val}s) beim Senden der AssistNow Offline-Daten nach {duration_timeout:.2f}s.")
-            self._reconnect_serial()  # Reconnect bleibt sinnvoll
-            return False
-        except serial.SerialException as e:
-            logger.error(f"Serieller Fehler beim Senden der AssistNow Offline-Daten: {e}", exc_info=True)
-            self._reconnect_serial()  # Reconnect bleibt sinnvoll
-            return False
-        except Exception as e:
-            logger.error(f"Unerwarteter Fehler beim Senden der AssistNow Offline-Daten: {e}", exc_info=True)
-            return False
+        """Nicht mehr benötigt — AOP läuft on-chip."""
+        return False
 
     # --- get_gps_data bleibt im Wesentlichen gleich ---
     def get_gps_data(self):
@@ -479,16 +423,7 @@ class GpsHandler:
                 except (TypeError, ValueError):
                     pass  # Fehler schon geloggt
 
-        agps_status_str = ""
-        if self.assist_now_enabled:
-            time_since_agps_update = datetime.now() - self.last_assist_now_update
-            if time_since_agps_update < timedelta(days=ASSIST_NOW_CONFIG.get("days", 7) + 1):
-                hours_ago = time_since_agps_update.total_seconds() / 3600
-                agps_status_str = f",AGPS: OK ({hours_ago:.1f}h ago)"
-            else:
-                agps_status_str = ",AGPS: Stale"
-        else:
-            agps_status_str = ",AGPS: Off"
+        agps_status_str = ",AOP: On"
 
         # HDOP extrahieren
         hdop_val = 0.0
@@ -527,52 +462,9 @@ class GpsHandler:
             logger.warning("Routenmodus aktiv, aber kein Routensimulator initialisiert.")
             return self.generate_fake_data()
 
-    # --- check_assist_now bleibt ---
     def check_assist_now(self, force_update=False):
-        if self.mode != "real" or not self.assist_now_enabled:
-            return True
-
-        # NEU: Backoff-Logik bei vorherigen Fehlern
-        if self._assist_now_fail_count > 0 and not force_update:
-            backoff_seconds = min(
-                self._assist_now_backoff_base * (2 ** (self._assist_now_fail_count - 1)),
-                self._assist_now_max_backoff
-            )
-            if self._assist_now_last_attempt:
-                elapsed = (datetime.now() - self._assist_now_last_attempt).total_seconds()
-                if elapsed < backoff_seconds:
-                    # Noch in Backoff-Phase, überspringe
-                    return True
-                logger.info(f"AssistNow Backoff abgelaufen ({elapsed:.0f}s >= {backoff_seconds:.0f}s). Neuer Versuch...")
-
-        update_interval_days = ASSIST_NOW_CONFIG.get("days", 7) - 1
-        time_since_last = datetime.now() - self.last_assist_now_update
-        interval_elapsed = time_since_last >= timedelta(days=update_interval_days)
-
-        if force_update or interval_elapsed:
-            log_prefix = "Manuelles" if force_update else "Periodisches"
-            logger.info(f"{log_prefix} AssistNow Offline Update wird versucht...")
-            self._assist_now_last_attempt = datetime.now()
-
-            data = self.download_assist_now_data()
-            if data is not None:
-                if self.send_assist_now_data(data):
-                    self.last_assist_now_update = datetime.now()
-                    self._assist_now_fail_count = 0  # Reset bei Erfolg
-                    logger.info("AssistNow Offline Update erfolgreich durchgeführt.")
-                    return True
-                else:
-                    self._assist_now_fail_count += 1
-                    next_retry = min(self._assist_now_backoff_base * (2 ** (self._assist_now_fail_count - 1)), self._assist_now_max_backoff)
-                    logger.error(f"AssistNow Offline-Daten konnten nicht an das Modul gesendet werden. Nächster Versuch in {next_retry:.0f}s.")
-                    return False
-            else:
-                self._assist_now_fail_count += 1
-                next_retry = min(self._assist_now_backoff_base * (2 ** (self._assist_now_fail_count - 1)), self._assist_now_max_backoff)
-                logger.error(f"AssistNow Offline-Daten konnten nicht heruntergeladen werden. Nächster Versuch in {next_retry:.0f}s (Versuch #{self._assist_now_fail_count}).")
-                return False
-        else:
-            return True
+        """AOP läuft on-chip, kein Server-Download nötig. Placeholder für Kompatibilität."""
+        return True
 
     # --- change_gps_mode bleibt ---
     def change_gps_mode(self, new_mode):
@@ -610,7 +502,11 @@ class GpsHandler:
         elif new_mode == "real":
             self.is_fake_gps = False
             self.route_simulator = None
-            self._connect_serial()  # Stellt Verbindung her, ohne Konfiguration
+            self._connect_serial()
+            # WICHTIG: Erneut konfigurieren (Fussgänger-Modus, SBAS & AOP)
+            self._configure_ublox_pedestrian()
+            self._configure_ublox_sbas()
+            self._configure_ublox_autonomous()
 
         else:
             logger.warning(f"Ungültiger GPS-Modus angefordert: {new_mode}")

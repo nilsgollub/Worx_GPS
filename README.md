@@ -1,118 +1,209 @@
 # Worx GPS Monitoring System
 
-Dieses Projekt ermöglicht das präzise Tracking, die Analyse und die Visualisierung eines Worx Landroid Mähroboters. Es nutzt einen Raspberry Pi mit GPS-Modul im Mäher und eine zentrale Auswerte-Einheit am PC/Server.
+Echtzeit-Tracking, Analyse und Visualisierung eines Worx Landroid Mähroboters. Ein Raspberry Pi mit GPS-Modul im Mäher erfasst Positionsdaten, die über MQTT an eine zentrale Auswertung gesendet und als Heatmaps visualisiert werden. Das System läuft als **Home Assistant Add-on** oder standalone.
 
 ---
 
-## 🏗 1. System-Architektur
+## System-Architektur
 
-Das System besteht aus drei vernetzten Komponenten:
+```
+┌─────────────────────┐     MQTT      ┌──────────────────────────────┐
+│  Raspberry Pi Zero  │──────────────▶│  Home Assistant Add-on       │
+│  + u-blox NEO-7M    │  worx/gps     │  (Flask + React Frontend)    │
+│                     │  worx/status   │                              │
+│  Worx_GPS_Rec.py    │◀──────────────│  webui.py (Backend)          │
+│  gps_handler.py     │  worx/control  │  data_service.py (Pipeline)  │
+│  data_recorder.py   │               │  heatmap_generator.py        │
+└─────────────────────┘               └──────────────────────────────┘
+```
 
-1.  **Mäher-Einheit (Raspberry Pi Zero/3/4):**
-    *   Sammelt GPS-Daten (NMEA) und sendet sie via MQTT.
-    *   **NEU:** Nutzt Hardware-Optimierungen (Pedestrian-Mode, AssistNow Autonomous).
-    *   Läuft als Hintergrunddienst (`systemd`).
+**1. Mäher-Einheit (Raspberry Pi)** — Erfasst GPS via NMEA, sendet per MQTT. Läuft als `systemd`-Dienst.
 
-2.  **Daten-Management (WebUI / DataService am PC):**
-    *   Wartet auf MQTT-Daten, filtert sie (Kalman-Filter + HDOP) und speichert sie als **einzige Quelle** in die SQLite-DB.
+**2. Add-on / Backend (Flask + React)** — Empfängt GPS-Daten, verarbeitet sie durch die Processing-Pipeline, speichert Sessions in SQLite und generiert Heatmaps automatisch.
 
-3.  **Auswerte-Zentrale & Visualisierung (Worx_GPS.py am PC):**
-    *   Lädt Daten aus der DB und generiert Heatmaps und Qualitätsanalysen.
-    *   **NEU:** Wendet eine Driftsperre bei Stillstand an für saubere Karten.
-
----
-
-## 📁 2. Dateistruktur & Skripte
-
-### Hauptkomponenten (Mäher)
-*   `Worx_GPS_Rec.py`: Der Haupt-Recorder-Dienst auf dem Pi.
-*   `gps_handler.py`: Modul für Hardware-Kommunikation und u-blox Konfiguration.
-*   `enable_autonomous_gps.py`: Hilfsskript zur Aktivierung von AssistNow Autonomous.
-
-### Hauptkomponenten (Auswertung)
-*   `start_services.py`: Startet Backend und UI am PC gleichzeitig.
-*   `Worx_GPS.py`: Haupt-Skript zur Generierung der Heatmaps aus DB-Daten.
-*   `web_ui/data_service.py`: Logik für Datenempfang und Speicherung.
+**3. Frontend (React + Leaflet)** — Dashboard, Live-Karte mit Satelliten-/OSM-Layer, Zonen-Editor, Simulator-Steuerung.
 
 ---
 
-## 🔌 3. Hardware-Setup & Optimierung
+## Projektstruktur
 
-Das System ist für den **u-blox NEO-7M** optimiert:
-*   **Pedestrian Mode:** Optimiert für langsame Geschwindigkeiten.
-*   **AssistNow Autonomous:** Der Chip berechnet seine eigenen Orbits (3 Tage voraus), kein Internet-Token für den Betrieb nötig.
-*   **Elevation-Filter:** Satelliten unter 10° am Horizont werden zur Rausch-Reduzierung ignoriert.
-
-### Diagnose-Befehle (auf dem Pi)
-*   Port prüfen: `ls -la /dev/tty*`
-*   Daten live sehen: `cat /dev/ttyACM0 | head -n 10`
-*   Dienst-Status: `systemctl --user status worx_gps.service`
-
----
-
-## ⚙️ 4. Konfiguration (.env)
-
-Alle Zugangsdaten und Parameter werden in einer `.env` Datei verwaltet:
-
-```bash
-MQTT_HOST=homeassistant
-MQTT_PORT=1883
-GPS_SERIAL_PORT=/dev/ttyACM0
-GPS_BAUDRATE=9600
-ASSIST_NOW_ENABLED=True  # Gilt für den autonomen Modus und Online-Fallbacks
+```
+Worx_GPS/
+├── Worx_GPS.py              # Standalone-Heatmap-Generierung
+├── Worx_GPS_Rec.py          # GPS-Recorder (Pi-Dienst)
+├── gps_handler.py           # u-blox Kommunikation & Konfiguration
+├── data_recorder.py         # Aufzeichnungslogik
+├── mqtt_handler.py          # MQTT-Client (Paho)
+├── config.py                # Zentrale Konfiguration
+├── processing.py            # GPS-Processing-Pipeline
+├── heatmap_generator.py     # Folium-Heatmap-Erstellung
+├── kalman_filter.py         # GPS-Kalman-Filter
+├── problem_detection.py     # Problemzonen-Erkennung
+├── data_manager.py          # SQLite-Datenzugriff
+├── utils.py                 # Hilfsfunktionen (Geofencing, etc.)
+├── requirements.txt         # Python-Abhängigkeiten
+├── .env.example             # Vorlage für Umgebungsvariablen
+│
+├── web_ui/                  # Flask-Backend
+│   ├── webui.py             # Haupt-App + API-Endpunkte
+│   ├── data_service.py      # Datenempfang, Filterung, Heatmap-Trigger
+│   ├── mqtt_service.py      # MQTT-Wrapper für WebUI
+│   ├── status_manager.py    # Mäher-Status-Verwaltung
+│   ├── simulator.py         # ChaosSimulator
+│   ├── home_assistant_service.py  # HA REST-API Client
+│   └── system_monitor.py    # Pi-Systeminfo (CPU, Temp)
+│
+├── frontend/                # React-App (Vite + Bootstrap + Leaflet)
+│   ├── src/pages/           # Dashboard, Live, ZoneEditor, Simulator, ...
+│   ├── src/components/      # LiveMapWidget, etc.
+│   └── dist/                # Build-Output
+│
+├── ha-addon/                # Home Assistant Add-on (deploy-fertig)
+│   ├── Dockerfile
+│   ├── config.yaml
+│   ├── run.sh
+│   └── ...                  # Kopien aller Backend-/Frontend-Dateien
+│
+├── tests/                   # Unit- und Integrationstests
+├── docs/                    # Planungsdokumente & Notizen
+├── old/                     # Archivierte/veraltete Skripte
+└── start_services.py        # Standalone-Starter (Backend + UI)
 ```
 
 ---
 
-## 🗺 5. Projekt-Roadmap
+## Hardware-Setup
 
-### ✅ Erledigt
-*   **Visueller Geofencing-Editor:** Zonen direkt auf der Karte einzeichnen (Erlaubt/Verboten).
-*   **Präzise Punkt-Editierung:** Kleine Circle-Dots für maximale Übersicht, Draggable Markers und Löschen von Eckpunkten per Rechtsklick.
-*   **Simulator mit Geocfence:** Simulator (Chaos-Prinzip) beachtet Geofences (Mow & Forbidden Areas) und stoppt automatisch nach 10 Minuten.
-*   **Simulator UI-Steuerung:** Start/Stop und Echtzeit-Statusanzeige (Pulsierendes Badge/Overlay) direkt im Dashboard und auf der Live-Karte.
-*   **Live-Position & Path Prediction:** Echtzeit-Anzeige der Position und Bewegungs-Vorhersage (Pfad-Vektor).
-*   **Zweistufige Filterung:** Kombination aus schnellem Bounds-Check und präzisem Polygon-Check (Ray-Casting).
-*   **Zentrale Datenhaltung:** Migration aller Flatfiles in die SQLite-DB `worx_gps.db`.
-*   **GPS-Optimierung:** Kalman-Filter, HDOP-Validierung, Stillstands-Drift-Sperre (siehe [GPS_OPTIMIZATION_STRATEGY.md](GPS_OPTIMIZATION_STRATEGY.md)).
-*   **Hardware-Tuning:** Aktivierung von Pedestrian-Mode und AssistNow Autonomous auf dem u-blox Modul.
-*   **Architektur:** Saubere Trennung von Pi-Recorder, WebUI-DataService und Evaluierung.
-*   **Home Assistant Integration:** Automatischer Autopilot-Wachhund, GPS-Tracker (`device_tracker`) und Dashboard-Integration (Map Card).
-*   **Heatmap-Revolution:** Gewichtete Heatmaps für WiFi-Signalstärke und GPS-Qualität (Red-Yellow-Green Skala).
+Das System ist für den **u-blox NEO-7M** am Raspberry Pi optimiert:
 
-### 🚀 In Arbeit
-*   **Automatisierte Exclusion:** Automatisches Ausblenden von Punkten in Verbotszonen (Teiche, Beete) in der Heatmap-Generierung.
+- **Pedestrian Mode** — `UBX-CFG-NAV5` mit DynModel 3, optimiert für langsame Bewegungen (<5 km/h)
+- **SBAS/EGNOS** — `UBX-CFG-SBAS` aktiviert europäische Korrektursatelliten (PRN 120-126) für ~1-2m Genauigkeit
+- **AssistNow Autonomous (AOP)** — On-Chip Orbit-Vorhersage (3 Tage), kein Internet nötig
+- **Elevation-Filter** — Satelliten unter 10° ignoriert (Multipath-Reduktion)
 
-### 📅 Geplant
-*   **Wartungs-Dashboard:** Klingenwechsel-Erinnerung basierend auf GPS-Betriebsstunden.
+### Diagnose (auf dem Pi)
+
+```bash
+ls -la /dev/tty*                              # Port prüfen
+cat /dev/ttyACM0 | head -n 10                 # NMEA-Daten live
+systemctl --user status worx_gps.service      # Dienst-Status
+```
 
 ---
 
-## 📐 6. Geofencing System
+## GPS-Processing-Pipeline
 
-Das System nutzt eine kombinierte Filter-Logik (`processing.py` / `utils.py`):
-1.  **Mow Areas (Blau):** Der Mäher MUSS in mindestens einer dieser Zonen liegen.
-2.  **Forbidden Areas (Rot):** Der Mäher darf in KEINER dieser Zonen liegen.
+Die zentrale Funktion `process_gps_data()` in `processing.py` verarbeitet Rohdaten in 5 Stufen:
 
-**Editor-Funktionen:**
-*   **Polygon-Drawing:** Punkte per Klick auf der Karte setzen.
-*   **Vertex-Dragging:** Jeden Punkt einer bestehenden Zone einzeln verschieben (präzise Circle-Dots).
-*   **Point-Deletion:** Eckpunkte per Rechtsklick aus bestehenden Zonen entfernen.
-*   **Type-Switch:** Bestehende Zonen jederzeit zwischen Erlaubt/Verboten umschalten.
-*   **Echtzeit-Anwendung:** Geofences werden sofort auf den MQTT-Statusstream und die Heatmap-Generierung angewendet.
+1. **HDOP-Filter** — Verwirft Punkte mit HDOP > 2.5 (schlechte Satellitengeometrie)
+2. **Geofence-Filter** — Nur Punkte in erlaubten Zonen, keine in Verbotszonen
+3. **Drift-Sperre** — Unterdrückt Zappeln bei Stillstand (< 0.4m Bewegung)
+4. **Speed-Outlier** — Entfernt Sprünge > 1.5 m/s (unrealistisch für Mäher)
+5. **Kalman-Filter** — Glättet den Pfad für saubere Heatmaps
 
 ---
 
-## 🏠 7. Home Assistant Integration
+## Konfiguration
 
-Das System lässt sich nahtlos in Home Assistant (HA) integrieren:
-*   **HA-Wachhund (Autopilot):** Der Backend-Dienst pollt den Status des Landroids in HA (`lawn_mower.m`) und steuert den Recorder vollautomatisch (Start bei `mowing`, Stop bei `docked` / `rain delay`).
-*   **MQTT GPS Tracker:** Sendet Position, Koordinaten, Satellitenanzahl und WiFi-dBm als `device_tracker` und `sensor` an HA.
-*   **Präsenz-Check:** Ein spezieller Wachhund-Loop sorgt dafür, dass der Mäher auch im Ruhezustand auf der HA-Karte sichtbar bleibt (erzwungene Positions-Updates).
+Kopiere `.env.example` nach `.env` und passe die Werte an:
 
-## 📊 8. Heatmaps & Signalstärke
+```bash
+MQTT_HOST=homeassistant       # MQTT-Broker (HA-Hostname oder IP)
+MQTT_PORT=1883
+MQTT_USER=dein_user
+MQTT_PASSWORD=dein_passwort
+GPS_SERIAL_PORT=/dev/ttyACM0  # Nur auf dem Pi relevant
+TEST_MODE=FALSE               # TRUE = Fake-GPS für Entwicklung
+```
 
-Die Visualisierung bietet spezialisierte Karten für die Garten-Diagnose:
-*   **Kumulierte Heatmap:** Zeigt die Mähdichte über alle Sessions (Wo wurde wie oft gemäht?).
-*   **WiFi-Signalstärke:** Eine gewichtete Heatmap visualisiert Funklöcher (dBm-Werte von -90 bis -30).
-*   **GPS-Qualität:** Zeigt die Satellitenabdeckung und HDOP-Präzision im Garten.
+Die Processing-Parameter werden in `config.py` unter `POST_PROCESSING_CONFIG` konfiguriert:
+
+```python
+POST_PROCESSING_CONFIG = {
+    "method": "kalman",
+    "hdop_threshold": 2.5,
+    "max_speed_mps": 1.5,
+    "kalman_measurement_noise": 5.0,
+    "kalman_process_noise": 0.05,
+}
+```
+
+---
+
+## Home Assistant Add-on
+
+### Installation
+
+1. Samba-Share oder SSH zum HA-Pi verbinden
+2. Ordner `/addons/local/worx_gps_monitor` erstellen
+3. Inhalt von `ha-addon/` dorthin kopieren
+4. In HA: **Einstellungen** → **Add-ons** → **Add-on Store** → Drei-Punkte-Menü → **Nach Updates suchen**
+5. **Worx GPS Monitor** installieren und starten
+
+### Features
+
+- **Ingress-UI** — Direkt im HA-Panel erreichbar (React SPA mit HashRouter)
+- **Live-Karte** — Echtzeit-Position auf Satellitenansicht mit Worx-Icon
+- **Zonen-Editor** — Mähzonen und Verbotszonen per Klick zeichnen
+- **Simulator** — ChaosSimulator zum Testen (Start/Stop im Dashboard)
+- **Auto-Heatmaps** — Nach jeder Session werden automatisch 3 Karten generiert:
+  - Aktueller Mähvorgang
+  - Letzte 10 Sessions
+  - Alle Sessions kumuliert
+- **HA-Autopilot** — Pollt Mäher-Status und steuert Aufzeichnung automatisch
+
+### Konfiguration im Add-on
+
+MQTT-Daten werden im Add-on-Reiter **Konfiguration** eingetragen:
+
+```yaml
+mqtt_host: "core-mosquitto"   # HA-interner Broker
+mqtt_port: 1883
+mqtt_user: ""
+mqtt_password: ""
+```
+
+---
+
+## Geofencing
+
+Kombinierte Filter-Logik in `processing.py` / `utils.py`:
+
+- **Mow Areas (Blau)** — Punkt muss in mindestens einer erlaubten Zone liegen
+- **Forbidden Areas (Rot)** — Punkt darf in keiner Verbotszone liegen
+
+**Editor-Funktionen:** Polygon zeichnen per Klick, Vertices per Drag verschieben, Punkte per Rechtsklick löschen, Zonentyp umschalten.
+
+---
+
+## Heatmaps
+
+- **Mähdichte** — Kumulierte Heatmap über alle Sessions
+- **WiFi-Signalstärke** — Funkloch-Visualisierung (dBm -90 bis -30)
+- **GPS-Qualität** — Satellitenabdeckung und HDOP im Garten
+- **Problemzonen** — Stellen wo der Mäher steckenbleibt
+
+---
+
+## Entwicklung
+
+```bash
+# Backend starten (standalone)
+python start_services.py
+
+# Frontend entwickeln
+cd frontend
+npm install
+npm run dev
+
+# Frontend bauen
+npm run build
+
+# Zum Add-on deployen
+robocopy ha-addon \\<HA-IP>\addons\worx_gps_monitor /MIR /XD node_modules __pycache__ /XF .env
+```
+
+### Abhängigkeiten
+
+- **Python 3.11+** — Flask, Paho-MQTT, Folium, Pandas, NumPy, pyserial, pynmea2
+- **Node 18+** — React, Vite, Leaflet, Bootstrap, Axios

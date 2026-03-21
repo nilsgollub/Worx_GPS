@@ -1,43 +1,36 @@
 # Environment & Secrets
 .env
-/credentials.h
-worx_pi_sshkey
-worx_pi_sshkey.pub
+worx_pi_sshkey*
 .ssh/
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
 
 # Node / Frontend
 node_modules/
 
 # IDE
 .idea/
+.vscode/
 
 # Logs
 *.log
 
-# Generated heatmaps
+# Generated heatmaps & images
 heatmaps/*.png
 heatmaps/*.html
-
-# Generated images
 /*.png
 
-# Data
-*.json
+# Data & Database
 data/*.csv
+*.db
 
 # Build artifacts
 directcom/obj/
 
-# Test / Scratch files
-mqtt_test.py
-Mqtttest.py
-mqtt_Problemlösung.txt
-d.py
-/send_test_data.py
-/test_data.csv
-sslkeys.log
+# OS
+Thumbs.db
+.DS_Store

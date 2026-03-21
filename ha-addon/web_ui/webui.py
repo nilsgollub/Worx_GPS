@@ -74,6 +74,7 @@ from web_ui.status_manager import StatusManager
 from web_ui.data_service import DataService
 from web_ui.system_monitor import SystemMonitor
 from web_ui.home_assistant_service import HomeAssistantService
+from web_ui.simulator import ChaosSimulator
 
 
 
@@ -591,27 +592,83 @@ def delete_mow_session_route(filename):
     
 
     logger.info(f"Löschanfrage für Mähvorgang empfangen: {filename}")
-
     success = data_service.delete_mow_session(filename)
-
     
-
     if success:
-
         return jsonify({"success": True, "message": f"Mähvorgang '{filename}' erfolgreich gelöscht."})
-
     else:
-
         # DataManager loggt bereits spezifischere Fehler
-
         return jsonify({"success": False, "message": f"Fehler beim Löschen von '{filename}'. Prüfe Server-Logs."}), 500
 
 
 
 
 
-@app.route('/live')
+# --- Geofencing (Zoneneditor) ---
 
+@app.route('/api/geofences', methods=['GET'])
+def get_geofences():
+    """Lädt alle Zonen."""
+    if not data_service:
+        return jsonify([])
+    return jsonify(data_service.get_geofences())
+
+@app.route('/api/geofences', methods=['POST'])
+def save_geofence():
+    """Speichert eine neue oder aktualisierte Zone."""
+    if not data_service:
+        return jsonify({"status": "error", "message": "Service nicht verfügbar"}), 500
+    
+    data = request.json
+    fence_id = data.get('id')
+    name = data.get('name')
+    f_type = data.get('type', 'mow_area')
+    coords = data.get('coordinates', [])
+    
+    if not name or not coords:
+        return jsonify({"status": "error", "message": "Name und Koordinaten fehlen"}), 400
+        
+    new_id = data_service.save_geofence(name, f_type, coords, fence_id)
+    if new_id:
+        return jsonify({"status": "success", "id": new_id})
+    return jsonify({"status": "error", "message": "Fehler beim Speichern"}), 500
+
+@app.route('/api/geofences/<int:geofence_id>', methods=['DELETE'])
+def delete_geofence(geofence_id):
+    """Löscht eine Zone."""
+    if not data_service:
+        return jsonify({"status": "error"}), 500
+    
+    if data_service.delete_geofence(geofence_id):
+        return jsonify({"status": "success"})
+    return jsonify({"status": "error"}), 404
+
+@app.route('/api/live_config')
+def api_live_config():
+    """JSON-API für die Live-Karte (React Frontend)."""
+    if not status_manager:
+        return jsonify({"error": "StatusManager nicht initialisiert"}), 503
+
+    status_data = status_manager.get_current_mower_status()
+    geo_config_dict = getattr(config, "GEO_CONFIG", {})
+
+    initial_lat = status_data.get('lat') if status_data.get('lat') is not None else geo_config_dict.get("map_center", (0,0))[0]
+    initial_lon = status_data.get('lon') if status_data.get('lon') is not None else geo_config_dict.get("map_center", (0,0))[1]
+
+    map_config = {
+        'initial_lat': initial_lat,
+        'initial_lon': initial_lon,
+        'initial_zoom': geo_config_dict.get('max_zoom', 22),
+        'max_zoom': geo_config_dict.get('max_zoom', 22),
+        'osm_tiles': 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'osm_attr': '&copy; <a href="https://osm.org/copyright">OSM</a> contributors',
+        'satellite_tiles': 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+        'satellite_attr': 'Google Satellite'
+    }
+
+    return jsonify({"status": status_data, "map_config": map_config})
+
+@app.route('/live')
 def live_view():
 
     """Live-Kartenansicht"""
@@ -776,6 +833,42 @@ def ha_polling_loop():
             
         time.sleep(30) # Alle 30 Sekunden pollen
 
+# --- Simulator API ---
+simulator_instance = None
+
+@app.route('/api/simulator/status')
+def api_simulator_status():
+    """Gibt den aktuellen Simulator-Status zurück."""
+    if simulator_instance:
+        return jsonify({
+            "running": simulator_instance.is_running(),
+            "exists": True,
+            "lat": simulator_instance.current_lat if simulator_instance.is_running() else None,
+            "lon": simulator_instance.current_lon if simulator_instance.is_running() else None
+        })
+    return jsonify({"running": False, "exists": False})
+
+@app.route('/api/simulator/toggle', methods=['POST'])
+def api_simulator_toggle():
+    """Startet oder stoppt den Simulator."""
+    global simulator_instance
+    if not simulator_instance:
+        if mqtt_service and data_service:
+            simulator_instance = ChaosSimulator(
+                config.GEO_CONFIG,
+                mqtt_service,
+                data_manager=data_service
+            )
+        else:
+            return jsonify({"error": "Services nicht verfügbar"}), 503
+
+    if simulator_instance.is_running():
+        simulator_instance.stop()
+        return jsonify({"running": False})
+    else:
+        simulator_instance.start()
+        return jsonify({"running": True})
+
 # --- Start ---
 
 if __name__ == '__main__':
@@ -800,7 +893,7 @@ if __name__ == '__main__':
 
         mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
 
-        # Optional: mqtt_service.set_gps_update_callback(...)
+        mqtt_service.set_gps_update_callback(lambda payload: data_service.handle_gps_data(payload))
 
         mqtt_service.connect()
 

@@ -37,9 +37,10 @@ class ChaosSimulator:
         # Startrichtung in Grad (0 = Nord, 90 = Ost, etc.)
         self.heading = random.uniform(0, 360)
         
-        # Mäh-Parameter
-        self.speed_ms = 1.5  # Warp-Geschwindigkeit für ultraschnelles Testen
-        self.update_interval = 1.0  # Update jede Sekunde
+        # Mäh-Parameter (Schneller Test-Modus)
+        self.base_speed = 1.5  # Absichtlich schnell für schnittige Tests
+        self.speed_ms = self.base_speed 
+        self.update_interval = 1.0  # Wieder schnellere Updates
         
         # Erdradius für Entfernungsberechnung (Meter)
         self.R = 6371000
@@ -47,11 +48,11 @@ class ChaosSimulator:
         # Session-Datenpuffer (wie DataRecorder)
         self.gps_buffer = []
         
-        # Problem-Simulation: Stillstand-Erkennung
+        # Problem-Simulation
         self._stall_counter = 0
-        self._stall_threshold = random.randint(45, 120)  # Nach 45-120s ein Problem simulieren
+        self._stall_threshold = random.randint(120, 240)  # Seltener Probleme (alle 2-4 Min)
         self._last_problem_time = 0
-        self._problem_cooldown = 60  # Min. 60s zwischen Problemen
+        self._problem_cooldown = 120  # Längere Pause zwischen Problemen
         
         self.start_time = 0
 
@@ -117,13 +118,13 @@ class ChaosSimulator:
 
     def _generate_status_payload(self):
         """Generiert ein Payload im Format des echten Roboters ('status,...')"""
-        status_text = "GPS Fix (SPS)"
-        sats = str(random.randint(8, 12))
+        status_text = "Mowing (Simulated)"
+        sats = str(random.randint(10, 18)) # Mehr Satelliten für Stabilität
         lat_str = str(round(self.current_lat, 8))
         lon_str = str(round(self.current_lon, 8))
-        agps = "AGPS: On (Sim)"
-        # HDOP Simulation: ca 1.0 (sehr gut)
-        hdop = str(round(random.uniform(0.8, 1.3), 2))
+        agps = "AGPS: On"
+        # HDOP Simulation: ca 0.9 (sehr gut)
+        hdop = str(round(random.uniform(0.7, 1.1), 2))
         
         # Format: status,fix,sats,lat,lon,agps,hdop
         return f"status,{status_text},{sats},{lat_str},{lon_str},{agps},{hdop}"
@@ -131,10 +132,9 @@ class ChaosSimulator:
     def _buffer_gps_point(self):
         """Puffert den aktuellen GPS-Punkt für die Session-Daten (inkl. HDOP)."""
         timestamp = time.time()
-        sats = random.randint(8, 12)
-        wifi_dbm = random.randint(-75, -45)
-        # HDOP Simulation: Meist sehr gut (0.8 - 1.2), seltener Sprünge (bis 5.0)
-        hdop = random.uniform(0.8, 1.2) if random.random() > 0.1 else random.uniform(2.0, 5.0)
+        sats = random.randint(12, 18)
+        wifi_dbm = random.randint(-65, -40) # Besseres Wifi im Simulator
+        hdop = random.uniform(0.7, 1.0)
         self.gps_buffer.append(
             f"{self.current_lat:.8f},{self.current_lon:.8f},{timestamp:.3f},{sats},{wifi_dbm},{hdop:.2f}"
         )
@@ -144,23 +144,37 @@ class ChaosSimulator:
         self._stall_counter += 1
         now = time.time()
         
+        # Problem nur simulieren, wenn Schwellwert erreicht und Cooldown vorbei
         if self._stall_counter >= self._stall_threshold and \
            (now - self._last_problem_time) >= self._problem_cooldown:
-            # Problem melden
-            problem_payload = f"problem,{self.current_lat:.6f},{self.current_lon:.6f}"
-            logger.info(f"[Simulator] Problem simuliert: {problem_payload}")
+            
+            # Zufällige Problem-Art wählen
+            issues = [
+                f"problem,stuck,{self.current_lat:.6f},{self.current_lon:.6f}",
+                f"problem,lifted,{self.current_lat:.6f},{self.current_lon:.6f}",
+                f"problem,outside_wire,{self.current_lat:.6f},{self.current_lon:.6f}"
+            ]
+            problem_payload = random.choice(issues)
+            
+            logger.warning(f"[Simulator] KRITISCHES PROBLEM SIMULIERT: {problem_payload}")
             self._publish_status(problem_payload)
             
             self._last_problem_time = now
             self._stall_counter = 0
-            self._stall_threshold = random.randint(45, 120)  # Neuer Schwellwert
+            self._stall_threshold = random.randint(120, 240)
             
-            # Simuliere kurzen Stillstand (3-5s)
-            stall_time = random.uniform(3, 5)
+            # Simuliere längeren Stillstand (10-20s) zur Fehlererkennungs-Testung
+            stall_time = random.uniform(10, 20)
             for _ in range(int(stall_time)):
                 if not self.running:
                     return
-                time.sleep(1)
+                # Sende weiterhin GPS Status (Mäher steht still aber GPS sendet)
+                self._publish_status(self._generate_status_payload())
+                time.sleep(2)
+            
+            # Automatische "Heilung" nach dem Stillstand
+            logger.info("[Simulator] Problem behoben - Mäher setzt Arbeit fort.")
+            self._publish_status("recording started")
 
     def _send_session_data(self):
         """Sendet die gepufferten GPS-Daten als CSV auf worx/gps."""
@@ -183,6 +197,10 @@ class ChaosSimulator:
                 logger.info("[Simulator] Maximale Laufzeit von 10 Min erreicht, stoppe automatisch.")
                 break
 
+            # Dynamische Geschwindigkeit: Variiert leicht um die Basis
+            # Langsamer in "Kurven" (nach Kollision)
+            self.speed_ms = self.base_speed * random.uniform(0.8, 1.2)
+
             # Berechne potentielle neue Position
             distance_to_travel = self.speed_ms * self.update_interval
             new_lat, new_lon = self.calculate_new_position(
@@ -194,14 +212,15 @@ class ChaosSimulator:
             
             # Prüfen ob wir auf eine Grenze stoßen (Kollision / Begrenzungsdraht)
             if self.is_out_of_bounds(new_lat, new_lon):
-                turn_angle = random.uniform(90, 180) 
-                
+                # Drehung simulieren (Wenden)
+                turn_angle = random.uniform(120, 210) # Worx-typisches Wenden
                 if random.choice([True, False]):
                     self.heading = (self.heading + turn_angle) % 360
                 else:
                     self.heading = (self.heading - turn_angle) % 360
-                    
-                time.sleep(self.update_interval)
+                
+                # Beim Wenden kurz anhalten / langsamer werden
+                time.sleep(0.5) 
                 continue
 
             # Keine Kollision -> weiterfahren
@@ -229,18 +248,23 @@ class ChaosSimulator:
     def start(self):
         """Startet die Simulation."""
         if not self.running:
-            self.current_lat = (self.lat_min + self.lat_max) / 2
-            self.current_lon = (self.lon_min + self.lon_max) / 2
+            # Zufällige Startposition innerhalb der Grenzen (statt immer Mitte)
+            self.current_lat = random.uniform(self.lat_min, self.lat_max)
+            self.current_lon = random.uniform(self.lon_min, self.lon_max)
+            # Sicherstellen, dass Startpunkt valide ist
+            if self.is_out_of_bounds(self.current_lat, self.current_lon):
+                self.current_lat = (self.lat_min + self.lat_max) / 2
+                self.current_lon = (self.lon_min + self.lon_max) / 2
+
             self.heading = random.uniform(0, 360)
             self.gps_buffer = []
             self._stall_counter = 0
-            self._stall_threshold = random.randint(45, 120)
             
             self.running = True
             self.start_time = time.time()
             
             self._publish_status("recording started")
-            logger.info("[Simulator] Chaos-Simulation gestartet (Timeout: 10 Min).")
+            logger.info("[Simulator] Turbo-Chaos-Simulation gestartet.")
             
             self.thread = threading.Thread(target=self.simulation_loop, daemon=True)
             self.thread.start()

@@ -195,7 +195,7 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
     }
 
     const mowerIcon = L.icon({
-      iconUrl: '/worx.png',
+      iconUrl: './worx.png',
       iconSize: [25, 32],
       iconAnchor: [12.5, 16],
       popupAnchor: [0, -18]
@@ -247,13 +247,13 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
         maxZoom: mapConfig.max_zoom,
         maxNativeZoom: 19,
         attribution: mapConfig.osm_attr
-      }).addTo(mapInstanceRef.current);
+      });
 
       const satelliteLayer = L.tileLayer(mapConfig.satellite_tiles, {
         maxZoom: mapConfig.max_zoom,
         maxNativeZoom: 20,
         attribution: mapConfig.satellite_attr
-      });
+      }).addTo(mapInstanceRef.current);
 
       const baseLayers = {
         "OpenStreetMap": osmLayer,

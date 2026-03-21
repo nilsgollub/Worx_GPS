@@ -19,7 +19,7 @@ try:
     import config # Haupt-Konfigurationsdatei
     # Importiere pandas und geopy für Statistiken, falls verfügbar
     from utils import calculate_distance, format_duration, read_gps_data_from_csv_string, flatten_data, calculate_area_coverage
-    from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed
+    from processing import apply_moving_average, apply_kalman_filter, remove_outliers_by_speed, process_gps_data
     STATS_LIBS_AVAILABLE = True
     try:
         import pandas as pd
@@ -80,26 +80,16 @@ class DataService:
         
         logger.info(f"{len(raw_gps_data)} GPS-Punkte aus Puffer gelesen.")
         original_count = len(raw_gps_data)
-        processed_data = raw_gps_data
         
-        # Ausreißer entfernen
-        outlier_config = config.POST_PROCESSING_CONFIG.get("outlier_detection", {})
-        if outlier_config.get("enable", True):
-            max_speed = outlier_config.get("max_speed_mps", 1.5)
-            processed_data = remove_outliers_by_speed(processed_data, max_speed_mps=max_speed)
-            logger.info(f"{len(processed_data)} Punkte nach Ausreißererkennung.")
-            if not processed_data:
-                return
+        # Geofences laden für Filterung
+        geofences = self.data_manager.get_geofences() if self.data_manager else None
         
-        # Filterung
-        method = config.POST_PROCESSING_CONFIG.get("method", "none").lower()
-        if method == "moving_average":
-            window = config.POST_PROCESSING_CONFIG.get("moving_average_window", 5)
-            processed_data = apply_moving_average(processed_data, window)
-        elif method == "kalman":
-            r_noise = config.POST_PROCESSING_CONFIG.get("kalman_measurement_noise", 5.0)
-            q_noise = config.POST_PROCESSING_CONFIG.get("kalman_process_noise", 0.05)
-            processed_data = apply_kalman_filter(processed_data, measurement_noise=r_noise, process_noise=q_noise)
+        # Zentrale Processing-Pipeline (HDOP, Geofence, Drift, Speed, Kalman)
+        processed_data = process_gps_data(
+            raw_gps_data,
+            config.POST_PROCESSING_CONFIG,
+            geofences=geofences
+        )
         
         if not processed_data:
             logger.warning("Nach Filterung keine GPS-Daten übrig.")
@@ -118,8 +108,36 @@ class DataService:
         filename = self.data_manager.get_next_mow_filename()
         self.data_manager.save_gps_data(processed_data, filename, coverage=session_coverage)
         
-        # Karten-Aktualisierung wird jetzt exklusiv von Worx_GPS.py (Evaluation) übernommen.
-        logger.info(f"Session {filename} in DB gespeichert. Evaluation (Worx_GPS.py) übernimmt Karten-Update.")
+        logger.info(f"Session {filename} in DB gespeichert. Starte Karten-Generierung...")
+        try:
+            self._generate_all_heatmaps(processed_data)
+        except Exception as e:
+            logger.error(f"Fehler bei automatischer Karten-Generierung: {e}", exc_info=True)
+
+    def _generate_all_heatmaps(self, current_session_data):
+        """Generiert alle Heatmaps nach einer abgeschlossenen Session."""
+        # Sicherstellen dass das Verzeichnis existiert
+        self.heatmaps_dir.mkdir(parents=True, exist_ok=True)
+        
+        draw_path = self.geo_config_main.get("draw_path", True)
+        
+        # 1. Aktuelle Session (heatmap_aktuell)
+        if 'heatmap_aktuell' in self.heatmap_config:
+            self._update_map('heatmap_aktuell', current_session_data, draw_path)
+        
+        # 2. Letzte 10 Sessions (heatmap_10)
+        if 'heatmap_10' in self.heatmap_config:
+            combined_10 = flatten_data(list(self._maehvorgang_data))
+            if combined_10:
+                self._update_map('heatmap_10', combined_10, draw_path, is_multi=True)
+        
+        # 3. Alle Sessions kumuliert (heatmap_kumuliert)
+        if 'heatmap_kumuliert' in self.heatmap_config:
+            combined_all = flatten_data(self._alle_maehvorgang_data)
+            if combined_all:
+                self._update_map('heatmap_kumuliert', combined_all, draw_path, is_multi=True)
+        
+        logger.info("[DataService] Alle Heatmaps erfolgreich generiert.")
 
     def _update_map(self, config_key, data, draw_path, is_multi=False):
         """Aktualisiert eine einzelne Karte (wie Worx_GPS.update_single_map)."""
@@ -434,6 +452,19 @@ class DataService:
     def delete_mow_session(self, filename: str) -> bool:
         """Löscht eine Mähsession und gibt True bei Erfolg zurück."""
         return self.data_manager.delete_mow_session_file(filename)
+
+    # --- Geofencing (Zoneneditor) ---
+    def get_geofences(self):
+        """Lädt alle Geofences (Zonen) aus dem DataManager."""
+        return self.data_manager.get_geofences()
+
+    def save_geofence(self, name, type, coordinates, fence_id=None):
+        """Speichert oder aktualisiert eine Zone im DataManager."""
+        return self.data_manager.save_geofence(name, type, coordinates, fence_id)
+
+    def delete_geofence(self, geofence_id):
+        """Löscht eine Zone aus dem DataManager."""
+        return self.data_manager.delete_geofence(geofence_id)
 
 # Benötigt für url_for in get_available_heatmaps, wird von Flask bereitgestellt
 from flask import url_for

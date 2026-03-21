@@ -151,6 +151,8 @@ POST_PROCESSING_CONFIG = {
     "moving_average_window": 5,
     "kalman_measurement_noise": 5.0,
     "kalman_process_noise": 0.05,
+    "hdop_threshold": 2.5,
+    "max_speed_mps": 1.5,
     "outlier_detection": {
         "enable": True,
         "max_speed_mps": 1.5
