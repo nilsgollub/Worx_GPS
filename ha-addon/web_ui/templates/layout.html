@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worx GPS - {% block title %}Dashboard{% endblock %}</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Font Awesome für Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Leaflet CSS (für Karten) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <!-- Weitere CSS-Dateien -->
+    {% block additional_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-robot"></i> Worx GPS
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">
+                            <i class="fas fa-home"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('maps') %}active{% endif %}"
+                           href="{{ url_for('maps') }}">
+                            <i class="fas fa-map"></i> Karten
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/live">
+                            <i class="fas fa-location-dot"></i> Live-Ansicht
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('stats') %}active{% endif %}"
+                           href="{{ url_for('stats') }}">
+                            <i class="fas fa-chart-line"></i> Statistiken
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == url_for('config_page') %}active{% endif %}"
+                           href="{{ url_for('config_page') }}">
+                            <i class="fas fa-cog"></i> Einstellungen
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hauptinhalt -->
+    <div class="container-fluid mt-3">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">
+                Worx GPS Projekt &copy; 2023
+                <span class="connection-status">
+                    <!-- HINWEIS: Die ID wurde von 'mqtt-status' zu 'mqtt-connection-status' geändert, um mit main.js übereinzustimmen -->
+                    MQTT: <span id="mqtt-connection-status" class="badge rounded-pill bg-secondary">Verbinde...</span>
+                </span>
+            </span>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+
+    <!-- Socket.IO -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+
+    <!-- Allgemeine JavaScript-Funktionen -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    <!-- Weitere JavaScript-Dateien -->
+    {% block scripts %}{% endblock %}
+</body>
+</html>

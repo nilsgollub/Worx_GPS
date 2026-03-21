@@ -1,0 +1,270 @@
+{% extends "layout.html" %}
+{% block title %}Statistiken{% endblock %}
+
+{% block additional_css %}
+<style>
+    .table-responsive-sm {
+        max-height: 400px; /* Begrenzt die Höhe der Tabelle */
+        overflow-y: auto; /* Fügt Scrollbalken hinzu, wenn nötig */
+    }
+    .problem-zone-table th {
+        position: sticky; /* Lässt den Header beim Scrollen stehen */
+        top: 0;
+        background-color: #f8f9fa; /* Hintergrund für den Header */
+        z-index: 1; /* Stellt sicher, dass der Header über dem Inhalt liegt */
+    }
+    /* Optional: Etwas mehr Platz zwischen den Statistik-Punkten */
+    .stats-dl dt, .stats-dl dd {
+        padding-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Statistik-Übersicht -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-info text-white">
+                <h5><i class="fas fa-chart-pie"></i> Mäh-Statistiken</h5>
+            </div>
+            <div class="card-body">
+                {% if stats %}
+                    <dl class="row stats-dl"> {# Klasse für optionales Styling hinzugefügt #}
+                        <dt class="col-sm-5">Anzahl Mähvorgänge:</dt> {# Umbenannt #}
+                        <dd class="col-sm-7">{{ stats.total_recordings if stats.total_recordings is not none else 'N/A' }}</dd>
+
+                        <dt class="col-sm-5">Gesamte Strecke:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.total_distance is number and stats.total_distance is not none %}
+                                {{ "%.2f"|format(stats.total_distance) }} km
+                            {% else %}
+                                {{ stats.total_distance | default('N/A') }}
+                            {% endif %}
+                        </dd>
+
+                        {# --- NEU: Durchschnittliche Strecke --- #}
+                        <dt class="col-sm-5">Ø Strecke pro Vorgang:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.avg_distance is number and stats.avg_distance is not none %}
+                                {{ "%.2f"|format(stats.avg_distance) }} km
+                            {% else %}
+                                {{ stats.avg_distance | default('N/A') }}
+                            {% endif %}
+                        </dd>
+                        {# --- ENDE NEU --- #}
+
+                        <dt class="col-sm-5">Gesamte Mähzeit:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.total_time is number and stats.total_time is not none %}
+                                {{ stats.total_time }} Minuten
+                            {% else %}
+                                {{ stats.total_time | default('N/A') }}
+                            {% endif %}
+                        </dd>
+
+                        {# --- NEU: Durchschnittliche Mähzeit --- #}
+                        <dt class="col-sm-5">Ø Zeit pro Vorgang:</dt>
+                        <dd class="col-sm-7">
+                            {% if stats.avg_duration is number and stats.avg_duration is not none %}
+                                {{ "%.1f"|format(stats.avg_duration) }} Minuten
+                            {% else %}
+                                {{ stats.avg_duration | default('N/A') }}
+                            {% endif %}
+                        </dd>
+                        {# --- ENDE NEU --- #}
+
+                        <dt class="col-sm-5">Ø Satelliten (während Aufnahme):</dt> {# Präzisiert #}
+                        <dd class="col-sm-7">
+                             {% if stats.avg_satellites is number and stats.avg_satellites is not none %}
+                                {{ "%.1f"|format(stats.avg_satellites) }}
+                            {% else %}
+                                {{ stats.avg_satellites | default('N/A') }}
+                            {% endif %}
+                        </dd>
+
+                        <dt class="col-sm-5">Anzahl Problemzonen-Events:</dt> {# Umbenannt #}
+                        <dd class="col-sm-7">{{ stats.problem_zones_count if stats.problem_zones_count is not none else 'N/A' }}</dd>
+
+                        {# --- NEU: Einfache "Erfolgsrate" (mit Vorbehalt) --- #}
+                        <dt class="col-sm-5">Mähvorgänge ohne Problem-Event:</dt>
+                        <dd class="col-sm-7">
+                            {# Prüfe, ob beide Werte Zahlen sind UND total_recordings > 0 #}
+                            {% if stats.total_recordings is number and stats.total_recordings > 0 and stats.problem_zones_count is number %}
+                                {% set successful_runs = [0, stats.total_recordings - stats.problem_zones_count] | max %}
+                                {{ successful_runs }} von {{ stats.total_recordings }}
+                                ({{ "%.1f"|format(successful_runs * 100 / stats.total_recordings) }}%)
+                                <small class="d-block text-muted">(Annahme: max. 1 Problem pro Vorgang)</small>
+                            {% elif stats.total_recordings == 0 %}
+                                0 von 0 (N/A %) {# Behandle den Fall von 0 Aufnahmen explizit #}
+                            {% else %}
+                                N/A {# Behandle Fälle, wo stats 'Fehler' oder 'N/A' sind #}
+                            {% endif %}
+                        </dd>
+                        {# --- ENDE NEU --- #}
+
+                    </dl>
+                    {% if stats.total_recordings == 'Fehler' or stats.total_recordings == 'N/A' %}
+                         <div class="alert alert-warning mt-3" role="alert">
+                             Konnte Statistiken nicht laden. Prüfe die Log-Dateien und ob 'pandas' und 'geopy' installiert sind.
+                         </div>
+                    {% endif %}
+                {% else %}
+                    <p class="card-text">Statistiken werden geladen oder sind nicht verfügbar.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Problemzonen -->
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-danger text-white">
+                <h5><i class="fas fa-exclamation-triangle"></i> Problemzonen-Log</h5> {# Umbenannt #}
+            </div>
+            <div class="card-body">
+                {% if problem_zones %}
+                    <div class="table-responsive-sm"> {# Macht Tabelle scrollbar auf kleinen Screens #}
+                        <table class="table table-striped table-hover table-sm problem-zone-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Zeitpunkt</th>
+                                    {# <th scope="col">Dauer (s)</th> #} {# Diese Spalte wird nicht mehr benötigt #}
+                                    <th scope="col">Position</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for zone in problem_zones %}
+                                <tr>
+                                    <th scope="row">{{ loop.index }}</th> {# Zeige die Zeilennummer an #}
+                                    <td>{{ zone.zeitpunkt | default('N/A') }}</td> {# Verwende den neuen Schlüssel 'zeitpunkt' #}
+                                    <td> {# Verwende den neuen Schlüssel 'position' #}
+                                        {% if zone.position and zone.position != 'Position N/A' and zone.position != 'Ungültige Koordinaten' %}
+                                            {# Extrahiere Lat/Lon aus dem formatierten String für den Google Maps Link #}
+                                            {% set lat_lon_parts = zone.position.replace('Lat: ', '').replace('Lon: ', '').split(', ') %}
+                                            {% if lat_lon_parts | length == 2 %}
+                                            <a href="https://www.google.com/maps/search/?api=1&query={{ lat_lon_parts[0] }},{{ lat_lon_parts[1] }}" target="_blank" title="Auf Google Maps anzeigen">
+                                                {{ zone.position }}
+                                                <i class="fas fa-external-link-alt fa-xs"></i>
+                                            </a>
+                                        {% else %}
+                                            {# Wenn das Parsen für den Link fehlschlägt, zeige trotzdem den Positionstext an #}
+                                            {{ zone.position }}
+                                        {% endif %}
+                                        {% else %}
+                                            {# Behandelt 'Position N/A', 'Ungültige Koordinaten' oder andere falsy-Werte für zone.position #}
+                                            {{ zone.position | default('N/A') }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="card-text">Keine Problemzonen gefunden oder die Datei <code>data/problemzonen.json</code> existiert nicht.</p>
+                {% endif %}
+            </div>
+             <div class="card-footer text-muted" style="font-size: 0.8em;">
+                 Problemzonen werden in <code>data/problemzonen.json</code> gespeichert.
+             </div>
+        </div>
+    </div>
+</div>
+
+<!-- NEU: Auflistung der Mähvorgänge -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-tractor"></i> Aufgezeichnete Mähvorgänge</h5>
+            </div>
+            <div class="card-body">
+                {% if mow_sessions %}
+                    <div class="table-responsive-sm">
+                        <table class="table table-striped table-hover table-sm mow-sessions-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">#</th>
+                                    <th scope="col">Startzeit</th>
+                                    <th scope="col">Dateiname</th>
+                                    <th scope="col">Punkte</th>
+                                    <th scope="col">Dauer</th>
+                                    <th scope="col">Strecke</th>
+                                    <th scope="col">Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for session in mow_sessions %}
+                                <tr id="session-row-{{ session.filename | replace('.', '-') }}"> {# Eindeutige ID für die Zeile #}
+                                    <th scope="row">{{ loop.index }}</th>
+                                    <td>{{ session.start_time_str | default('N/A') }}</td>
+                                    <td>{{ session.filename | default('N/A') }}</td>
+                                    <td>{{ session.point_count | default('N/A') }}</td>
+                                    <td>{{ session.duration_str | default('N/A') }}</td>
+                                    <td>{{ session.distance_km_str | default('N/A') }}</td>
+                                    <td>
+                                        <button class="btn btn-danger btn-sm delete-mow-session-btn" data-filename="{{ session.filename }}" title="Diesen Mähvorgang löschen">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="card-text">Keine Mähvorgänge gefunden oder die Dateien konnten nicht geladen werden.</p>
+                {% endif %}
+            </div>
+            <div class="card-footer text-muted" style="font-size: 0.8em;">
+                 Mähvorgänge werden in <code>data/maehvorgang_*.json</code> gespeichert.
+             </div>
+        </div>
+    </div>
+</div>
+<!-- ENDE NEU -->
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.delete-mow-session-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const filename = this.dataset.filename;
+            const sessionRowId = `session-row-${filename.replace(/\./g, '-')}`; // Punkte im Dateinamen für ID ersetzen
+            const sessionRow = document.getElementById(sessionRowId);
+
+            if (confirm(`Möchtest du den Mähvorgang "${filename}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`)) {
+                fetch(`/mow_session/delete/${filename}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Ggf. CSRF-Token Header hinzufügen, falls von Flask-WTF oder Ähnlichem benötigt
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message); // Erfolgsmeldung
+                        if (sessionRow) {
+                            sessionRow.remove(); // Zeile aus der Tabelle entfernen
+                        }
+                        // Optional: Aggregierte Statistiken neu laden oder Seite neu laden
+                        // location.reload(); // Einfachste Option, um alles zu aktualisieren
+                    } else {
+                        alert(`Fehler: ${data.message}`); // Fehlermeldung
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Ein clientseitiger Fehler ist beim Löschen aufgetreten.');
+                });
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

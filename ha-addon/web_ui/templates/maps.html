@@ -1,0 +1,83 @@
+{% extends "layout.html" %}
+
+{% block title %}Kartenübersicht{% endblock %}
+
+{% block additional_css %}
+<style>
+    .heatmap-container {
+        position: relative;
+        width: 100%;
+        /* Adjust height as needed, or make it responsive */
+        height: 75vh; /* Example: 75% of viewport height */
+        border: 1px solid #ccc;
+    }
+    .heatmap-iframe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+    }
+    .list-group-item.active {
+        z-index: 2; /* Ensure active item is clickable */
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3">
+        <h2>Verfügbare Karten</h2>
+        {% if heatmaps %}
+            <div class="list-group">
+                {% for map_item in heatmaps %}
+                    <a href="{{ url_for('maps', map=map_item.id) }}"
+                       class="list-group-item list-group-item-action {% if selected == map_item.id %}active{% endif %}">
+                        {{ map_item.name }}
+                        {% if map_item.png_path %}
+                            <span class="badge bg-secondary float-end">PNG</span>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p>Keine Heatmaps gefunden. Bitte generiere welche über die Steuerung.</p>
+        {% endif %}
+    </div>
+    <div class="col-md-9">
+        <h2>Ausgewählte Karte: {{ selected.replace('_', ' ').title() if selected else 'Keine Auswahl' }}</h2>
+        <div class="heatmap-container">
+            {% if selected and heatmaps %}
+                {% set selected_map = heatmaps | selectattr('id', 'equalto', selected) | first %}
+                {% if selected_map %}
+                    <iframe src="{{ selected_map.html_path }}" class="heatmap-iframe" title="Heatmap {{ selected_map.name }}"></iframe>
+                {% else %}
+                    <div class="alert alert-warning" role="alert">
+                        Die ausgewählte Karte '{{ selected }}' konnte nicht geladen werden.
+                    </div>
+                {% endif %}
+            {% elif heatmaps %}
+                 <div class="alert alert-info" role="alert">
+                    Bitte wähle eine Karte aus der Liste aus.
+                 </div>
+            {% else %}
+                 <div class="alert alert-info" role="alert">
+                    Keine Karten zum Anzeigen verfügbar.
+                 </div>
+            {% endif %}
+        </div>
+        {% if selected_map and selected_map.png_path %}
+            <div class="mt-2">
+                <a href="{{ selected_map.png_path }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-image"></i> PNG-Version anzeigen
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Keine spezifischen Skripte für diese Seite benötigt, main.js reicht -->
+{% endblock %}

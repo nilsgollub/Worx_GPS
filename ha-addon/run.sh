@@ -44,6 +44,7 @@ export MQTT_PASSWORD=$MQTT_PASS
 export DATA_DIR="/data"
 export HEATMAPS_DIR="/data/heatmaps"
 export DB_PATH="/data/worx_gps.db"
+export FLASK_PORT=5001
 
 if [ "$DEBUG_LOGGING" = "true" ]; then
     echo "[System] Debug-Logging AKTIVIERT."
@@ -57,7 +58,7 @@ echo "[System] Starte Worx GPS Dienste..."
 
 # Wir nutzen start_services.py, müssen aber Pfade anpassen falls nötig
 # Da wir im Docker sind, können wir auch direkt parallel starten
-python3 webui.py &
+python3 web_ui/webui.py &
 python3 Worx_GPS.py &
 
 # Halte den Container am Leben
