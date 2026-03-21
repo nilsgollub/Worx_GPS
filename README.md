@@ -77,6 +77,8 @@ ASSIST_NOW_ENABLED=True  # Gilt für den autonomen Modus und Online-Fallbacks
 *   **GPS-Optimierung:** Kalman-Filter, HDOP-Validierung, Stillstands-Drift-Sperre (siehe [GPS_OPTIMIZATION_STRATEGY.md](GPS_OPTIMIZATION_STRATEGY.md)).
 *   **Hardware-Tuning:** Aktivierung von Pedestrian-Mode und AssistNow Autonomous auf dem u-blox Modul.
 *   **Architektur:** Saubere Trennung von Pi-Recorder, WebUI-DataService und Evaluierung.
+*   **Home Assistant Integration:** Automatischer Autopilot-Wachhund, GPS-Tracker (`device_tracker`) und Dashboard-Integration (Map Card).
+*   **Heatmap-Revolution:** Gewichtete Heatmaps für WiFi-Signalstärke und GPS-Qualität (Red-Yellow-Green Skala).
 
 ### 🚀 In Arbeit
 *   **Automatisierte Exclusion:** Automatisches Ausblenden von Punkten in Verbotszonen (Teiche, Beete) in der Heatmap-Generierung.
@@ -98,3 +100,19 @@ Das System nutzt eine kombinierte Filter-Logik (`processing.py` / `utils.py`):
 *   **Point-Deletion:** Eckpunkte per Rechtsklick aus bestehenden Zonen entfernen.
 *   **Type-Switch:** Bestehende Zonen jederzeit zwischen Erlaubt/Verboten umschalten.
 *   **Echtzeit-Anwendung:** Geofences werden sofort auf den MQTT-Statusstream und die Heatmap-Generierung angewendet.
+
+---
+
+## 🏠 7. Home Assistant Integration
+
+Das System lässt sich nahtlos in Home Assistant (HA) integrieren:
+*   **HA-Wachhund (Autopilot):** Der Backend-Dienst pollt den Status des Landroids in HA (`lawn_mower.m`) und steuert den Recorder vollautomatisch (Start bei `mowing`, Stop bei `docked` / `rain delay`).
+*   **MQTT GPS Tracker:** Sendet Position, Koordinaten, Satellitenanzahl und WiFi-dBm als `device_tracker` und `sensor` an HA.
+*   **Präsenz-Check:** Ein spezieller Wachhund-Loop sorgt dafür, dass der Mäher auch im Ruhezustand auf der HA-Karte sichtbar bleibt (erzwungene Positions-Updates).
+
+## 📊 8. Heatmaps & Signalstärke
+
+Die Visualisierung bietet spezialisierte Karten für die Garten-Diagnose:
+*   **Kumulierte Heatmap:** Zeigt die Mähdichte über alle Sessions (Wo wurde wie oft gemäht?).
+*   **WiFi-Signalstärke:** Eine gewichtete Heatmap visualisiert Funklöcher (dBm-Werte von -90 bis -30).
+*   **GPS-Qualität:** Zeigt die Satellitenabdeckung und HDOP-Präzision im Garten.
