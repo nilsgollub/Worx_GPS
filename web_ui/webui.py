@@ -71,8 +71,8 @@ from web_ui.mqtt_service import MqttService
 from web_ui.status_manager import StatusManager
 
 from web_ui.data_service import DataService
-
 from web_ui.system_monitor import SystemMonitor
+from web_ui.home_assistant_service import HomeAssistantService
 
 
 
@@ -678,9 +678,59 @@ def handle_disconnect():
 
     logger.info(f'Web-Client getrennt (SID: {request.sid})')
 
+# --- Home Assistant Wachhund (Autopilot) ---
+def ha_polling_loop():
+    """Wachhund-Thread: Pollt den HA-Status und steuert den Recorder."""
+    logger.info("[HA-Polling] Wachhund-Thread gestartet.")
+    # Service lokal initialisieren (liest .env)
+    ha_service = HomeAssistantService()
+    
+    # Warte kurz, bis die anderen Services (MQTT etc.) bereit sind
+    time.sleep(5)
+    
+    # Registriere HA-Service im StatusManager für Rückkanal-Updates
+    if status_manager and ha_service:
+        status_manager.set_ha_service(ha_service)
+        logger.info("[HA-Polling] HA-Service im StatusManager registriert.")
 
+    last_ha_state = None
+    
+    while True:
+        try:
+            current_state = ha_service.get_mower_state()
+            if current_state:
+                # Normalisiere auf kleingeschriebenen Text für Vergleich
+                state_clean = str(current_state).lower()
+                
+                # Sende Status an StatusManager (für Anzeige im React Frontend)
+                if status_manager:
+                    status_manager.update_ha_mower_status(current_state)
 
-
+                if state_clean != last_ha_state:
+                    logger.info(f"[HA-Polling] Mäher-Status geändert: {last_ha_state} -> {state_clean}")
+                    
+                    # --- Autopilot Logik ---
+                    # Start-Szenarien
+                    if state_clean in ['mowing', 'starting', 'edge cutting', 'searching zone', 'at home', 'mowing the yard']:
+                        logger.info(f"[HA-Polling] Automatischer Start getriggert durch: {state_clean}")
+                        mqtt_service.publish_command('START_REC')
+                    
+                    # Stop-Szenarien
+                    elif state_clean in ['docked', 'charging', 'idle', 'rain delay', 'paused', 'returning']:
+                        logger.info(f"[HA-Polling] Automatischer Stop getriggert durch: {state_clean}")
+                        mqtt_service.publish_command('STOP_REC')
+                    
+                    # Alarm-Szenarien
+                    elif state_clean in ['error', 'trapped', 'locked', 'manual stop', 'out of bounds', 'wires missing']:
+                        logger.info(f"[HA-Polling] PROBLEM erkannt: {state_clean}")
+                        mqtt_service.publish_command('PROBLEM')
+                        
+                    last_ha_state = state_clean
+            
+        except Exception as e:
+            logger.error(f"[HA-Polling] Fehler im Loop: {e}")
+            
+        time.sleep(30) # Alle 30 Sekunden pollen
 
 # --- Start ---
 
@@ -729,8 +779,12 @@ if __name__ == '__main__':
 
 
         system_monitor = SystemMonitor(status_manager.update_system_stats)
-
         system_monitor.start()
+
+        # HA Wachhund-Thread starten
+        ha_thread = threading.Thread(target=ha_polling_loop, daemon=True)
+        ha_thread.start()
+        logger.info("[System] HA-Wachhund (Autopilot) erfolgreich gestartet.")
 
 
 

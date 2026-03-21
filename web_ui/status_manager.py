@@ -258,13 +258,40 @@ class StatusManager:
                 self.mqtt_service.publish("worx/processed", json.dumps(ha_payload))
 
     def update_ha_mower_status(self, state):
-        """Aktualisiert den Mäher-Status basierend auf HA-Daten."""
+        """Aktualisiert den Mäher-Status basierend auf HA-Daten mit Mapping auf lesbare Texte."""
         status_to_emit = None
+        
+        # Mapping von HA lawn_mower Klassen und Landroid-spezifischen Stati
+        status_map = {
+            'mowing': 'Mäher mäht',
+            'starting': 'Mäher startet...',
+            'edge cutting': 'Mäher mäht (Kantenschnitt)',
+            'searching zone': 'Mäher sucht Zone',
+            'returning': 'Mäher kehrt zurück',
+            'at home': 'Mäher in der Box',
+            'docked': 'Mäher angedockt (Geladen)',
+            'charging': 'Mäher lädt',
+            'idle': 'Mäher bereit',
+            'rain delay': 'Mäher wartet (Regenpause)',
+            'paused': 'Mäher pausiert',
+            'off': 'Mäher ausgeschaltet',
+            'error': 'FEHLER AM MÄHER',
+            'trapped': 'Mäher festgefahren!',
+            'manual stop': 'MANUELLER STOPP',
+            'out of bounds': 'Außerhalb des Kabels!',
+            'wires missing': 'Fehlendes Kabel-Signal'
+        }
+        
+        # Normalisiere den Status für das Mapping
+        state_clean = str(state).lower()
+        display_status = status_map.get(state_clean, state) # Fallback auf Original-Text
+        
         with self.lock:
-            if self.current_mower_status['mower_status'] != state:
-                self.current_mower_status['mower_status'] = state
+            if self.current_mower_status['mower_status'] != display_status:
+                self.current_mower_status['mower_status'] = display_status
                 self.current_mower_status['last_update'] = datetime.now().strftime("%H:%M:%S")
                 status_to_emit = self.current_mower_status.copy()
         
         if status_to_emit:
+            logger.info(f"[StatusManager] HA-Status gemappt: {state} -> {display_status}")
             self._emit_socketio_event('status_update', status_to_emit, "Mäher-Status (HA)")

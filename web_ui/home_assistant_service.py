@@ -73,3 +73,33 @@ class HomeAssistantService:
         except Exception as e:
             logger.error(f"[HA-Service] Fehler beim Senden der Notification: {e}")
             return False
+
+    def get_addon_info(self, addon_slug="local_worx_gps_monitor"):
+        """Holt Informationen über ein Add-on vom Supervisor."""
+        if not self.url or not self.token:
+            return None
+            
+        try:
+            api_url = f"{self.url.rstrip('/')}/api/hassio/addons/{addon_slug}/info"
+            response = requests.get(api_url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                return response.json().get('data', {})
+            return None
+        except Exception as e:
+            logger.error(f"[HA-Service] Fehler beim Abrufen der Add-on Info: {e}")
+            return None
+
+    def get_addon_logs(self, addon_slug="local_worx_gps_monitor"):
+        """Holt die Logs eines Add-ons vom Supervisor."""
+        if not self.url or not self.token:
+            return "Kein HA_URL oder HA_TOKEN konfiguriert."
+            
+        try:
+            api_url = f"{self.url.rstrip('/')}/api/hassio/addons/{addon_slug}/logs"
+            response = requests.get(api_url, headers=self.headers, timeout=10)
+            if response.status_code == 200:
+                return response.text
+            return f"Fehler beim Abrufen der Logs: {response.status_code}"
+        except Exception as e:
+            logger.error(f"[HA-Service] Fehler beim Abrufen der Add-on Logs: {e}")
+            return str(e)
