@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 
 import { RadioTower, Map, Activity, Settings, Server, Menu, X, Power, PowerOff } from 'lucide-react';
 
@@ -16,15 +16,15 @@ import { io } from 'socket.io-client';
 
 import axios from 'axios';
 
+const isDev = import.meta.env.DEV;
 
+const basePath = window.location.pathname.replace(/\/$/, '');
 
-// Update with correct port matching backend .env later if needed
+export const API_URL = isDev ? 'http://localhost:5001' : basePath;
 
-export const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5001' : `http://${window.location.hostname}:5001`;
-
-export const socket = io(API_URL);
-
-
+export const socket = io(isDev ? 'http://localhost:5001' : undefined, {
+    path: isDev ? '/socket.io' : `${basePath}/socket.io`
+});
 
 axios.defaults.baseURL = API_URL;
 

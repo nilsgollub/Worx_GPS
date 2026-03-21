@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Badge, Alert } from 'react-bootstrap';
+import axios from 'axios';
 import LiveMapWidget from '../components/LiveMapWidget';
 import './Live.css';
 
@@ -26,8 +27,8 @@ const Live = ({ socket }) => {
 
   const fetchLiveConfig = async () => {
     try {
-      const response = await fetch('/api/live_config');
-      const data = await response.json();
+      const response = await axios.get('/api/live_config');
+      const data = response.data;
       if (data.error) {
         throw new Error(data.error);
       }
@@ -41,12 +42,8 @@ const Live = ({ socket }) => {
 
   const handleControl = async (command) => {
     try {
-      const response = await fetch('/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command })
-      });
-      const result = await response.json();
+      const response = await axios.post('/control', { command });
+      const result = response.data;
       console.log(result);
     } catch (err) {
       console.error('Fehler bei Steuerung:', err);

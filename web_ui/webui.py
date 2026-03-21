@@ -740,6 +740,12 @@ def ha_polling_loop():
                 # Normalisiere auf kleingeschriebenen Text für Vergleich
                 state_clean = str(current_state).lower()
                 
+                # HA-Meta-Stati ignorieren – keine Autopilot-Aktionen auslösen
+                if state_clean in ('unavailable', 'unknown'):
+                    logger.debug(f"[HA-Polling] HA-Meta-Status '{state_clean}' ignoriert.")
+                    time.sleep(30)
+                    continue
+                
                 # Sende Status an StatusManager (für Anzeige im React Frontend)
                 if status_manager:
                     status_manager.update_ha_mower_status(current_state)

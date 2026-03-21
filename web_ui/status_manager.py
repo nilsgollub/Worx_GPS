@@ -261,6 +261,12 @@ class StatusManager:
         """Aktualisiert den Mäher-Status basierend auf HA-Daten mit Mapping auf lesbare Texte."""
         status_to_emit = None
         
+        # HA-Meta-Stati ignorieren – das sind keine echten Mäher-Zustände
+        state_clean_check = str(state).lower()
+        if state_clean_check in ('unavailable', 'unknown', ''):
+            logger.debug(f"[StatusManager] HA-Meta-Status '{state}' ignoriert – kein echter Mäher-Zustand.")
+            return
+        
         # Mapping von HA lawn_mower Klassen und Landroid-spezifischen Stati
         status_map = {
             'mowing': 'Mäher mäht',

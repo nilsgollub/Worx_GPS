@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import 'leaflet-rotatedmarker';
+import axios from 'axios';
 
 // Fix für Leaflet default icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -62,8 +63,8 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
 
   const fetchLiveConfig = async () => {
     try {
-      const response = await fetch('/api/live_config');
-      const data = await response.json();
+      const response = await axios.get('/api/live_config');
+      const data = response.data;
       if (data.error) {
         throw new Error(data.error);
       }
