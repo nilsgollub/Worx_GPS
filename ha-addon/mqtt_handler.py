@@ -72,6 +72,7 @@ class MqttHandler:
         self.topic_data = f"{topic_prefix}{MQTT_CONFIG.get('topic_data', 'worx/data')}"
         self.topic_problem = f"{topic_prefix}{MQTT_CONFIG.get('topic_problem', 'worx/problem')}"
         self.topic_gps = f"{topic_prefix}{MQTT_CONFIG.get('topic_gps', 'worx/gps')}"
+        self.topic_logs = f"{topic_prefix}{MQTT_CONFIG.get('topic_logs', 'worx/logs')}"
 
         # Client-Setup
         # Eindeutigere Client-ID, um Konflikte zu vermeiden, wenn mehrere Instanzen laufen
@@ -119,6 +120,8 @@ class MqttHandler:
         logging.info(f"  Status Topic: {self.topic_status}")
         logging.info(f"  Data Topic: {self.topic_data}")
         logging.info(f"  Problem Topic: {self.topic_problem}")
+        logging.info(f"  GPS Topic: {self.topic_gps}")
+        logging.info(f"  Logs Topic: {self.topic_logs}")
         logging.info(f"  Reconnect Delays: min={self._initial_reconnect_delay}s, max={self._max_reconnect_delay}s")
         logging.info(
             f"  Ausgehende Nachrichten-Queue Größe: {self._max_queue_size if self._max_queue_size > 0 else 'Unbegrenzt'}")

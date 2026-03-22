@@ -17,6 +17,7 @@ MQTT_CONFIG = {
     "topic_gps": os.getenv("MQTT_TOPIC_GPS"),
     "topic_status": os.getenv("MQTT_TOPIC_STATUS"),
     "topic_control": os.getenv("MQTT_TOPIC_CONTROL"),
+    "topic_logs": os.getenv("MQTT_TOPIC_LOGS"),
     # NEU: Status Intervall hinzugefügt (aus vorheriger main_loop Logik)
     "status_interval": int(os.getenv("MQTT_STATUS_INTERVAL", 5))
 }
