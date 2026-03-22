@@ -137,6 +137,30 @@ class DataService:
             if combined_all:
                 self._update_map('heatmap_kumuliert', combined_all, draw_path, is_multi=True)
         
+        # 4. GPS-Qualität (letzte 10 Sessions)
+        if 'quality_path_10' in self.heatmap_config:
+            combined_10 = flatten_data(list(self._maehvorgang_data))
+            if combined_10:
+                self._update_map('quality_path_10', combined_10, draw_path, is_multi=True)
+        
+        # 5. WiFi Signalstärke (letzte 10 Sessions)
+        if 'wifi_heatmap' in self.heatmap_config:
+            combined_10 = flatten_data(list(self._maehvorgang_data))
+            if combined_10:
+                self._update_map('wifi_heatmap', combined_10, draw_path, is_multi=True)
+        
+        # 6. GPS-Qualität kumuliert (alle Sessions)
+        if 'quality_kumuliert' in self.heatmap_config:
+            combined_all = flatten_data(self._alle_maehvorgang_data)
+            if combined_all:
+                self._update_map('quality_kumuliert', combined_all, draw_path, is_multi=True)
+        
+        # 7. WiFi Signalstärke kumuliert (alle Sessions)
+        if 'wifi_kumuliert' in self.heatmap_config:
+            combined_all = flatten_data(self._alle_maehvorgang_data)
+            if combined_all:
+                self._update_map('wifi_kumuliert', combined_all, draw_path, is_multi=True)
+        
         logger.info("[DataService] Alle Heatmaps erfolgreich generiert.")
 
     def _update_map(self, config_key, data, draw_path, is_multi=False):
@@ -170,8 +194,10 @@ class DataService:
             "heatmap_aktuell": "Aktueller Mähvorgang",
             "heatmap_10": "Letzte 10 Mähvorgänge",
             "heatmap_kumuliert": "Alle Mähvorgänge (Kumuliert)",
-            "quality": "GPS Qualität (Satelliten)",
-            "wifi": "WiFi Signalstärke (dBm)",
+            "quality": "GPS Qualität (Letzte 10)",
+            "quality_kumuliert": "GPS Qualität (Kumuliert)",
+            "wifi": "WiFi Signalstärke (Letzte 10)",
+            "wifi_kumuliert": "WiFi Signalstärke (Kumuliert)",
             "problemzonen": "Problemzonen",
         }
 

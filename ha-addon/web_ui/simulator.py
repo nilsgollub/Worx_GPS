@@ -37,10 +37,13 @@ class ChaosSimulator:
         # Startrichtung in Grad (0 = Nord, 90 = Ost, etc.)
         self.heading = random.uniform(0, 360)
         
-        # Mäh-Parameter
-        self.base_speed = 1.5  # Basis-Geschwindigkeit
+        # Mäh-Parameter (realistisch für Worx Landroid)
+        self.base_speed = 0.6  # ~0.6 m/s wie ein echter Mähroboter
         self.speed_ms = self.base_speed 
-        self.update_interval = 1.0  
+        self.sim_interval = 1.0   # Simuliertes Zeitintervall zwischen GPS-Punkten (für Timestamps)
+        self.time_scale = 5       # Zeitraffer-Faktor (5x = 10 Min Session in ~2 Min)
+        self.wall_interval = self.sim_interval / self.time_scale  # Echte Wartezeit (0.2s)
+        self.sim_clock = 0.0      # Simulierte Uhr (läuft schneller als Echtzeit)
         
         # Erdradius für Entfernungsberechnung (Meter)
         self.R = 6371000
@@ -122,7 +125,7 @@ class ChaosSimulator:
         sats = str(random.randint(10, 18)) # Mehr Satelliten für Stabilität
         lat_str = str(round(self.current_lat, 8))
         lon_str = str(round(self.current_lon, 8))
-        agps = "AGPS: On"
+        agps = "AOP: On"
         # HDOP Simulation: ca 0.9 (sehr gut)
         hdop = str(round(random.uniform(0.7, 1.1), 2))
         
@@ -131,9 +134,10 @@ class ChaosSimulator:
 
     def _buffer_gps_point(self):
         """Puffert den aktuellen GPS-Punkt für die Session-Daten (inkl. HDOP)."""
-        timestamp = time.time()
+        # Simulierte Timestamps (1s-Abstände), nicht Echtzeit
+        timestamp = self._sim_start_real + self.sim_clock
         sats = random.randint(12, 18)
-        wifi_dbm = random.randint(-65, -40) # Besseres Wifi im Simulator
+        wifi_dbm = random.randint(-65, -40)
         hdop = random.uniform(0.7, 1.0)
         self.gps_buffer.append(
             f"{self.current_lat:.8f},{self.current_lon:.8f},{timestamp:.3f},{sats},{wifi_dbm},{hdop:.2f}"
@@ -192,17 +196,16 @@ class ChaosSimulator:
         logger.info("[Simulator] Simulations-Loop gestartet.")
         
         while self.running:
-            # Laufzeit-Check (max 10 Minuten)
-            if time.time() - self.start_time > 600:
-                logger.info("[Simulator] Maximale Laufzeit von 10 Min erreicht, stoppe automatisch.")
+            # Laufzeit-Check (max 10 Min simulierte Zeit)
+            if self.sim_clock > 600:
+                logger.info(f"[Simulator] 10 Min simulierte Zeit erreicht (Echtzeit: {time.time() - self.start_time:.0f}s), stoppe.")
                 break
 
             # Dynamische Geschwindigkeit: Variiert leicht um die Basis
-            # Langsamer in "Kurven" (nach Kollision)
             self.speed_ms = self.base_speed * random.uniform(0.8, 1.2)
 
-            # Berechne potentielle neue Position
-            distance_to_travel = self.speed_ms * self.update_interval
+            # Berechne potentielle neue Position (basierend auf sim_interval, nicht wall_interval)
+            distance_to_travel = self.speed_ms * self.sim_interval
             new_lat, new_lon = self.calculate_new_position(
                 self.current_lat, 
                 self.current_lon, 
@@ -226,6 +229,7 @@ class ChaosSimulator:
             # Keine Kollision -> weiterfahren
             self.current_lat = new_lat
             self.current_lon = new_lon
+            self.sim_clock += self.sim_interval
             
             # GPS-Status via MQTT senden
             try:
@@ -237,13 +241,15 @@ class ChaosSimulator:
             # Gelegentlich Problem simulieren
             self._check_simulate_problem()
                 
-            time.sleep(self.update_interval)
+            time.sleep(self.wall_interval)
 
         # Cleanup am Ende (Timeout oder Stop)
+        logger.info(f"[Simulator] Simulation beendet, {len(self.gps_buffer)} Punkte gesammelt.")
         self._send_session_data()
         self._publish_status("recording stopped")
-        logger.info(f"[Simulator] Simulation beendet, {len(self.gps_buffer)} Punkte verarbeitet.")
         self.gps_buffer = []
+        self.running = False
+        logger.info("[Simulator] Cleanup abgeschlossen, running=False.")
 
     def start(self):
         """Startet die Simulation."""
@@ -259,6 +265,8 @@ class ChaosSimulator:
             self.heading = random.uniform(0, 360)
             self.gps_buffer = []
             self._stall_counter = 0
+            self.sim_clock = 0.0
+            self._sim_start_real = time.time()
             
             self.running = True
             self.start_time = time.time()

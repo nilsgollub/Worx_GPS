@@ -84,6 +84,69 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [
 
 logger = logging.getLogger(__name__)
 
+# --- Centralized Log Collector ---
+class LogCollector:
+    """Sammelt und puffert Logs von verschiedenen Quellen."""
+    def __init__(self, max_logs=1000):
+        self.max_logs = max_logs
+        self.logs = []
+        self.lock = threading.Lock()
+        
+    def add_log(self, level, message, source="webui", timestamp=None):
+        """Fügt einen Log-Eintrag hinzu."""
+        if timestamp is None:
+            timestamp = datetime.now().isoformat()
+        
+        log_entry = {
+            "timestamp": timestamp,
+            "level": level,
+            "source": source,
+            "message": message
+        }
+        
+        with self.lock:
+            self.logs.append(log_entry)
+            # Begrenze die Anzahl der Logs im Speicher
+            if len(self.logs) > self.max_logs:
+                self.logs = self.logs[-self.max_logs:]
+    
+    def get_logs(self, level_filter=None, source_filter=None, limit=100):
+        """Gibt die letzten Logs zurück, optional gefiltert."""
+        with self.lock:
+            logs = self.logs.copy()
+        
+        # Filter anwenden
+        if level_filter:
+            logs = [log for log in logs if log["level"] == level_filter]
+        if source_filter:
+            logs = [log for log in logs if log["source"] == source_filter]
+        
+        # Begrenzen und neueste zuerst
+        return logs[-limit:] if logs else []
+
+# Globaler Log Collector
+log_collector = LogCollector()
+
+# Custom Handler der Logs zum Collector weiterleitet
+class WebUILogHandler(logging.Handler):
+    def __init__(self, collector):
+        super().__init__()
+        self.collector = collector
+    
+    def emit(self, record):
+        try:
+            level = record.levelname
+            message = self.format(record)
+            source = getattr(record, 'source', 'webui')
+            self.collector.add_log(level, message, source)
+        except Exception:
+            self.handleError(record)
+
+# WebUILogHandler zum Root Logger hinzügen
+webui_handler = WebUILogHandler(log_collector)
+webui_handler.setLevel(logging.DEBUG)
+logging.getLogger().addHandler(webui_handler)
+
 
 
 # --- Home Assistant Ingress Middleware ---
@@ -833,6 +896,95 @@ def ha_polling_loop():
             
         time.sleep(30) # Alle 30 Sekunden pollen
 
+# --- Logs API ---
+@app.route('/api/logs')
+def api_logs():
+    """Gibt die letzten Logs zurück."""
+    level_filter = request.args.get('level')
+    source_filter = request.args.get('source')
+    limit = int(request.args.get('limit', 100))
+    
+    logs = log_collector.get_logs(
+        level_filter=level_filter,
+        source_filter=source_filter,
+        limit=limit
+    )
+    
+    return jsonify({
+        "status": "success",
+        "logs": logs,
+        "total": len(log_collector.logs)
+    })
+
+@app.route('/api/logs/sources')
+def api_log_sources():
+    """Gibt alle verfügbaren Log-Quellen zurück."""
+    with log_collector.lock:
+        sources = list(set(log["source"] for log in log_collector.logs))
+    return jsonify({
+        "status": "success",
+        "sources": sorted(sources)
+    })
+
+# --- Database Reset API ---
+@app.route('/api/database/reset', methods=['POST'])
+def api_database_reset():
+    """Setzt die Datenbank zurück (löscht alle Mähsessions)."""
+    if not data_service:
+        return jsonify({"status": "error", "message": "DataService nicht verfügbar"}), 500
+    
+    # Prüfe ob Geofences auch gelöscht werden sollen
+    include_geofences = request.json.get('include_geofences', False) if request.is_json else False
+    
+    try:
+        # Backup-Info vor dem Löschen
+        all_sessions = data_service.data_manager.load_all_mow_data()
+        session_count = len(all_sessions)
+        geofence_count = 0
+        
+        if include_geofences:
+            geofences = data_service.data_manager.get_geofences()
+            geofence_count = len(geofences)
+        
+        # Datenbank zurücksetzen
+        data_service.data_manager.reset_database(include_geofences=include_geofences)
+        
+        # Interne Puffer leeren
+        data_service._maehvorgang_data.clear()
+        data_service._alle_maehvorgang_data = data_service.data_manager.load_all_mow_data()
+        
+        # Heatmaps löschen
+        heatmaps_dir = data_service.heatmaps_dir
+        if heatmaps_dir.exists():
+            for html_file in heatmaps_dir.glob("*.html"):
+                try:
+                    html_file.unlink()
+                except Exception:
+                    pass
+            for png_file in heatmaps_dir.glob("*.png"):
+                try:
+                    png_file.unlink()
+                except Exception:
+                    pass
+        
+        # Erfolgsmeldung zusammenbauen
+        parts = [f"{session_count} Sessions"]
+        if include_geofences:
+            parts.append(f"{geofence_count} Geofences")
+        
+        logger.warning(f"[API] Datenbank zurückgesetzt: {', '.join(parts)} gelöscht.")
+        
+        return jsonify({
+            "status": "success", 
+            "message": f"Datenbank erfolgreich zurückgesetzt. {', '.join(parts)} wurden gelöscht.",
+            "deleted_sessions": session_count,
+            "deleted_geofences": geofence_count if include_geofences else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"[API] Fehler beim Datenbank-Reset: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Fehler: {str(e)}"}), 500
+
 # --- Simulator API ---
 simulator_instance = None
 
@@ -894,6 +1046,24 @@ if __name__ == '__main__':
         mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
 
         mqtt_service.set_gps_update_callback(lambda payload: data_service.handle_gps_data(payload))
+        
+        # Log-Callback für Pi-Logs
+        def handle_pi_logs(payload):
+            try:
+                # Erwarte JSON: {"level": "INFO", "message": "...", "timestamp": "..."}
+                import json
+                log_data = json.loads(payload)
+                log_collector.add_log(
+                    level=log_data.get("level", "INFO"),
+                    message=log_data.get("message", ""),
+                    source="pi_gps_rec",
+                    timestamp=log_data.get("timestamp")
+                )
+            except json.JSONDecodeError:
+                # Fallback: plain text als INFO-Log
+                log_collector.add_log("INFO", payload, "pi_gps_rec")
+        
+        mqtt_service.set_logs_update_callback(handle_pi_logs)
 
         mqtt_service.connect()
 

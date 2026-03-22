@@ -264,6 +264,29 @@ class DataManager:
         except Exception as e:
             logger.error(f"Fehler beim Löschen der Session {filename}: {e}")
             return False
+
+    def reset_database(self, include_geofences=False):
+        """Setzt die gesamte Datenbank zurück (löscht alle Mähsessions)."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Mähsessions löschen
+                cursor.execute("DELETE FROM mow_sessions")
+                cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'mow_sessions'")
+                
+                # Optional auch Geofences löschen
+                if include_geofences:
+                    cursor.execute("DELETE FROM geofences")
+                    cursor.execute("DELETE FROM sqlite_sequence WHERE name = 'geofences'")
+                    logger.info("Datenbank zurückgesetzt: Sessions und Geofences gelöscht.")
+                else:
+                    logger.info("Datenbank zurückgesetzt: Nur Mähsessions gelöscht (Geofences erhalten).")
+                
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Fehler beim Zurücksetzen der Datenbank: {e}")
+            raise
     # Geofencing Methoden
     def get_geofences(self):
         """Lädt alle Geofences aus der Datenbank."""

@@ -206,7 +206,7 @@ const LiveMapWidget = ({ socket, height = '400px' }) => {
         icon: mowerIcon,
         rotationAngle: 0,
         rotationOrigin: 'center center'
-      }).addTo(mapInstanceRef.current).bindPopup("Aktuelle Position").openPopup();
+      }).addTo(mapInstanceRef.current);
       
       startInterpolation();
     } else {

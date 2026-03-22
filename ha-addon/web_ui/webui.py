@@ -833,6 +833,65 @@ def ha_polling_loop():
             
         time.sleep(30) # Alle 30 Sekunden pollen
 
+# --- Database Reset API ---
+@app.route('/api/database/reset', methods=['POST'])
+def api_database_reset():
+    """Setzt die Datenbank zurück (löscht alle Mähsessions)."""
+    if not data_service:
+        return jsonify({"status": "error", "message": "DataService nicht verfügbar"}), 500
+    
+    # Prüfe ob Geofences auch gelöscht werden sollen
+    include_geofences = request.json.get('include_geofences', False) if request.is_json else False
+    
+    try:
+        # Backup-Info vor dem Löschen
+        all_sessions = data_service.data_manager.load_all_mow_data()
+        session_count = len(all_sessions)
+        geofence_count = 0
+        
+        if include_geofences:
+            geofences = data_service.data_manager.get_geofences()
+            geofence_count = len(geofences)
+        
+        # Datenbank zurücksetzen
+        data_service.data_manager.reset_database(include_geofences=include_geofences)
+        
+        # Interne Puffer leeren
+        data_service._maehvorgang_data.clear()
+        data_service._alle_maehvorgang_data = data_service.data_manager.load_all_mow_data()
+        
+        # Heatmaps löschen
+        heatmaps_dir = data_service.heatmaps_dir
+        if heatmaps_dir.exists():
+            for html_file in heatmaps_dir.glob("*.html"):
+                try:
+                    html_file.unlink()
+                except Exception:
+                    pass
+            for png_file in heatmaps_dir.glob("*.png"):
+                try:
+                    png_file.unlink()
+                except Exception:
+                    pass
+        
+        # Erfolgsmeldung zusammenbauen
+        parts = [f"{session_count} Sessions"]
+        if include_geofences:
+            parts.append(f"{geofence_count} Geofences")
+        
+        logger.warning(f"[API] Datenbank zurückgesetzt: {', '.join(parts)} gelöscht.")
+        
+        return jsonify({
+            "status": "success", 
+            "message": f"Datenbank erfolgreich zurückgesetzt. {', '.join(parts)} wurden gelöscht.",
+            "deleted_sessions": session_count,
+            "deleted_geofences": geofence_count if include_geofences else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"[API] Fehler beim Datenbank-Reset: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Fehler: {str(e)}"}), 500
+
 # --- Simulator API ---
 simulator_instance = None
 

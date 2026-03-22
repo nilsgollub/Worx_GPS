@@ -17,6 +17,7 @@ MQTT_CONFIG = {
     "topic_gps": os.getenv("MQTT_TOPIC_GPS"),
     "topic_status": os.getenv("MQTT_TOPIC_STATUS"),
     "topic_control": os.getenv("MQTT_TOPIC_CONTROL"),
+    "topic_logs": os.getenv("MQTT_TOPIC_LOGS"),
     # NEU: Status Intervall hinzugefügt (aus vorheriger main_loop Logik)
     "status_interval": int(os.getenv("MQTT_STATUS_INTERVAL", 5))
 }
@@ -105,7 +106,7 @@ HEATMAP_CONFIG = {
         "radius": 0,
         "blur": 0,
     },
-    # --- NEU: WiFi Signalstärke Karte ---
+    # --- WiFi Signalstärke (Letzte 10 Sessions) ---
     "wifi_heatmap": {
         "output": "heatmaps/wifi.html",
         "png_output": "heatmaps/wifi.png",
@@ -113,12 +114,41 @@ HEATMAP_CONFIG = {
         "path_weight": 4.0,
         "path_opacity": 0.85,
         "show_start_end_markers": False,
-        "visualize_wifi_path": True, # Neuer Flag für Wifi
-        "wifi_colormap_colors": ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'], # Rot (-90), Gelb (-80), Hellgrün (-70), Dunkelgrün (-60)
-        "wifi_colormap_index": [-85, -75, -65], # Schwellenwerte für dBm
+        "visualize_wifi_path": True,
+        "wifi_colormap_colors": ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'],
+        "wifi_colormap_index": [-85, -75, -65],
         "wifi_legend_caption": "WiFi Signalstärke (dBm)"
+    },
+    # --- Kumulierte GPS-Qualität (alle Sessions) ---
+    "quality_kumuliert": {
+        "output": "heatmaps/quality_kumuliert.html",
+        "png_output": "heatmaps/quality_kumuliert.png",
+        "generate_png": False,
+        "radius": 15,
+        "blur": 20,
+        "show_start_end_markers": False,
+        "visualize_quality_path": True,
+        "quality_colormap_colors": ['#d7191c', '#fdae61', '#ffffbf', '#a6d96a', '#1a9641'],
+        "quality_colormap_index": [4, 6, 8, 10],
+        "quality_legend_caption": "GPS Qualität kumuliert (Satelliten)",
+        "use_heatmap_with_time": False,
+        "use_satellite_weight": False,
+        "path_weight": 2.0,
+        "path_opacity": 0.6,
+    },
+    # --- Kumulierte WiFi-Signalstärke (alle Sessions) ---
+    "wifi_kumuliert": {
+        "output": "heatmaps/wifi_kumuliert.html",
+        "png_output": "heatmaps/wifi_kumuliert.png",
+        "generate_png": False,
+        "radius": 15,
+        "blur": 20,
+        "show_start_end_markers": False,
+        "visualize_wifi_path": True,
+        "wifi_colormap_colors": ['#d7191c', '#fdae61', '#a6d96a', '#1a9641'],
+        "wifi_colormap_index": [-85, -75, -65],
+        "wifi_legend_caption": "WiFi Signalstärke kumuliert (dBm)",
     }
-    # --- ENDE NEU ---
 }
 
 # Recorder (unverändert)

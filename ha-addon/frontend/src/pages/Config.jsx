@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Settings, Save } from 'lucide-react';
+import { Settings, Save, Trash2, AlertTriangle } from 'lucide-react';
 
 export default function Config() {
   const [config, setConfig] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [includeGeofences, setIncludeGeofences] = useState(false);
 
   useEffect(() => {
     axios.get('/api/config').then(res => {
@@ -37,6 +39,28 @@ export default function Config() {
       alert('Fehler beim Speichern');
     } finally {
       setSaving(false);
+    }
+  }
+
+  const handleDatabaseReset = async () => {
+    const geofenceText = includeGeofences ? ' und alle Geofences' : '';
+    const warningText = `⚠️ Wirklich alle Mähsessions${geofenceText} löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden. Alle Heatmaps werden ebenfalls gelöscht.`;
+    
+    if (!confirm(warningText)) {
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const res = await axios.post('/api/database/reset', { include_geofences: includeGeofences });
+      alert(res.data.message);
+      // Seite neu laden um Statistiken zu aktualisieren
+      window.location.reload();
+    } catch(err) {
+      const message = err.response?.data?.message || 'Fehler beim Zurücksetzen der Datenbank';
+      alert(message);
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -124,10 +148,49 @@ export default function Config() {
           </div>
         </div>
 
-        <div style={{marginTop: 24, textAlign: 'right'}}>
+        <div style={{marginTop: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+          <button 
+            type="button" 
+            className="btn btn-danger" 
+            onClick={handleDatabaseReset}
+            disabled={resetting}
+            style={{background: 'rgba(218,54,51,0.2)', border: '1px solid rgba(218,54,51,0.5)', color: '#ff7b72'}}
+          >
+            <Trash2 size={18}/> {resetting ? 'Lösche...' : 'Datenbank zurücksetzen'}
+          </button>
+          
           <button type="submit" className="btn btn-primary" disabled={saving}>
              <Save size={18}/> {saving ? 'Speichert...' : 'Einstellungen speichern'}
           </button>
+        </div>
+
+        <div style={{marginTop: 16, padding: 12, background: 'rgba(255,187,51,0.1)', border: '1px solid rgba(255,187,51,0.3)', borderRadius: 8}}>
+          <div style={{display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8}}>
+            <AlertTriangle size={16} color="#ffb347"/>
+            <small style={{color: '#ffb347', fontWeight: 'bold'}}>
+              Datenbank zurücksetzen:
+            </small>
+          </div>
+          
+          <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8}}>
+            <input 
+              type="checkbox" 
+              id="includeGeofences"
+              checked={includeGeofences}
+              onChange={(e) => setIncludeGeofences(e.target.checked)}
+              style={{margin: 0}}
+            />
+            <label htmlFor="includeGeofences" style={{color: '#ffb347', margin: 0, cursor: 'pointer'}}>
+              Auch Geofences löschen
+            </label>
+          </div>
+          
+          <small style={{color: '#ffb347', display: 'block'}}>
+            {includeGeofences 
+              ? 'Löscht alle Mähsessions, Geofences und Heatmaps. Nur Konfiguration bleibt erhalten.'
+              : 'Löscht alle Mähsessions und Heatmaps. Geofences und Konfiguration bleiben erhalten.'
+            }
+          </small>
         </div>
       </form>
     </div>

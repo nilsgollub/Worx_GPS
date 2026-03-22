@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { HashRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 
-import { RadioTower, Map, Activity, Settings, Server, Menu, X, Power, PowerOff, Shield, Navigation } from 'lucide-react';
+import { RadioTower, Map, Activity, Settings, Server, Menu, X, Power, PowerOff, Shield, Navigation, FileText } from 'lucide-react';
 
 import Dashboard from './pages/Dashboard';
 import Maps from './pages/Maps';
@@ -10,6 +10,7 @@ import Geofence from './pages/Geofence';
 import Live from './pages/Live';
 import Config from './pages/Config';
 import Stats from './pages/Stats';
+import Logs from './pages/Logs';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -31,6 +32,7 @@ function Sidebar() {
     { to: '/geofence', icon: <Shield size={20} />, label: 'Zonen-Editor' },
     { to: '/maps', icon: <Map size={20} />, label: 'Historie' },
     { to: '/stats', icon: <RadioTower size={20} />, label: 'Statistiken' },
+    { to: '/logs', icon: <FileText size={20} />, label: 'Logs' },
     { to: '/config', icon: <Settings size={20} />, label: 'Einstellungen' },
   ];
 
@@ -72,10 +74,11 @@ function PageTitle() {
   const location = useLocation();
   const titles = {
     '/': 'Dashboard',
-    '/live': 'Live-Radar (Echtzeit)',
-    '/maps': 'Historie & Heatmaps',
-    '/geofence': 'Zonen-Editor (Geofencing)',
+    '/live': 'Live-Radar',
+    '/geofence': 'Zonen-Editor',
+    '/maps': 'Historie & Karten',
     '/stats': 'Statistiken & Analyse',
+    '/logs': 'System Logs',
     '/config': 'System-Einstellungen'
   };
   return <h1 style={{fontSize: '1.8rem', fontWeight: 600}}>{titles[location.pathname] || 'Übersicht'}</h1>;
@@ -127,6 +130,7 @@ function App() {
             <Route path="/maps" element={<Maps />} />
             <Route path="/geofence" element={<Geofence />} />
             <Route path="/stats" element={<Stats />} />
+            <Route path="/logs" element={<Logs />} />
             <Route path="/config" element={<Config />} />
           </Routes>
         </main>
