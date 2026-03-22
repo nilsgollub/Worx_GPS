@@ -18,15 +18,18 @@ ports:
   5001/tcp: 5001
 panel_icon: "mdi:robot-mower"
 panel_title: "Worx GPS"
+homeassistant_api: true
 options:
   debug_logging: false
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
   mqtt_user: ""
   mqtt_password: ""
+  ha_mower_entity: ""
 schema:
   debug_logging: bool
   mqtt_host: str
   mqtt_port: int
   mqtt_user: str?
   mqtt_password: password?
+  ha_mower_entity: str?

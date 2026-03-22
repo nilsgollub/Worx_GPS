@@ -50,6 +50,14 @@ export HEATMAPS_DIR="/data/heatmaps"
 export DB_PATH="/data/worx_gps.db"
 export FLASK_PORT=5001
 
+# 3b. Home Assistant API für Autopilot
+# SUPERVISOR_TOKEN wird automatisch von HA gesetzt
+export HA_URL="http://supervisor/core"
+export HA_TOKEN="${SUPERVISOR_TOKEN}"
+HA_MOWER_ENTITY=$(jq --raw-output '.ha_mower_entity // ""' $CONFIG_PATH)
+export HA_MOWER_ENTITY=$HA_MOWER_ENTITY
+echo "[System] HA Mower Entity: '${HA_MOWER_ENTITY:-nicht gesetzt}'"
+
 if [ "$DEBUG_LOGGING" = "true" ]; then
     echo "[System] Debug-Logging AKTIVIERT."
     export LOG_LEVEL="DEBUG"
