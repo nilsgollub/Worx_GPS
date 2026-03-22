@@ -1,5 +1,5 @@
 name: "Worx GPS Monitor"
-version: "2.0.0"
+version: "2.1.0"
 slug: "worx_gps_monitor"
 description: "Echtzeit-Tracking und Heatmap-Visualisierung für Worx Landroid Mäher."
 url: "https://github.com/nilsgollub/Worx_GPS"

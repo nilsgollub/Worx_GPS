@@ -14,9 +14,8 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from dotenv import load_dotenv
-
-load_dotenv(override=True)
+# Lade .env (falls vorhanden), aber überschreibe keine bereits gesetzten System-Umgebungsvariablen (wie in HA)
+load_dotenv(override=False)
 
 logger = logging.getLogger(__name__)
 
@@ -97,12 +96,14 @@ class WorxCloudService:
         self._thread.start()
 
         # Warte auf Verbindung (max 30s)
-        for _ in range(60):
+        for i in range(120): # Erhöht auf 60s
             if self._connected:
                 return True
+            if i % 10 == 0:
+                logger.debug(f"[WorxCloud] Warte auf Verbindung ({i/2}s)...")
             time.sleep(0.5)
 
-        logger.error("[WorxCloud] Timeout beim Verbinden mit der Worx Cloud.")
+        logger.error("[WorxCloud] Timeout beim Verbinden mit der Worx Cloud. Überprüfen Sie ihre Log-Meldungen.")
         return False
 
     def stop(self):
@@ -163,22 +164,34 @@ class WorxCloudService:
         from pyworxcloud import WorxCloud
         from pyworxcloud.events import LandroidEvent
 
-        logger.info(f"[WorxCloud] Verbinde als '{self._email}' (Type: {self._cloud_type})...")
+        mask_email = f"{self._email[:3]}***@{self._email.split('@')[-1]}" if '@' in self._email else "***"
+        logger.info(f"[WorxCloud] Verbinde als '{mask_email}' (Type: {self._cloud_type})...")
+
+        if not self._email or not self._password:
+            logger.error("[WorxCloud] Email oder Passwort fehlen im Hintergrund-Thread!")
+            return
 
         self._cloud = WorxCloud(self._email, self._password, self._cloud_type)
 
         try:
+            logger.debug("[WorxCloud] Führe Authentifizierung durch...")
             await self._cloud.authenticate()
             logger.info("[WorxCloud] Authentifizierung erfolgreich.")
         except Exception as e:
-            logger.error(f"[WorxCloud] Authentifizierung fehlgeschlagen: {e}")
+            logger.error(f"[WorxCloud] Authentifizierung fehlgeschlagen: {e}", exc_info=True)
             return
 
         try:
+            logger.debug("[WorxCloud] Suche Mäher im Account...")
             connected = await self._cloud.connect()
             if not connected:
-                logger.error("[WorxCloud] Keine Mäher gefunden oder Verbindung fehlgeschlagen.")
+                logger.error("[WorxCloud] Keine Mäher gefunden oder Verbindung zur API/MQTT fehlgeschlagen.")
                 return
+            
+            self._device_name = self._cloud.devices[0].name if self._cloud.devices else "Unbekannt"
+            self._serial = self._cloud.devices[0].serial if self._cloud.devices else "N/A"
+            logger.info(f"[WorxCloud] Mäher verbunden: {self._device_name} ({self._serial})")
+            self._connected = True
             logger.info(f"[WorxCloud] Verbunden. {len(self._cloud.devices)} Gerät(e) gefunden.")
         except Exception as e:
             logger.error(f"[WorxCloud] Verbindungsfehler: {e}", exc_info=True)
