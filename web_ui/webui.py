@@ -1141,7 +1141,8 @@ if __name__ == '__main__':
         def on_cloud_status(status_dict):
             if status_manager:
                 display_text = status_dict.get('status_text', 'Unbekannt')
-                status_manager.update_ha_mower_status(display_text)
+                imu = status_dict.get('orientation')
+                status_manager.update_ha_mower_status(display_text, imu_data=imu)
             
             # IMU-Daten über MQTT an Worx_GPS.py senden (für Sensor-Fusion)
             imu = status_dict.get('orientation')

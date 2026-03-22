@@ -131,6 +131,21 @@ export default function Dashboard() {
               {mower.lat?.toFixed(6) || 'N/A'}, {mower.lon?.toFixed(6) || 'N/A'}
             </span>
           </div>
+
+          <div className="status-row" style={{borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: 8, marginTop: 4}}>
+            <span className="text-muted flex-between" style={{gap:8}}>IMU Sensoren:</span>
+            <div className="flex-center" style={{gap: 6}}>
+              <span title="Pitch (Neigung)" className="badge" style={{background: 'rgba(255,255,255,0.1)'}}>P: {mower.imu_pitch || 0}°</span>
+              <span title="Roll (Rollen)" className="badge" style={{background: 'rgba(255,255,255,0.1)'}}>R: {mower.imu_roll || 0}°</span>
+              <span title="Yaw (Gieren)" className="badge" style={{background: 'rgba(255,255,255,0.1)'}}>Y: {mower.imu_yaw || 0}°</span>
+            </div>
+          </div>
+          <div className="status-row">
+            <span className="text-muted flex-between" style={{gap:8}}>Sensor Fusion:</span>
+            <span className={`badge ${mower.imu_yaw !== undefined && mower.imu_yaw !== 0 ? 'success' : 'warning'}`}>
+              {mower.imu_yaw !== undefined && mower.imu_yaw !== 0 ? 'Aktiv (GPS + IMU)' : 'Nur GPS'}
+            </span>
+          </div>
           
           <div className="status-row text-small text-muted mt-2">
             Zuletzt aktualisiert: {mower.last_update || '-'}
