@@ -26,7 +26,9 @@ Im Add-on-Reiter **Konfiguration** die MQTT-Daten eintragen:
 | `mqtt_port` | `1883` | MQTT-Port |
 | `mqtt_user` | (leer) | MQTT-Benutzer |
 | `mqtt_password` | (leer) | MQTT-Passwort |
-| `ha_mower_entity` | (leer) | HA Entity-ID des Mähers (z.B. `lawn_mower.m`) |
+| `worx_email` | (leer) | Deine Worx Cloud Email |
+| `worx_password` | (leer) | Dein Worx Cloud Passwort |
+| `worx_cloud_type` | `worx` | 'worx' (EU) oder 'landroid' (US/CN) |
 | `debug_logging` | `false` | Ausführliche Logs |
 
 ---
@@ -36,25 +38,24 @@ Im Add-on-Reiter **Konfiguration** die MQTT-Daten eintragen:
 - **Ingress-UI** - Direkt im HA-Panel erreichbar ("Benutzeroberfläche öffnen")
 - **Dashboard** - Mäher-Status, GPS-Qualität, Simulator-Steuerung
 - **Live-Karte** - Echtzeit-Position auf Satelliten-/OSM-Layer mit Worx-Icon
-- **Zonen-Editor** - Mähzonen und Verbotszonen auf der Karte zeichnen
-- **Simulator** - ChaosSimulator zum Testen ohne echten Mäher
-- **Auto-Heatmaps** - 3 Karten werden nach jeder Session automatisch generiert
-- **HA-Autopilot** - Pollt Mäher-Status und steuert Aufzeichnung automatisch
-- **Zentrales Logging** - Live-Logs von WebUI und Pi mit Filterung
+- **Auto-Heatmaps** — 3 Karten werden nach jeder Session automatisch generiert
+- **Full Control** — Start, Pause, Home und Kantenschnitt direkt aus dem Dashboard
+- **Zentrales Logging** — Live-Logs von WebUI und Pi mit Filterung
+- **Direkt-Autopilot** — Nutzt Echtzeit-Events der Cloud (MQTT) statt Polling
 
 ---
 
 ## Autopilot
 
-Der Autopilot pollt alle 30 Sekunden den Mäher-Status über die HA Supervisor API und steuert die GPS-Aufnahme automatisch.
+Der Autopilot nutzt die Echtzeit-MQTT-Verbindung zur Worx Cloud. Sobald der Mäher den Status auf "Mäht" oder "Startet" ändert, wird die GPS-Aufnahme auf dem Raspberry Pi automatisch gestartet.
 
-**Voraussetzung:** `ha_mower_entity` muss in der Add-on-Konfiguration gesetzt sein (z.B. `lawn_mower.m`). Die Entity findet man unter **Einstellungen → Geräte & Dienste → Landroid**.
+**Voraussetzung:** Deine Worx-Zugangsdaten müssen in der Konfiguration hinterlegt sein.
 
-| Mäher-Status | Aktion |
-|---|---|
-| `mowing`, `starting`, `edge cutting`, `searching zone`, `at home` | ▶️ Aufnahme starten |
-| `docked`, `charging`, `idle`, `rain delay`, `paused`, `returning` | ⏹️ Aufnahme stoppen |
-| `error`, `trapped`, `locked`, `manual stop`, `out of bounds` | ⚠️ Problem melden |
+| Mäher-Kategorie | Aktion | Beschreibung |
+|---|---|---|
+| `mowing`, `starting` | ▶️ START_REC | Aufnahme beginnt |
+| `idle`, `home`, `paused` | ⏹️ STOP_REC | Aufnahme wird abgeschlossen |
+| `error` | ⚠️ PROBLEM | Markierung in der Problem-Heatmap |
 
 ---
 

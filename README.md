@@ -12,16 +12,16 @@ Echtzeit-Tracking, Analyse und Visualisierung eines Worx Landroid Mähroboters. 
 │  + u-blox NEO-7M    │  worx/gps     │  (Flask + React Frontend)    │
 │                     │  worx/status   │                              │
 │  Worx_GPS_Rec.py    │◀──────────────│  webui.py (Backend)          │
-│  gps_handler.py     │  worx/control  │  data_service.py (Pipeline)  │
-│  data_recorder.py   │               │  heatmap_generator.py        │
+│  gps_handler.py     │  worx/imu      │  data_service.py (Pipeline)  │
+│  data_recorder.py   │  worx/control  │  worx_cloud_service.py       │
 └─────────────────────┘               └──────────────────────────────┘
 ```
 
-**1. Mäher-Einheit (Raspberry Pi)** — Erfasst GPS via NMEA, sendet per MQTT. Läuft als `systemd`-Dienst.
+**1. Mäher-Einheit (Raspberry Pi)** — Erfasst GPS via NMEA, sendet per MQTT. Nutzt den *Pedestrian Mode* für maximale Genauigkeit bei niedrigen Geschwindigkeiten.
 
-**2. Add-on / Backend (Flask + React)** — Empfängt GPS-Daten, verarbeitet sie durch die Processing-Pipeline, speichert Sessions in SQLite und generiert Heatmaps automatisch.
+**2. Add-on / Backend (Flask + React)** — Empfängt GPS-Daten und integriert sich direkt mit der **Worx Cloud API** via `pyworxcloud`. Verarbeitet Daten durch eine 5-stufige Pipeline (inkl. IMU Sensor-Fusion).
 
-**3. Frontend (React + Leaflet)** — Dashboard, Live-Karte mit Satelliten-/OSM-Layer, Zonen-Editor, Simulator-Steuerung.
+**3. Frontend (React + Leaflet)** — Dashboard mit Live-Status (inkl. 3D-Orientierung), Karte mit Satellitenansicht, Zonen-Editor und voller Mäher-Fernsteuerung.
 
 ---
 
@@ -50,7 +50,7 @@ Worx_GPS/
 │   ├── mqtt_service.py      # MQTT-Wrapper für WebUI
 │   ├── status_manager.py    # Mäher-Status-Verwaltung
 │   ├── simulator.py         # ChaosSimulator
-│   ├── home_assistant_service.py  # HA REST-API Client
+│   ├── worx_cloud_service.py # Direkter Worx-Cloud Client (MQTT/Websocket)
 │   └── system_monitor.py    # Pi-Systeminfo (CPU, Temp)
 │
 ├── frontend/                # React-App (Vite + Bootstrap + Leaflet)
@@ -99,7 +99,7 @@ Die zentrale Funktion `process_gps_data()` in `processing.py` verarbeitet Rohdat
 2. **Geofence-Filter** — Nur Punkte in erlaubten Zonen, keine in Verbotszonen
 3. **Drift-Sperre** — Unterdrückt Zappeln bei Stillstand (< 0.4m Bewegung)
 4. **Speed-Outlier** — Entfernt Sprünge > 1.5 m/s (unrealistisch für Mäher)
-5. **Kalman-Filter** — Glättet den Pfad für saubere Heatmaps
+5. **Sensor-Fusion & Kalman-Filter** — Glättet den Pfad und nutzt Cloud-IMU-Daten (Yaw) zur Richtungsstabilisierung.
 
 ---
 
@@ -113,6 +113,9 @@ MQTT_PORT=1883
 MQTT_USER=dein_user
 MQTT_PASSWORD=dein_passwort
 GPS_SERIAL_PORT=/dev/ttyACM0  # Nur auf dem Pi relevant
+WORX_EMAIL=dein@email.com      # Für WebUI / Add-on
+WORX_PASSWORD=dein_passwort   # Für WebUI / Add-on
+WORX_CLOUD_TYPE=worx          # 'worx' (EU) oder 'landroid' (US/CN)
 TEST_MODE=FALSE               # TRUE = Fake-GPS für Entwicklung
 ```
 
@@ -151,7 +154,8 @@ POST_PROCESSING_CONFIG = {
   - Aktueller Mähvorgang
   - Letzte 10 Sessions
   - Alle Sessions kumuliert
-- **HA-Autopilot** — Pollt Mäher-Status und steuert Aufzeichnung automatisch
+- **Direkt-Autopilot** — Nutzt Echtzeit-Events der Worx-Cloud (MQTT), um die Aufnahme ohne Polling-Verzögerung zu steuern.
+- **Vollsteuerung** — Befehle (Start, Stop, Home, EdgeCut) und Einstellungen (Zeitplan, Torque, etc.) im Ingress-Dashboard.
 
 ### Konfiguration im Add-on
 
