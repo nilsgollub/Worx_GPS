@@ -75,7 +75,6 @@ from web_ui.status_manager import StatusManager
 
 from web_ui.data_service import DataService
 from web_ui.system_monitor import SystemMonitor
-from web_ui.home_assistant_service import HomeAssistantService
 from web_ui.worx_cloud_service import WorxCloudService
 from web_ui.simulator import ChaosSimulator
 
@@ -1143,6 +1142,17 @@ if __name__ == '__main__':
             if status_manager:
                 display_text = status_dict.get('status_text', 'Unbekannt')
                 status_manager.update_ha_mower_status(display_text)
+            
+            # IMU-Daten über MQTT an Worx_GPS.py senden (für Sensor-Fusion)
+            imu = status_dict.get('orientation')
+            if imu and mqtt_service:
+                import json
+                mqtt_service.publish("worx/imu", json.dumps({
+                    "yaw": imu.get("yaw", 0),
+                    "pitch": imu.get("pitch", 0),
+                    "roll": imu.get("roll", 0),
+                    "timestamp": time.time()
+                }))
         
         worx_cloud_service.set_status_update_callback(on_cloud_status)
         worx_cloud_service.set_mqtt_publish_callback(mqtt_service.publish_command)

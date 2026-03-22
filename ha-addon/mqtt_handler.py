@@ -72,6 +72,7 @@ class MqttHandler:
         self.topic_data = f"{topic_prefix}{MQTT_CONFIG.get('topic_data', 'worx/data')}"
         self.topic_problem = f"{topic_prefix}{MQTT_CONFIG.get('topic_problem', 'worx/problem')}"
         self.topic_gps = f"{topic_prefix}{MQTT_CONFIG.get('topic_gps', 'worx/gps')}"
+        self.topic_imu = f"{topic_prefix}{MQTT_CONFIG.get('topic_imu', 'worx/imu')}"
         self.topic_logs = f"{topic_prefix}{MQTT_CONFIG.get('topic_logs', 'worx/logs')}"
 
         # Client-Setup
@@ -192,7 +193,8 @@ class MqttHandler:
                 topics_to_subscribe = [
                     (self.topic_control, 1),
                     (self.topic_gps, 0),      # WebUI könnte dies auch benötigen, wenn es Rohdaten anzeigen soll
-                    (self.topic_status, 0)
+                    (self.topic_status, 0),
+                    (self.topic_imu, 0)
                 ]
                 logging.debug(f"Verwende Standard-Abonnement-Liste: {topics_to_subscribe}")
             try:

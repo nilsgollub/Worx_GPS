@@ -117,7 +117,7 @@ def filter_by_hdop(gps_data, max_hdop=2.0):
     return filtered
 
 
-def apply_kalman_filter(gps_data, process_noise=0.05, measurement_noise=5.0):
+def apply_kalman_filter(gps_data, process_noise=0.05, measurement_noise=5.0, imu_yaw=None):
     """Wendet einen Kalman-Filter auf die GPS-Daten an."""
     if not gps_data:
         return []
@@ -129,7 +129,7 @@ def apply_kalman_filter(gps_data, process_noise=0.05, measurement_noise=5.0):
 
     filtered_data = []
     for point in gps_data:
-        lat, lon = kf.update(float(point['lat']), float(point['lon']), float(point['timestamp']))
+        lat, lon = kf.update(float(point['lat']), float(point['lon']), float(point['timestamp']), imu_yaw=imu_yaw)
         new_point = point.copy()
         new_point['lat'], new_point['lon'] = lat, lon
         filtered_data.append(new_point)
@@ -183,7 +183,7 @@ def remove_drift_at_standstill(gps_data, min_dist_move=0.4, window_size=5):
             
     return filtered_data
 
-def process_gps_data(gps_data, config, geofences=None):
+def process_gps_data(gps_data, config, geofences=None, latest_imu_data=None):
     """Zentrale Verarbeitungs-Pipeline für GPS-Daten."""
     if not gps_data:
         return []
@@ -218,10 +218,12 @@ def process_gps_data(gps_data, config, geofences=None):
     data = remove_outliers_by_speed(data, config.get('max_speed_mps', 1.5))
 
     # 5. Kalman-Filter zur Glättung
+    imu_yaw = latest_imu_data.get('yaw') if latest_imu_data else None
     data = apply_kalman_filter(
         data,
         process_noise=config.get('kalman_process_noise', 0.05),
-        measurement_noise=config.get('kalman_measurement_noise', 5.0)
+        measurement_noise=config.get('kalman_measurement_noise', 5.0),
+        imu_yaw=imu_yaw
     )
 
     return data
