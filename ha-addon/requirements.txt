@@ -31,3 +31,6 @@ webdriver-manager>=4.0
 requests>=2.31
 pynmea2>=1.19
 pyserial>=3.5
+
+# Worx Cloud API
+pyworxcloud>=6.1

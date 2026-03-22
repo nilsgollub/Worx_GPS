@@ -334,12 +334,61 @@ class SensorFusionService:
         return fused
 ```
 
-### Phase 5: Sensor-Fusion (zusätzlich zu Phase 1-4)
-11. **Cloud-Daten Polling**: Echtzeit `dat`-Payload über pyworxcloud Events empfangen
-12. **IMU-Daten Pipeline**: Orientation-Daten in bestehende GPS-Pipeline einfügen
-13. **Erweiterter Kalman-Filter**: Bestehenden Kalman um IMU-Bewegungsmodell erweitern
-14. **Cloud-GPS Fallback**: Automatischer Wechsel wenn Pi-GPS ausfällt
-15. **Dashboard**: IMU-Visualisierung (3D-Orientierung), Fusion-Qualitätsanzeige
+## Implementation Phases
+
+### Phase 1: Backend Wrapper (WorxCloudService) ✅ COMPLETED
+**Goal:** Replace HomeAssistantService + ha_polling_loop with direct Worx Cloud integration.
+
+#### Phase 1a: Create WorxCloudService ✅
+- [x] Create `web_ui/worx_cloud_service.py` — thread-sicherer Wrapper um pyworxcloud
+- [x] Async background thread for pyworxcloud (Event-Loop in Daemon-Thread)
+- [x] Synchronous wrapper methods for Flask routes (start, stop, pause, home, etc.)
+- [x] Event callbacks for real-time updates (LandroidEvent.DATA_RECEIVED)
+- [x] Autopilot logic (START_REC/STOP_REC/PROBLEM) basierend auf Cloud-Status-Kategorien
+
+#### Phase 1b: Dependencies ✅
+- [x] Add `pyworxcloud>=6.1` to `requirements.txt`
+- [ ] Update Dockerfile (HA add-on) — später
+
+#### Phase 1c: Integration ✅
+- [x] Import and instantiate WorxCloudService in `webui.py`
+- [x] Replace ha_polling_loop startup mit WorxCloudService.start()
+- [x] Add API routes `/api/mower/status`, `/api/mower/command`, `/api/mower/schedule`, `/api/mower/autopilot`
+- [x] Wire callbacks to StatusManager (Frontend-Display) and MQTT (Autopilot-Commands)
+- [x] Remove HA polling thread and HomeAssistantService usage (ersetzt durch Cloud-Events)
+
+#### Phase 1d: Local Test ✅
+- [x] WebUI lokal gestartet (localhost:5001)
+- [x] `/api/mower/status` liefert vollständigen Cloud-Status (Batterie, IMU, RSSI, Statistik, Fehler, Zeitplan)
+- [x] Befehle funktionieren: start → "Mäht", home → "Zurück zur Ladestation"
+- [x] Echtzeit-Updates: Status ändert sich live (z.B. "Sucht Draht" → "Zurück zur Ladestation")
+- [x] Autopilot aktiv: Cloud-Status-Kategorien steuern START_REC/STOP_REC/PROBLEM über MQTT
+
+### Phase 2: Frontend MowerControl Page
+**Goal:** React-Komponente für vollständige Mäher-Steuerung via Cloud-API.
+- [ ] React-Komponente `MowerControl.jsx`
+- [ ] Status-Anzeige (Batterie, IMU, RSSI, Fehler)
+- [ ] Steuer-Buttons (Start, Stop, Pause, Home, SafeHome, EdgeCut, Restart)
+- [ ] Erweiterte Controls (Lock, Torque, RainDelay, Zone, TimeExtension, OTS)
+- [ ] Zeitplan-Anzeige und -Bearbeitung
+- [ ] Autopilot-Schalter und Status-Log
+- [ ] Live-IMU-Visualisierung (3D-Kompass)
+
+### Phase 3: Cleanup & HA Add-on
+**Goal:** Alten HA-Code entfernen und Add-on anpassen.
+- [ ] Remove `home_assistant_service.py` und `ha_polling_loop`
+- [ ] Simplify `status_manager.py` (numeric Cloud-Status statt HA-Text)
+- [ ] Update HA add-on `config.yaml` (Worx credentials)
+- [ ] Update HA add-on `run.sh` (export Worx env vars)
+- [ ] Update HA add-on `Dockerfile` (install pyworxcloud)
+
+### Phase 4: Sensor-Fusion (optional)
+**Goal:** Cloud-IMU mit Pi-GPS für höhere Genauigkeit.
+- [ ] Cloud-Daten Polling: Echtzeit `dat`-Payload über pyworxcloud Events empfangen
+- [ ] IMU-Daten Pipeline: Orientation-Daten in bestehende GPS-Pipeline einfügen
+- [ ] Erweiterter Kalman-Filter: Bestehenden Kalman um IMU-Bewegungsmodell erweitern
+- [ ] Cloud-GPS Fallback: Automatischer Wechsel wenn Pi-GPS ausfällt
+- [ ] Dashboard: IMU-Visualisierung (3D-Orientierung), Fusion-Qualitätsanzeige
 
 ---
 
@@ -347,7 +396,7 @@ class SensorFusionService:
 - [x] ~~Worx-Account-Daten~~: Add-on Config (`.env` / `config.yaml`)
 - [x] ~~Hat dein Landroid ein 4G/GPS-Modul?~~ → **Nein** (WR165E, kein 4G). Cloud-GPS entfällt.
 - [x] ~~Soll HA-Autopilot parallel laufen?~~ → **Nein**, wird komplett durch Cloud-Events ersetzt
-- [ ] Update-Rate der Cloud-Daten: Wie oft sendet der Mäher neue `dat`-Payloads? (Testen!)
+- [x] ~~Update-Rate der Cloud-Daten: Wie oft sendet der Mäher neue `dat`-Payloads?~~ → **Testen!** (Echtzeit-Events, ca. alle 1-3s bei Statusänderungen)
 - [ ] Sensor-Fusion Priorität: Nach Phase 1-4 oder parallel?
 
 ---
