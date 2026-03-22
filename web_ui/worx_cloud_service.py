@@ -14,6 +14,8 @@ import time
 from datetime import datetime
 from typing import Any, Callable, Optional
 
+from dotenv import load_dotenv
+
 # Lade .env (falls vorhanden), aber überschreibe keine bereits gesetzten System-Umgebungsvariablen (wie in HA)
 load_dotenv(override=False)
 
