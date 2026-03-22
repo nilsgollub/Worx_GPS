@@ -75,7 +75,7 @@ from web_ui.status_manager import StatusManager
 
 from web_ui.data_service import DataService
 from web_ui.system_monitor import SystemMonitor
-from web_ui.home_assistant_service import HomeAssistantService
+from web_ui.worx_cloud_service import WorxCloudService
 from web_ui.simulator import ChaosSimulator
 
 
@@ -214,6 +214,8 @@ status_manager = None
 data_service = None
 
 system_monitor = None
+
+worx_cloud_service = None
 
 
 
@@ -845,65 +847,74 @@ def handle_disconnect():
 
     logger.info(f'Web-Client getrennt (SID: {request.sid})')
 
-# --- Home Assistant Wachhund (Autopilot) ---
-def ha_polling_loop():
-    """Wachhund-Thread: Pollt den HA-Status und steuert den Recorder."""
-    logger.info("[HA-Polling] Wachhund-Thread gestartet.")
-    # Service lokal initialisieren (liest .env)
-    ha_service = HomeAssistantService()
-    
-    # Warte kurz, bis die anderen Services (MQTT etc.) bereit sind
-    time.sleep(5)
-    
-    # Registriere HA-Service im StatusManager für Rückkanal-Updates
-    if status_manager and ha_service:
-        status_manager.set_ha_service(ha_service)
-        logger.info("[HA-Polling] HA-Service im StatusManager registriert.")
+# --- Worx Cloud Mäher-API Routen ---
 
-    last_ha_state = None
-    
-    while True:
-        try:
-            current_state = ha_service.get_mower_state()
-            if current_state:
-                # Normalisiere auf kleingeschriebenen Text für Vergleich
-                state_clean = str(current_state).lower()
-                
-                # HA-Meta-Stati ignorieren – keine Autopilot-Aktionen auslösen
-                if state_clean in ('unavailable', 'unknown'):
-                    logger.debug(f"[HA-Polling] HA-Meta-Status '{state_clean}' ignoriert.")
-                    time.sleep(30)
-                    continue
-                
-                # Sende Status an StatusManager (für Anzeige im React Frontend)
-                if status_manager:
-                    status_manager.update_ha_mower_status(current_state)
+@app.route('/api/mower/status')
+def api_mower_status():
+    """Voller Mäher-Status aus der Worx Cloud."""
+    if not worx_cloud_service or not worx_cloud_service.is_connected:
+        return jsonify({"error": "Worx Cloud nicht verbunden"}), 503
+    return jsonify(worx_cloud_service.get_status())
 
-                if state_clean != last_ha_state:
-                    logger.info(f"[HA-Polling] Mäher-Status geändert: {last_ha_state} -> {state_clean}")
-                    
-                    # --- Autopilot Logik ---
-                    # Start-Szenarien
-                    if state_clean in ['mowing', 'starting', 'edge cutting', 'searching zone', 'at home', 'mowing the yard']:
-                        logger.info(f"[HA-Polling] Automatischer Start getriggert durch: {state_clean}")
-                        mqtt_service.publish_command('START_REC')
-                    
-                    # Stop-Szenarien
-                    elif state_clean in ['docked', 'charging', 'idle', 'rain delay', 'paused', 'returning']:
-                        logger.info(f"[HA-Polling] Automatischer Stop getriggert durch: {state_clean}")
-                        mqtt_service.publish_command('STOP_REC')
-                    
-                    # Alarm-Szenarien
-                    elif state_clean in ['error', 'trapped', 'locked', 'manual stop', 'out of bounds', 'wires missing']:
-                        logger.info(f"[HA-Polling] PROBLEM erkannt: {state_clean}")
-                        mqtt_service.publish_command('PROBLEM')
-                        
-                    last_ha_state = state_clean
-            
-        except Exception as e:
-            logger.error(f"[HA-Polling] Fehler im Loop: {e}")
-            
-        time.sleep(30) # Alle 30 Sekunden pollen
+@app.route('/api/mower/command', methods=['POST'])
+def api_mower_command():
+    """Befehl an den Mäher senden."""
+    if not worx_cloud_service or not worx_cloud_service.is_connected:
+        return jsonify({"error": "Worx Cloud nicht verbunden"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    cmd = data.get('command', '')
+    
+    command_map = {
+        'start': worx_cloud_service.command_start,
+        'stop': worx_cloud_service.command_stop,
+        'home': worx_cloud_service.command_stop,
+        'pause': worx_cloud_service.command_pause,
+        'safehome': worx_cloud_service.command_safehome,
+        'edgecut': worx_cloud_service.command_edgecut,
+        'restart': worx_cloud_service.command_restart,
+    }
+    
+    if cmd in command_map:
+        result = command_map[cmd]()
+        return jsonify(result)
+    elif cmd == 'ots':
+        boundary = data.get('boundary', False)
+        runtime = data.get('runtime', 60)
+        return jsonify(worx_cloud_service.command_ots(boundary, runtime))
+    elif cmd == 'lock':
+        return jsonify(worx_cloud_service.command_set_lock(data.get('state', True)))
+    elif cmd == 'torque':
+        return jsonify(worx_cloud_service.command_set_torque(data.get('value', 0)))
+    elif cmd == 'raindelay':
+        return jsonify(worx_cloud_service.command_set_raindelay(data.get('value', 0)))
+    elif cmd == 'toggle_schedule':
+        return jsonify(worx_cloud_service.command_toggle_schedule(data.get('enabled', True)))
+    elif cmd == 'setzone':
+        return jsonify(worx_cloud_service.command_set_zone(data.get('zone', 0)))
+    elif cmd == 'time_extension':
+        return jsonify(worx_cloud_service.command_set_time_extension(data.get('value', 0)))
+    elif cmd == 'raw':
+        return jsonify(worx_cloud_service.command_send_raw(data.get('data', '{}')))
+    else:
+        return jsonify({"error": f"Unbekannter Befehl: {cmd}"}), 400
+
+@app.route('/api/mower/schedule')
+def api_mower_schedule():
+    """Zeitplan abrufen."""
+    if not worx_cloud_service or not worx_cloud_service.is_connected:
+        return jsonify({"error": "Worx Cloud nicht verbunden"}), 503
+    return jsonify(worx_cloud_service.get_schedule())
+
+@app.route('/api/mower/autopilot', methods=['POST'])
+def api_mower_autopilot():
+    """Autopilot ein/ausschalten."""
+    if not worx_cloud_service:
+        return jsonify({"error": "Worx Cloud nicht verfügbar"}), 503
+    data = request.get_json(silent=True) or {}
+    enabled = data.get('enabled', True)
+    worx_cloud_service.set_autopilot(enabled)
+    return jsonify({"success": True, "autopilot": enabled})
 
 # --- Logs API ---
 @app.route('/api/logs')
@@ -1123,10 +1134,33 @@ if __name__ == '__main__':
         system_monitor = SystemMonitor(status_manager.update_system_stats)
         system_monitor.start()
 
-        # HA Wachhund-Thread starten
-        ha_thread = threading.Thread(target=ha_polling_loop, daemon=True)
-        ha_thread.start()
-        logger.info("[System] HA-Wachhund (Autopilot) erfolgreich gestartet.")
+        # Worx Cloud Service starten (ersetzt HA-Polling Autopilot)
+        worx_cloud_service = WorxCloudService()
+        
+        # Cloud-Status → StatusManager (für Frontend-Anzeige via SocketIO)
+        def on_cloud_status(status_dict):
+            if status_manager:
+                display_text = status_dict.get('status_text', 'Unbekannt')
+                status_manager.update_ha_mower_status(display_text)
+            
+            # IMU-Daten über MQTT an Worx_GPS.py senden (für Sensor-Fusion)
+            imu = status_dict.get('orientation')
+            if imu and mqtt_service:
+                import json
+                mqtt_service.publish("worx/imu", json.dumps({
+                    "yaw": imu.get("yaw", 0),
+                    "pitch": imu.get("pitch", 0),
+                    "roll": imu.get("roll", 0),
+                    "timestamp": time.time()
+                }))
+        
+        worx_cloud_service.set_status_update_callback(on_cloud_status)
+        worx_cloud_service.set_mqtt_publish_callback(mqtt_service.publish_command)
+        
+        if worx_cloud_service.start():
+            logger.info("[System] Worx Cloud Service verbunden (Autopilot aktiv).")
+        else:
+            logger.warning("[System] Worx Cloud Service konnte nicht starten. Autopilot inaktiv.")
 
 
 
@@ -1169,6 +1203,10 @@ if __name__ == '__main__':
         logger.info("Server wird heruntergefahren...")
 
         # --- Cleanup der Services (Pseudocode) ---
+
+        if worx_cloud_service:
+
+            worx_cloud_service.stop()
 
         if system_monitor:
 

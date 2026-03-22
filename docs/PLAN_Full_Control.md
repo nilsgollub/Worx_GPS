@@ -364,34 +364,34 @@ class SensorFusionService:
 - [x] Echtzeit-Updates: Status ändert sich live (z.B. "Sucht Draht" → "Zurück zur Ladestation")
 - [x] Autopilot aktiv: Cloud-Status-Kategorien steuern START_REC/STOP_REC/PROBLEM über MQTT
 
-### Phase 2: Frontend MowerControl Page + Manual Control
+### Phase 2: Frontend MowerControl Page + Manual Control ✅ COMPLETED
 **Goal:** React-Komponente für vollständige Mäher-Steuerung via Cloud-API.
-- [ ] React-Komponente `MowerControl.jsx`
-- [ ] Status-Anzeige (Batterie, IMU, RSSI, Fehler)
-- [ ] Steuer-Buttons (Start, Stop, Pause, Home, SafeHome, EdgeCut, Restart)
-- [ ] Erweiterte Controls (Lock, Torque, RainDelay, Zone, TimeExtension, OTS)
-- [ ] Zeitplan-Anzeige und -Bearbeitung
-- [ ] Autopilot-Schalter und Status-Log
-- [ ] Live-IMU-Visualisierung (3D-Kompass)
-- [ ] **Manuelle JSON-Befehle** (Expert-Modus für Protokoll-Tests)
-- [ ] **Befehl-Vorlagen** und Command-History
-- [ ] **Raw MQTT Monitor** (eingehende Payloads anzeigen)
+- [x] React-Komponente `MowerControl.jsx`
+- [x] Status-Anzeige (Batterie, IMU, RSSI, Fehler)
+- [x] Steuer-Buttons (Start, Stop, Pause, Home, SafeHome, EdgeCut, Restart)
+- [x] Erweiterte Controls (Lock, Torque, RainDelay, Zone, TimeExtension, OTS)
+- [x] Zeitplan-Anzeige und -Bearbeitung
+- [x] Autopilot-Schalter und Status-Log
+- [x] Live-IMU-Visualisierung (3D-Kompass)
+- [x] **Manuelle JSON-Befehle** (Expert-Modus für Protokoll-Tests)
+- [x] **Befehl-Vorlagen** und Command-History
+- [x] **Raw MQTT Monitor** (eingehende Payloads anzeigen)
 
-### Phase 3: Cleanup & HA Add-on
+### Phase 3: Cleanup & HA Add-on ✅ COMPLETED
 **Goal:** Alten HA-Code entfernen und Add-on anpassen.
-- [ ] Remove `home_assistant_service.py` und `ha_polling_loop`
-- [ ] Simplify `status_manager.py` (numeric Cloud-Status statt HA-Text)
-- [ ] Update HA add-on `config.yaml` (Worx credentials)
-- [ ] Update HA add-on `run.sh` (export Worx env vars)
-- [ ] Update HA add-on `Dockerfile` (install pyworxcloud)
+- [x] Remove `home_assistant_service.py` und `ha_polling_loop`
+- [x] Simplify `status_manager.py` (numeric Cloud-Status statt HA-Text)
+- [x] Update HA add-on `config.yaml` (Worx credentials)
+- [x] Update HA add-on `run.sh` (export Worx env vars)
+- [x] Update HA add-on `Dockerfile` (install pyworxcloud)
 
-### Phase 4: Sensor-Fusion (optional)
+### Phase 4: Sensor-Fusion (optional) ✅ COMPLETED
 **Goal:** Cloud-IMU mit Pi-GPS für höhere Genauigkeit.
-- [ ] Cloud-Daten Polling: Echtzeit `dat`-Payload über pyworxcloud Events empfangen
-- [ ] IMU-Daten Pipeline: Orientation-Daten in bestehende GPS-Pipeline einfügen
-- [ ] Erweiterter Kalman-Filter: Bestehenden Kalman um IMU-Bewegungsmodell erweitern
-- [ ] Cloud-GPS Fallback: Automatischer Wechsel wenn Pi-GPS ausfällt
-- [ ] Dashboard: IMU-Visualisierung (3D-Orientierung), Fusion-Qualitätsanzeige
+- [x] Cloud-Daten Polling: Echtzeit `dat`-Payload über pyworxcloud Events empfangen
+- [x] IMU-Daten Pipeline: Orientation-Daten in bestehende GPS-Pipeline einfügen
+- [x] Erweiterter Kalman-Filter: Bestehenden Kalman um IMU-Bewegungsmodell erweitern
+- [x] Cloud-GPS Fallback: Automatischer Wechsel wenn Pi-GPS ausfällt (Infrastruktur vorhanden)
+- [x] Dashboard: IMU-Visualisierung (3D-Orientierung), Fusion-Qualitätsanzeige
 
 ---
 

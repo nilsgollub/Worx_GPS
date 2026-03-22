@@ -25,11 +25,15 @@ options:
   mqtt_port: 1883
   mqtt_user: ""
   mqtt_password: ""
-  ha_mower_entity: ""
+  worx_email: ""
+  worx_password: ""
+  worx_cloud_type: "worx"
 schema:
   debug_logging: bool
   mqtt_host: str
   mqtt_port: int
   mqtt_user: str?
   mqtt_password: password?
-  ha_mower_entity: str?
+  worx_email: str?
+  worx_password: password?
+  worx_cloud_type: str?

@@ -11,6 +11,7 @@ import Live from './pages/Live';
 import Config from './pages/Config';
 import Stats from './pages/Stats';
 import Logs from './pages/Logs';
+import MowerControl from './pages/MowerControl';
 import { io } from 'socket.io-client';
 import axios from 'axios';
 
@@ -28,6 +29,7 @@ function Sidebar() {
 
   const links = [
     { to: '/', icon: <Activity size={20} />, label: 'Dashboard' },
+    { to: '/control', icon: <Server size={20} />, label: 'Mäher-Steuerung' },
     { to: '/live', icon: <Navigation size={20} />, label: 'Live-Radar' },
     { to: '/geofence', icon: <Shield size={20} />, label: 'Zonen-Editor' },
     { to: '/maps', icon: <Map size={20} />, label: 'Historie' },
@@ -74,6 +76,7 @@ function PageTitle() {
   const location = useLocation();
   const titles = {
     '/': 'Dashboard',
+    '/control': 'Mäher-Steuerung',
     '/live': 'Live-Radar',
     '/geofence': 'Zonen-Editor',
     '/maps': 'Historie & Karten',
@@ -126,6 +129,7 @@ function App() {
           
           <Routes>
             <Route path="/" element={<Dashboard socket={socket} />} />
+            <Route path="/control" element={<MowerControl />} />
             <Route path="/live" element={<Live />} />
             <Route path="/maps" element={<Maps />} />
             <Route path="/geofence" element={<Geofence />} />

@@ -50,13 +50,16 @@ export HEATMAPS_DIR="/data/heatmaps"
 export DB_PATH="/data/worx_gps.db"
 export FLASK_PORT=5001
 
-# 3b. Home Assistant API für Autopilot
-# SUPERVISOR_TOKEN wird automatisch von HA gesetzt
-export HA_URL="http://supervisor/core"
-export HA_TOKEN="${SUPERVISOR_TOKEN}"
-HA_MOWER_ENTITY=$(jq --raw-output '.ha_mower_entity // ""' $CONFIG_PATH)
-export HA_MOWER_ENTITY=$HA_MOWER_ENTITY
-echo "[System] HA Mower Entity: '${HA_MOWER_ENTITY:-nicht gesetzt}'"
+# 3b. Worx Cloud Credentials (aus HA Add-on Options)
+WORX_EMAIL=$(jq --raw-output '.worx_email // ""' $CONFIG_PATH)
+WORX_PASSWORD=$(jq --raw-output '.worx_password // ""' $CONFIG_PATH)
+WORX_CLOUD_TYPE=$(jq --raw-output '.worx_cloud_type // "worx"' $CONFIG_PATH)
+
+export WORX_EMAIL=$WORX_EMAIL
+export WORX_PASSWORD=$WORX_PASSWORD
+export WORX_CLOUD_TYPE=$WORX_CLOUD_TYPE
+
+echo "[System] Worx Cloud Email: '${WORX_EMAIL:-nicht gesetzt}'"
 
 if [ "$DEBUG_LOGGING" = "true" ]; then
     echo "[System] Debug-Logging AKTIVIERT."

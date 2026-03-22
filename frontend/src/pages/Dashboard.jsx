@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, RefreshCw, Navigation } from 'lucide-react';
+import { Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, RefreshCw, Navigation, Home, Pause } from 'lucide-react';
 import { socket, API_URL } from '../App';
 import LiveMapWidget from '../components/LiveMapWidget';
 
@@ -57,6 +57,14 @@ export default function Dashboard() {
 
   const sendCommand = async (cmd) => {
     await axios.post('/control', { command: cmd });
+  };
+
+  const sendMowerCommand = async (cmdStr) => {
+    try {
+      await axios.post('/api/mower/command', { command: cmdStr });
+    } catch(err) {
+      console.error(err);
+    }
   };
 
   const fetchSimStatus = async () => {
@@ -152,11 +160,29 @@ export default function Dashboard() {
           </button>
 
           <button 
-            className="btn mt-4" style={{background: 'rgba(47, 129, 247, 0.2)', color: '#58a6ff'}}
+            className="btn mt-2 mb-2" style={{background: 'rgba(47, 129, 247, 0.2)', color: '#58a6ff'}}
             onClick={() => sendCommand('generate_heatmaps')}
           >
             <RefreshCw size={18} /> Heatmaps generieren
           </button>
+
+          <div style={{borderTop: '1px solid rgba(255,255,255,0.1)', margin: '10px 0'}}></div>
+          
+          <span className="text-small text-muted">Mäher Steuerung:</span>
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+              <button className="btn btn-success" onClick={() => sendMowerCommand('start')}>
+                  <Play size={16}/> Start
+              </button>
+              <button className="btn" style={{background: 'rgba(255,165,0,0.2)', color: 'orange'}} onClick={() => sendMowerCommand('pause')}>
+                  <Pause size={16}/> Pause
+              </button>
+              <button className="btn btn-primary" onClick={() => sendMowerCommand('home')}>
+                  <Home size={16}/> Home
+              </button>
+              <button className="btn btn-danger" onClick={() => sendMowerCommand('stop')}>
+                  <Square size={16}/> Stop
+              </button>
+          </div>
         </div>
       </div>
 

@@ -22,6 +22,7 @@ class WorxGps:
         self.heatmap_generator = HeatmapGenerator()
         self.data_manager = DataManager(data_folder="data")
         self.gps_data_buffer = ""
+        self.latest_imu_data = None
         self.maehvorgang_data = deque(maxlen=10)  # Hält die letzten 10 Sessions
         self.alle_maehvorgang_data = self.data_manager.load_all_mow_data()
         self.geofences = self.data_manager.get_geofences()
@@ -41,7 +42,7 @@ class WorxGps:
 
         # Alle Daten vorverarbeiten
         processed_all = [
-            process_gps_data(session, POST_PROCESSING_CONFIG, self.geofences) 
+            process_gps_data(session, POST_PROCESSING_CONFIG, self.geofences, None) 
             for session in self.alle_maehvorgang_data
         ]
 
@@ -88,6 +89,8 @@ class WorxGps:
                 self.handle_gps_data(payload_decoded)
             elif msg.topic == self.mqtt_handler.topic_status:
                 self.handle_status_data(payload_decoded)
+            elif getattr(self.mqtt_handler, 'topic_imu', None) and msg.topic == self.mqtt_handler.topic_imu:
+                self.handle_imu_data(payload_decoded)
             else:
                 logger.debug(f"Nachricht auf unbehandeltem Topic empfangen (nach Filterung): {msg.topic}")
         except UnicodeDecodeError:
@@ -123,8 +126,10 @@ class WorxGps:
             # Geofences neu laden, falls sie im WebU bearbeitet wurden
             self.geofences = self.data_manager.get_geofences()
             
-            # Verarbeite ALLE verfügbaren Daten mit der neuen Pipeline (inkl. Geofence)
-            processed_sessions = [process_gps_data(session, POST_PROCESSING_CONFIG, self.geofences) for session in self.alle_maehvorgang_data]
+            # Verarbeite ALLE verfügbaren Daten mit der neuen Pipeline (inkl. Geofence und IMU)
+            # Da das historical Data ist, haben wir nur die latest IMU. Im echten Setup müssten die Logs IMU enthalten.
+            # Für die Historie passiert in der Fusion nichts neues, aber wir übergeben latest_imu_data.
+            processed_sessions = [process_gps_data(session, POST_PROCESSING_CONFIG, self.geofences, self.latest_imu_data) for session in self.alle_maehvorgang_data]
             
             if not processed_sessions:
                 logger.warning("Keine Daten nach der Verarbeitung übrig.")
@@ -176,6 +181,16 @@ class WorxGps:
             logging.info("End-Marker für Problemzonen empfangen (keine Aktion).")
         else:
             logging.info(f"Empfangene Statusmeldung: {csv_data}")
+
+    def handle_imu_data(self, payload):
+        """Speichert die zuletzt empfangenen IMU-Daten aus der Cloud."""
+        try:
+            import json
+            imu = json.loads(payload)
+            self.latest_imu_data = imu
+            logger.debug(f"IMU Daten erhalten: Yaw={imu.get('yaw')}")
+        except Exception as e:
+            logger.error(f"Fehler beim Parsen der IMU-Daten: {e}")
 
     # update_single_map (unverändert zur letzten Version)
     def update_single_map(self, config_key, data, draw_path, is_multi=False):

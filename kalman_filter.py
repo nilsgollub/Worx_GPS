@@ -38,15 +38,9 @@ class GpsKalmanFilter:
         self.initialized = False
         self.last_timestamp = None
 
-    def update(self, lat, lon, timestamp, hdop=None):
+    def update(self, lat, lon, timestamp, hdop=None, imu_yaw=None):
         """
-        Aktualisiert den Filter mit einer neuen GPS-Messung.
-        
-        Args:
-            lat: Gemessene Breite.
-            lon: Gemessene Länge.
-            timestamp: Zeitstempel der Messung.
-            hdop: Horizontal Dilution of Precision (Genauigkeits-Indikator).
+        Aktualisiert den Filter mit einer neuen Messung.
         """
         if not self.initialized:
             self.x = np.array([lat, lon, 0.0, 0.0])
@@ -58,31 +52,40 @@ class GpsKalmanFilter:
         if dt <= 0:
             return self.x[0], self.x[1]
 
-        # --- 1. Prediction (Vorhersage) ---
-        # F-Matrix mit dt aktualisieren [1 0 dt 0; 0 1 0 dt; 0 0 1 0; 0 0 0 1]
+        # --- 1. Prediction ---
         self.F[0, 2] = dt
         self.F[1, 3] = dt
-        
-        # Neuer Zustand vorherberechnen
         self.x = np.dot(self.F, self.x)
-        # Fehlerkovarianz aktualisieren
         self.P = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
 
-        # --- 2. Measurement Adjustment (HDOP Berücksichtigung) ---
-        # Wenn HDOP vorhanden ist, passen wir das Messrauschen (R) dynamisch an.
-        # Hoher HDOP -> Höheres Rauschen -> Filter vertraut GPS weniger.
+        # -- Sensor Fusion: IMU Ausrichtung ---
+        # Wenn imu_yaw (0-360 Grad) verfügbar ist, richten wir den internen
+        # Geschwindigkeitsvektor an der bekannten Orientierung aus
+        if imu_yaw is not None:
+            # Einfaches Modell: Geschwindigkeit v bestimmen und durch Yaw korrigieren
+            v = np.sqrt(self.x[2]**2 + self.x[3]**2)
+            if v > 0.1: # Nur wenn wir überhaupt fahren
+                import math
+                yaw_rad = math.radians(imu_yaw)
+                # Yaw in Navigationskoordinaten: 0=N, 90=E -> lat=N, lon=E
+                # Dies ist eine Heuristik zur Fusionierung der Richtungsvektoren
+                v_N_corrected = v * math.cos(yaw_rad)
+                v_E_corrected = v * math.sin(yaw_rad)
+                # Dämpfe die Korrektur etwas (Complimentary Filter Ansatz im Zustand)
+                alpha = 0.5 
+                self.x[2] = self.x[2] * (1-alpha) + v_N_corrected * alpha
+                self.x[3] = self.x[3] * (1-alpha) + v_E_corrected * alpha
+
+        # --- 2. Measurement ---
         current_R = self.R
         if hdop is not None:
-             # Quadratischer Einfluss von HDOP auf das Vertrauen
              current_R = self.R * (hdop ** 2)
 
-        # --- 3. Correction (Korrektur durch Messung) ---
         z = np.array([lat, lon])
-        y = z - np.dot(self.H, self.x) # Messabweichung (Residuum)
-        S = np.dot(self.H, np.dot(self.P, self.H.T)) + current_R # Systemunsicherheit
-        K = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S)) # Kalman-Gain
+        y = z - np.dot(self.H, self.x)
+        S = np.dot(self.H, np.dot(self.P, self.H.T)) + current_R
+        K = np.dot(np.dot(self.P, self.H.T), np.linalg.inv(S))
         
-        # Zustand und Kovarianz mit Messung korrigieren
         self.x = self.x + np.dot(K, y)
         self.P = self.P - np.dot(np.dot(K, self.H), self.P)
 
@@ -90,7 +93,6 @@ class GpsKalmanFilter:
         return self.x[0], self.x[1]
 
     def reset(self):
-        """Setzt den Filter zurück (z.B. Start eines neuen Mähvorgangs)."""
         self.initialized = False
         self.last_timestamp = None
         self.x = np.array([0.0, 0.0, 0.0, 0.0])
