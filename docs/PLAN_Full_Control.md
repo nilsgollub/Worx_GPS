@@ -77,23 +77,135 @@ Volle Steuerung des Worx Landroid direkt aus der WebUI, wie die AvaDeskApp (Eish
 
 ---
 
+## Architektur-Vereinfachung durch pyworxcloud
+
+### Bisherige Architektur (VORHER)
+
+```
+┌──────────────┐  lokaler MQTT  ┌───────────────┐
+│  Pi Zero     │───────────────→│ Worx_GPS.py   │
+│  GPS-Rec     │ GPS + Control  │ (Heatmaps)    │
+└──────┬───────┘                └───────┬───────┘
+       ↑ START/STOP_REC                 │
+       │                       ┌────────▼────────┐
+       │ lokaler MQTT          │  webui.py        │
+       └───────────────────────│  MqttService     │←── lokaler MQTT (Pi ↔ WebUI)
+                               │  HA-Service      │←── HTTP Poll HA API (30s)
+                               │  ha_polling_loop │←── Thread: HA → Status → MQTT
+                               │  StatusManager   │←── State-String-Mapping
+                               └─────────────────┘
+                                        ↕
+                               ┌─────────────────┐
+                               │ Home Assistant   │
+                               │ Supervisor API   │←── pollt Worx Cloud intern
+                               │ lawn_mower.m     │
+                               └─────────────────┘
+```
+
+**Problem**: 4 Hops für Mäher-Status (Worx Cloud → HA → Supervisor API → WebUI → Autopilot)
+- 30 Sekunden Polling-Verzögerung
+- Funktioniert NUR im HA-Container (SUPERVISOR_TOKEN)
+- Keine Mäher-Steuerung möglich, nur Status lesen
+
+### Neue Architektur (NACHHER)
+
+```
+┌──────────────┐  lokaler MQTT  ┌───────────────┐
+│  Pi Zero     │───────────────→│ Worx_GPS.py   │
+│  GPS-Rec     │ GPS + Control  │ (Heatmaps)    │
+└──────┬───────┘                └───────┬───────┘
+       ↑ START/STOP_REC                 │
+       │                       ┌────────▼────────┐
+       │ lokaler MQTT          │  webui.py        │
+       └───────────────────────│  MqttService     │←── lokaler MQTT (Pi ↔ WebUI)
+                               │  WorxCloudSvc    │←── Worx Cloud DIREKT
+                               │  (pyworxcloud)   │    (Echtzeit-Events)
+                               └─────────────────┘
+```
+
+**Vorteil**: 1 Hop (Worx Cloud → WebUI direkt), Echtzeit statt 30s-Polling
+
+### Was WEGFÄLLT
+
+| Datei/Komponente | Zeilen | Grund |
+|---|---|---|
+| `home_assistant_service.py` | 106 | **Komplett ersetzt** — pyworxcloud liefert Status direkt |
+| `ha_polling_loop` in `webui.py` | ~60 | **Ersetzt durch Cloud-Events** — `DATA_RECEIVED` Callback |
+| Status-Mapping in `status_manager.py` | ~40 | **Vereinfacht** — `device.status.id` + `.description` statt String-Matching |
+| HA-Config in `run.sh` | ~10 | **Vereinfacht** — kein `HA_URL/TOKEN/ENTITY` mehr für Autopilot |
+| `ha_mower_entity` in `config.yaml` | ~5 | **Vereinfacht** — durch `worx_email`/`worx_password` ersetzt |
+| **Gesamt** | **~220** | **Zeilen weniger + weniger Komplexität** |
+
+### Was BLEIBT (nicht ersetzbar)
+
+| Komponente | Grund |
+|---|---|
+| **Pi Zero + `Worx_GPS_Rec.py`** | Physische u-blox GPS-Hardware, serielle Verbindung |
+| **Lokaler MQTT** (Pi ↔ WebUI) | GPS-Datentransfer, Aufnahme-Steuerung |
+| **`Worx_GPS.py`** (Heatmaps) | GPS-Datenverarbeitung, Kartenvisualisierung |
+| **`mqtt_handler.py`** | Lokaler MQTT-Client für Pi-Kommunikation |
+| **`mqtt_service.py`** | WebUI-seitiger lokaler MQTT (GPS-Empfang, Befehle an Pi) |
+| **`data_service.py`** / DB | Datenpersistenz, Heatmap-Speicherung |
+| **`gps_handler.py`** | u-blox GPS, NMEA-Parsing, AssistNow |
+| **React Frontend** | Bleibt, wird mit MowerControl-Seite erweitert |
+
+### Was NEU dazukommt (bisher unmöglich)
+
+| Feature | Beschreibung |
+|---|---|
+| **Volle Mäher-Steuerung** | Start, Stop, Home, Pause, Edgecut direkt aus WebUI |
+| **Zeitplan-Editor** | CRUD für Mäh-Zeitpläne |
+| **Einstellungen** | Schnitthöhe, Torque, Regenverzögerung, Lock, ACS |
+| **Live-Sensordaten** | IMU (Pitch/Roll/Yaw), Batterie, RSSI, Regensensor |
+| **Echtzeit-Status** | Sofort statt 30s Verzögerung |
+| **HA-unabhängig** | Funktioniert auch ohne Home Assistant |
+
+---
+
+## Getestete Geräte-Daten (API-Test 2025-03-22)
+
+| Feld | Wert |
+|---|---|
+| Modell | **Landroid M500 (WR165E)** |
+| Serial | 20223026720800657897 |
+| Protocol | 0 |
+| Firmware | 3.36.0+1 |
+| Online | ✅ |
+| GPS-Modul | ❌ (kein 4G) |
+| IMU | ✅ Pitch: -1.1, Roll: 0.3, Yaw: 343.5 |
+| Batterie | 85%, 17.8°C, 19.71V, lädt |
+| Ladezyklen | 645 |
+| WiFi RSSI | -89 dBm |
+| Laufzeit | 59.632 Min (~994h) |
+| Strecke | 880.623 m (~881 km) |
+| Zeitplan | 14 Slots, Mi+Do 15:00-17:24 |
+
+### Verfügbare `dat` Keys
+`mac, fw, fwb, ls, le, conn, bt, dmp, st, act, rsi, lk, tr, lz, rain, modules`
+
+### Verfügbare `cfg` Keys
+`id, sn, dt, tm, lg, cmd, sc, mz, mzv, mzk, rd, al, tq, modules`
+
+---
+
 ## Implementierungsplan
 
-### Phase 1: Backend — Worx Cloud Service
+### Phase 1: Backend — WorxCloudService (ersetzt HA-Service + Autopilot)
 1. **`pyworxcloud` als Dependency** in `requirements.txt` / Dockerfile hinzufügen
 2. **Neuer Service `web_ui/worx_cloud_service.py`** erstellen:
    - Klasse `WorxCloudService` die `pyworxcloud.WorxCloud` kapselt
-   - Authentifizierung mit Worx-Account (Email + Passwort aus Add-on Config)
-   - Async-Wrapper für alle Befehle
-   - Device-Caching und Event-Handling
-   - Connection-Management (reconnect, token refresh)
+   - Eigener asyncio-Event-Loop in Daemon-Thread
+   - Synchrone Wrapper für Flask-Routen
+   - `DATA_RECEIVED` Event → Autopilot (ersetzt `ha_polling_loop`)
+   - Device-Caching, Connection-Management
 3. **Config erweitern** (`config.yaml`, `run.sh`):
    - `worx_email` — Worx-Account Email
    - `worx_password` — Worx-Account Passwort
    - `worx_cloud_type` — `worx` / `kress` / `landxcape` (Default: `worx`)
+4. **Entfernen**: `home_assistant_service.py` Import + `ha_polling_loop` aus `webui.py`
 
 ### Phase 2: API-Endpunkte
-4. **REST-API Endpunkte** in `webui.py` hinzufügen:
+5. **REST-API Endpunkte** in `webui.py` hinzufügen:
    - `GET /api/mower/status` — Voller Mäher-Status aus der Cloud
    - `POST /api/mower/command` — Befehle senden (start, stop, home, edgecut, ...)
    - `GET /api/mower/schedule` — Zeitplan abrufen
@@ -102,47 +214,22 @@ Volle Steuerung des Worx Landroid direkt aus der WebUI, wie die AvaDeskApp (Eish
    - `GET /api/mower/statistics` — Batterie, Messer, Laufzeit Statistiken
 
 ### Phase 3: Frontend — Control Panel
-5. **Neue React-Seite `MowerControl.jsx`**:
+6. **Neue React-Seite `MowerControl.jsx`**:
    - **Quick Actions**: Start, Stop, Home, Pause, Edgecut (große Buttons)
-   - **Status-Anzeige**: Batterie, Messer, WiFi, GPS, Online/Offline
+   - **Status-Anzeige**: Batterie, Messer, WiFi, Online/Offline, IMU
    - **Einstellungen**: Schnitthöhe, Drehmoment, Regenverzögerung (Slider/Inputs)
    - **Zeitplan-Editor**: Wochentag-Grid mit Start/Dauer/Kante
    - **Zonen-Steuerung**: Zone auswählen, Training starten
    - **One-Time-Schedule**: Einmal-Mähen mit Dauer und Kanten-Option
    - **Statistiken**: Batterie-History, Messer-Zyklen, Laufzeit
-6. **Dashboard erweitern**: Quick-Control Buttons auf der Hauptseite
+7. **Dashboard erweitern**: Quick-Control Buttons auf der Hauptseite
 
-### Phase 4: Integration & Polish
-7. **Autopilot erweitern**: Cloud-Status als alternative/ergänzende Quelle zum HA-Polling
-8. **Fehlerbehandlung**: Offline-Mäher, Token-Ablauf, Rate-Limiting
-9. **Logging**: Cloud-Events ins zentrale Logging einbinden
-10. **Sicherheit**: Worx-Credentials verschlüsselt speichern
-
----
-
-## Architektur
-
-```
-┌─────────────────────────────────────────────┐
-│  React Frontend (MowerControl.jsx)          │
-│  Quick Actions / Schedule / Settings        │
-└───────────────┬─────────────────────────────┘
-                │ REST API
-┌───────────────▼─────────────────────────────┐
-│  Flask WebUI (webui.py)                     │
-│  /api/mower/* Endpunkte                     │
-└───────────────┬─────────────────────────────┘
-                │
-┌───────────────▼─────────────────────────────┐
-│  WorxCloudService (worx_cloud_service.py)   │
-│  Wrapper um pyworxcloud.WorxCloud           │
-└───────────────┬─────────────────────────────┘
-                │ MQTT (AWS IoT) + REST API
-┌───────────────▼─────────────────────────────┐
-│  Worx Cloud (api.worxlandroid.com)          │
-│  Cloud-MQTT-Broker                          │
-└─────────────────────────────────────────────┘
-```
+### Phase 4: Cleanup & Integration
+8. **`home_assistant_service.py` entfernen** (Mäher-Status kommt jetzt aus Cloud)
+9. **`ha_polling_loop` entfernen** (Autopilot läuft über Cloud-Events)
+10. **`status_manager.py` vereinfachen** (numerische Status-Codes statt String-Matching)
+11. **Fehlerbehandlung**: Offline-Mäher, Token-Ablauf, Rate-Limiting
+12. **Logging**: Cloud-Events ins zentrale Logging einbinden
 
 ---
 
@@ -257,11 +344,11 @@ class SensorFusionService:
 ---
 
 ## Offene Fragen
-- [ ] Worx-Account-Daten: Separates Login in der UI oder nur per Add-on Config?
-- [ ] Soll der lokale MQTT-Autopilot parallel zur Cloud-Steuerung laufen?
-- [ ] Welche Features haben Priorität? (Steuerung > Zeitplan > Statistiken > Sensor-Fusion?)
-- [ ] Update-Rate der Cloud-Daten: Wie oft sendet der Mäher neue `dat`-Payloads?
-- [ ] Hat dein Landroid ein 4G/GPS-Modul eingebaut? (Nicht alle Modelle haben `modules.4G.gps`)
+- [x] ~~Worx-Account-Daten~~: Add-on Config (`.env` / `config.yaml`)
+- [x] ~~Hat dein Landroid ein 4G/GPS-Modul?~~ → **Nein** (WR165E, kein 4G). Cloud-GPS entfällt.
+- [x] ~~Soll HA-Autopilot parallel laufen?~~ → **Nein**, wird komplett durch Cloud-Events ersetzt
+- [ ] Update-Rate der Cloud-Daten: Wie oft sendet der Mäher neue `dat`-Payloads? (Testen!)
+- [ ] Sensor-Fusion Priorität: Nach Phase 1-4 oder parallel?
 
 ---
 
