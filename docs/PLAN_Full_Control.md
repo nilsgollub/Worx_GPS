@@ -364,7 +364,7 @@ class SensorFusionService:
 - [x] Echtzeit-Updates: Status ändert sich live (z.B. "Sucht Draht" → "Zurück zur Ladestation")
 - [x] Autopilot aktiv: Cloud-Status-Kategorien steuern START_REC/STOP_REC/PROBLEM über MQTT
 
-### Phase 2: Frontend MowerControl Page
+### Phase 2: Frontend MowerControl Page + Manual Control
 **Goal:** React-Komponente für vollständige Mäher-Steuerung via Cloud-API.
 - [ ] React-Komponente `MowerControl.jsx`
 - [ ] Status-Anzeige (Batterie, IMU, RSSI, Fehler)
@@ -373,6 +373,9 @@ class SensorFusionService:
 - [ ] Zeitplan-Anzeige und -Bearbeitung
 - [ ] Autopilot-Schalter und Status-Log
 - [ ] Live-IMU-Visualisierung (3D-Kompass)
+- [ ] **Manuelle JSON-Befehle** (Expert-Modus für Protokoll-Tests)
+- [ ] **Befehl-Vorlagen** und Command-History
+- [ ] **Raw MQTT Monitor** (eingehende Payloads anzeigen)
 
 ### Phase 3: Cleanup & HA Add-on
 **Goal:** Alten HA-Code entfernen und Add-on anpassen.
@@ -389,6 +392,47 @@ class SensorFusionService:
 - [ ] Erweiterter Kalman-Filter: Bestehenden Kalman um IMU-Bewegungsmodell erweitern
 - [ ] Cloud-GPS Fallback: Automatischer Wechsel wenn Pi-GPS ausfällt
 - [ ] Dashboard: IMU-Visualisierung (3D-Orientierung), Fusion-Qualitätsanzeige
+
+---
+
+## Fernziele: Custom Mäher auf Worx-Basis
+
+### Langzeit-Projekt: Eigenbau Mäher mit Worx-Hardware
+**Ziel:** Ausgedienten Worx Mäher als Plattform für voll custom Roboter nutzen.
+
+#### Phase 1: Hardware-Analyse & Reverse Engineering
+- [ ] Worx Chassis dokumentieren (Motoren, Elektronik, Sensoren)
+- [ ] Firmware dumpen und analysieren
+- [ ] MQTT-Protokoll vollständig reverse engineeren
+- [ ] Motor-Treiber Pinouts und PWM-Steuerung finden
+
+#### Phase 2: Custom Firmware Entwicklung
+- [ ] Eigenes Firmware mit direkter Motor-Steuerung
+- [ ] MQTT-Interface beibehalten für Kompatibilität
+- [ ] Sicherheits-Features implementieren
+- [ ] Sensor-Fusion (IMU + GPS + Encoder)
+
+#### Phase 3: Hardware-Erweiterungen
+- [ ] Zusätzliche Sensoren (Kamera, Lidar, Ultraschall)
+- [ ] Bessere CPU (ESP32/Raspberry Pi)
+- [ ] Erweiterte Aktoren (Klappmechanismus, Zäune)
+- [ ] Autonome Navigation (SLAM, Pfadplanung)
+
+#### Potentielle Einsparungen
+| Komponente | Original | Custom | Einsparung |
+|---|---|---|---|
+| Chassis | 300€ | 0€ | 300€ |
+| Motoren | 150€ | 0€ | 150€ |
+| Elektronik | 200€ | 50€ | 150€ |
+| **Gesamt** | **650€** | **50€** | **600€ |
+
+#### Risiken und Herausforderungen
+- **Firmware-Schutz**: Bootloader-Zugang finden
+- **Hardware-Kompatibilität**: 24V Systeme verstehen
+- **Sicherheit**: Not-Aus und Schutzfunktionen nachbauen
+- **Legalität**: CE-Konformität bei Umbauten
+
+**Status:** Fernziel — erst nach vollständiger Ausnutzung des bestehenden Systems angehen.
 
 ---
 
