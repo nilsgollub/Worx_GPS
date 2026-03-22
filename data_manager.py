@@ -11,7 +11,17 @@ logger = logging.getLogger(__name__)
 
 class DataManager:
     def __init__(self, data_folder="data", db_name="worx_gps.db"):
-        self.data_folder = Path(data_folder)
+        # Prüfen ob wir im HA Add-on laufen (überprüfe ob /data existiert)
+        ha_data_dir = Path("/data")
+        if ha_data_dir.exists() and ha_data_dir.is_dir():
+            # Im HA Add-on: nutze persistentes /data Verzeichnis
+            self.data_folder = ha_data_dir / "worx_gps"
+            logger.info("HA Add-on erkannt, nutze persistentes /data Verzeichnis")
+        else:
+            # Lokale Entwicklung: nutze angegebenes Verzeichnis
+            self.data_folder = Path(data_folder)
+            logger.info("Lokale Entwicklung, nutze lokales data Verzeichnis")
+        
         self.db_path = self.data_folder / db_name
         
         # Sicherstellen, dass der Ordner existiert

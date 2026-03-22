@@ -37,8 +37,19 @@ logger = logging.getLogger(__name__)
 class DataService:
     def __init__(self, project_root_path, heatmap_config, problem_config, geo_config_main, rec_config_main):
         self.project_root = Path(project_root_path)
-        self.heatmaps_dir = self.project_root / "heatmaps"
-        self.data_dir = self.project_root / "data" # Für DataManager
+        
+        # Prüfen ob wir im HA Add-on laufen
+        ha_data_dir = Path("/data")
+        if ha_data_dir.exists() and ha_data_dir.is_dir():
+            # Im HA Add-on: nutze persistentes /data Verzeichnis
+            self.data_dir = ha_data_dir / "worx_gps"
+            self.heatmaps_dir = ha_data_dir / "worx_gps" / "heatmaps"
+            logger.info("DataService: HA Add-on erkannt, nutze /data/worx_gps")
+        else:
+            # Lokale Entwicklung
+            self.data_dir = self.project_root / "data"
+            self.heatmaps_dir = self.project_root / "heatmaps"
+            logger.info("DataService: Lokale Entwicklung, nutze Projekt-Verzeichnisse")
 
         self.heatmap_config = heatmap_config
         self.problem_config = problem_config

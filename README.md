@@ -146,6 +146,7 @@ POST_PROCESSING_CONFIG = {
 - **Live-Karte** — Echtzeit-Position auf Satellitenansicht mit Worx-Icon
 - **Zonen-Editor** — Mähzonen und Verbotszonen per Klick zeichnen
 - **Simulator** — ChaosSimulator zum Testen (Start/Stop im Dashboard)
+- **Zentrales Logging** — Live-Logs von WebUI und Pi mit Filterung
 - **Auto-Heatmaps** — Nach jeder Session werden automatisch 3 Karten generiert:
   - Aktueller Mähvorgang
   - Letzte 10 Sessions
@@ -162,6 +163,29 @@ mqtt_port: 1883
 mqtt_user: ""
 mqtt_password: ""
 ```
+
+---
+
+## 🔍 Centralized Logging
+
+Das neue Logging-System sammelt Logs von allen Komponenten an einem Ort:
+
+**Features:**
+- **Thread-sicherer Log-Collector** mit 200 Einträgen im RAM
+- **Live-Logs** mit Auto-Refresh in der WebUI
+- **Filterung** nach Quelle (webui, pi_gps_rec) und Level (INFO, WARNING, ERROR)
+- **MQTT-Integration** für Pi-Logs (Warnings/Errors werden automatisch gesendet)
+- **Persistente Daten** in HA Add-on `/data` Verzeichnis
+
+**Log-Quellen:**
+- **WebUI**: System-Logs, API-Aufrufe, Fehler
+- **Pi GPS Rec**: GPS-Verbindungsprobleme, NMEA-Parsing-Fehler, kritische Exceptions
+- **MQTT**: Kommunikationsfehler, Verbindungstatus
+
+**Zugriff:**
+- WebUI → Logs Seite mit Live-Anzeige
+- API: `/api/logs` und `/api/logs/sources`
+- Auto-Refresh alle 5 Sekunden optional
 
 ---
 

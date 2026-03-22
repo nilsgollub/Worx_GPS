@@ -20,6 +20,8 @@ import time
 
 from pathlib import Path
 
+from datetime import datetime
+
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
 
 from flask_socketio import SocketIO
@@ -83,6 +85,76 @@ from web_ui.simulator import ChaosSimulator
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s') # Geändert auf DEBUG und detaillierteres Format
 
 logger = logging.getLogger(__name__)
+
+# --- Centralized Log Collector ---
+class LogCollector:
+    """Sammelt und puffert Logs von verschiedenen Quellen."""
+    def __init__(self, max_logs=1000):
+        self.max_logs = max_logs
+        self.logs = []
+        self.lock = threading.Lock()
+        
+    def add_log(self, level, message, source="webui", timestamp=None):
+        """Fügt einen Log-Eintrag hinzu."""
+        if timestamp is None:
+            # Einfacher Timestamp ohne datetime dependency
+            import time
+            timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
+        
+        log_entry = {
+            "timestamp": timestamp,
+            "level": level,
+            "source": source,
+            "message": message
+        }
+        
+        with self.lock:
+            self.logs.append(log_entry)
+            # Begrenze die Anzahl der Logs im Speicher
+            if len(self.logs) > self.max_logs:
+                self.logs = self.logs[-self.max_logs:]
+    
+    def get_logs(self, level_filter=None, source_filter=None, limit=100):
+        """Gibt die letzten Logs zurück, optional gefiltert."""
+        with self.lock:
+            logs = self.logs.copy()
+        
+        # Filter anwenden
+        if level_filter:
+            logs = [log for log in logs if log["level"] == level_filter]
+        if source_filter:
+            logs = [log for log in logs if log["source"] == source_filter]
+        
+        # Begrenzen und neueste zuerst
+        return logs[-limit:] if logs else []
+
+# Globaler Log Collector
+log_collector = LogCollector(max_logs=200) # LIMITIERT: Nur die letzten 200 Logs im RAM behalten
+log_collector.logs = [] # GARANTIERT: Leer beim Start
+
+# Custom Handler der Logs zum Collector weiterleitet
+class WebUILogHandler(logging.Handler):
+    def __init__(self, collector):
+        super().__init__()
+        self.collector = collector
+    
+    def emit(self, record):
+        try:
+            level = record.levelname
+            message = self.format(record)
+            source = getattr(record, 'source', 'webui')
+            # Einfacher Timestamp ohne datetime dependency
+            import time
+            timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(record.created))
+            self.collector.add_log(level, message, source, timestamp)
+        except Exception as e:
+            # Bei Fehlern nicht crashen, einfach still ignorieren
+            pass
+
+# WebUILogHandler zum Root Logger hinzügen
+webui_handler = WebUILogHandler(log_collector)
+webui_handler.setLevel(logging.DEBUG)
+logging.getLogger().addHandler(webui_handler)
 
 
 
@@ -833,6 +905,59 @@ def ha_polling_loop():
             
         time.sleep(30) # Alle 30 Sekunden pollen
 
+# --- Logs API ---
+@app.route('/api/logs')
+def api_logs():
+    """Gibt die echten Logs aus dem LogCollector zurück."""
+    try:
+        level_filter = request.args.get('level')
+        source_filter = request.args.get('source')
+        limit = int(request.args.get('limit', 100))
+        
+        logs = log_collector.get_logs(level_filter, source_filter, limit)
+        
+        return jsonify({
+            "status": "success",
+            "logs": logs,
+            "total": len(logs)
+        })
+    except Exception as e:
+        logger.error(f"[API] Error in /api/logs: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "logs": [],
+            "total": 0
+        }), 500
+
+@app.route('/api/logs/sources')
+def api_log_sources():
+    """Gibt alle aktuell bekannten Log-Quellen zurück."""
+    try:
+        with log_collector.lock:
+            # Schnelle Extraktion: Nur die letzten 50 Logs für Quellen-Check nutzen
+            recent_logs = log_collector.logs[-50:]
+            sources = list(set(log.get("source", "system") for log in recent_logs))
+            if not sources: sources = ["webui", "system"]
+            
+        return jsonify({
+            "status": "success", 
+            "sources": sorted(sources)
+        })
+    except Exception as e:
+        logger.error(f"[API] Error in /api/logs/sources: {e}")
+        return jsonify({"status": "error", "sources": ["webui", "system"]}), 500
+
+@app.route('/api/logs/test')
+def api_logs_test():
+    """Test-Endpoint für Log-Funktionalität."""
+    return jsonify({
+        "status": "success",
+        "message": "Logs API works",
+        "total_logs": len(log_collector.logs),
+        "sample_logs": log_collector.logs[:3] if log_collector.logs else []
+    })
+
 # --- Database Reset API ---
 @app.route('/api/database/reset', methods=['POST'])
 def api_database_reset():
@@ -953,6 +1078,24 @@ if __name__ == '__main__':
         mqtt_service.set_pi_status_update_callback(status_manager.update_pi_status)
 
         mqtt_service.set_gps_update_callback(lambda payload: data_service.handle_gps_data(payload))
+        
+        # Log-Callback für Pi-Logs
+        def handle_pi_logs(payload):
+            try:
+                # Erwarte JSON: {"level": "INFO", "message": "...", "timestamp": "..."}
+                import json
+                log_data = json.loads(payload)
+                log_collector.add_log(
+                    level=log_data.get("level", "INFO"),
+                    message=log_data.get("message", ""),
+                    source="pi_gps_rec",
+                    timestamp=log_data.get("timestamp")
+                )
+            except json.JSONDecodeError:
+                # Fallback: plain text als INFO-Log
+                log_collector.add_log("INFO", payload, "pi_gps_rec")
+        
+        mqtt_service.set_logs_update_callback(handle_pi_logs)
 
         mqtt_service.connect()
 
@@ -971,6 +1114,9 @@ if __name__ == '__main__':
             rec_config_main=config.REC_CONFIG
 
         )
+
+        # Test-Log um zu prüfen ob der LogCollector funktioniert
+        log_collector.add_log("INFO", "WebUI gestartet und LogCollector aktiv", "webui")
 
 
 

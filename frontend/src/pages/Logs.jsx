@@ -19,7 +19,7 @@ const LEVEL_ICONS = {
 
 export default function Logs() {
   const [logs, setLogs] = useState([]);
-  const [sources, setSources] = useState([]);
+  const [sources, setSources] = useState(['webui', 'pi_gps_rec']); // Fallback
   const [levelFilter, setLevelFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [limit, setLimit] = useState(100);
@@ -35,10 +35,12 @@ export default function Logs() {
       if (sourceFilter) params.append('source', sourceFilter);
       params.append('limit', limit);
       
-      const res = await axios.get(`/api/logs?${params}`);
+      const res = await axios.get(`/api/logs?${params}`, { timeout: 5000 });
       setLogs(res.data.logs || []);
+      console.log('Logs loaded:', res.data.logs?.length || 0);
     } catch (err) {
       console.error('Fehler beim Laden der Logs:', err);
+      setLogs([]);
     } finally {
       setLoading(false);
     }
@@ -46,10 +48,12 @@ export default function Logs() {
 
   const fetchSources = async () => {
     try {
-      const res = await axios.get('/api/logs/sources');
+      const res = await axios.get('/api/logs/sources', { timeout: 5000 });
       setSources(res.data.sources || []);
+      console.log('Sources loaded:', res.data.sources);
     } catch (err) {
       console.error('Fehler beim Laden der Quellen:', err);
+      setSources(['webui', 'pi_gps_rec']); // Fallback
     }
   };
 

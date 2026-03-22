@@ -20,6 +20,8 @@ import time
 
 from pathlib import Path
 
+from datetime import datetime
+
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for
 
 from flask_socketio import SocketIO
@@ -95,7 +97,9 @@ class LogCollector:
     def add_log(self, level, message, source="webui", timestamp=None):
         """Fügt einen Log-Eintrag hinzu."""
         if timestamp is None:
-            timestamp = datetime.now().isoformat()
+            # Einfacher Timestamp ohne datetime dependency
+            import time
+            timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime())
         
         log_entry = {
             "timestamp": timestamp,
@@ -125,7 +129,8 @@ class LogCollector:
         return logs[-limit:] if logs else []
 
 # Globaler Log Collector
-log_collector = LogCollector()
+log_collector = LogCollector(max_logs=200) # LIMITIERT: Nur die letzten 200 Logs im RAM behalten
+log_collector.logs = [] # GARANTIERT: Leer beim Start
 
 # Custom Handler der Logs zum Collector weiterleitet
 class WebUILogHandler(logging.Handler):
@@ -138,9 +143,13 @@ class WebUILogHandler(logging.Handler):
             level = record.levelname
             message = self.format(record)
             source = getattr(record, 'source', 'webui')
-            self.collector.add_log(level, message, source)
-        except Exception:
-            self.handleError(record)
+            # Einfacher Timestamp ohne datetime dependency
+            import time
+            timestamp = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(record.created))
+            self.collector.add_log(level, message, source, timestamp)
+        except Exception as e:
+            # Bei Fehlern nicht crashen, einfach still ignorieren
+            pass
 
 # WebUILogHandler zum Root Logger hinzügen
 webui_handler = WebUILogHandler(log_collector)
@@ -899,31 +908,54 @@ def ha_polling_loop():
 # --- Logs API ---
 @app.route('/api/logs')
 def api_logs():
-    """Gibt die letzten Logs zurück."""
-    level_filter = request.args.get('level')
-    source_filter = request.args.get('source')
-    limit = int(request.args.get('limit', 100))
-    
-    logs = log_collector.get_logs(
-        level_filter=level_filter,
-        source_filter=source_filter,
-        limit=limit
-    )
-    
-    return jsonify({
-        "status": "success",
-        "logs": logs,
-        "total": len(log_collector.logs)
-    })
+    """Gibt die echten Logs aus dem LogCollector zurück."""
+    try:
+        level_filter = request.args.get('level')
+        source_filter = request.args.get('source')
+        limit = int(request.args.get('limit', 100))
+        
+        logs = log_collector.get_logs(level_filter, source_filter, limit)
+        
+        return jsonify({
+            "status": "success",
+            "logs": logs,
+            "total": len(logs)
+        })
+    except Exception as e:
+        logger.error(f"[API] Error in /api/logs: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e),
+            "logs": [],
+            "total": 0
+        }), 500
 
 @app.route('/api/logs/sources')
 def api_log_sources():
-    """Gibt alle verfügbaren Log-Quellen zurück."""
-    with log_collector.lock:
-        sources = list(set(log["source"] for log in log_collector.logs))
+    """Gibt alle aktuell bekannten Log-Quellen zurück."""
+    try:
+        with log_collector.lock:
+            # Schnelle Extraktion: Nur die letzten 50 Logs für Quellen-Check nutzen
+            recent_logs = log_collector.logs[-50:]
+            sources = list(set(log.get("source", "system") for log in recent_logs))
+            if not sources: sources = ["webui", "system"]
+            
+        return jsonify({
+            "status": "success", 
+            "sources": sorted(sources)
+        })
+    except Exception as e:
+        logger.error(f"[API] Error in /api/logs/sources: {e}")
+        return jsonify({"status": "error", "sources": ["webui", "system"]}), 500
+
+@app.route('/api/logs/test')
+def api_logs_test():
+    """Test-Endpoint für Log-Funktionalität."""
     return jsonify({
         "status": "success",
-        "sources": sorted(sources)
+        "message": "Logs API works",
+        "total_logs": len(log_collector.logs),
+        "sample_logs": log_collector.logs[:3] if log_collector.logs else []
     })
 
 # --- Database Reset API ---
@@ -1082,6 +1114,9 @@ if __name__ == '__main__':
             rec_config_main=config.REC_CONFIG
 
         )
+
+        # Test-Log um zu prüfen ob der LogCollector funktioniert
+        log_collector.add_log("INFO", "WebUI gestartet und LogCollector aktiv", "webui")
 
 
 

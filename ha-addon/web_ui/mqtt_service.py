@@ -33,11 +33,13 @@ class MqttService:
         base_topic_control = config.MQTT_CONFIG.get('topic_control', 'worx/control')
         base_topic_gps = config.MQTT_CONFIG.get('topic_gps', 'worx/gps')
         base_topic_status = config.MQTT_CONFIG.get('topic_status', 'worx/status')
+        base_topic_logs = config.MQTT_CONFIG.get('topic_logs', 'worx/logs')
 
         subscribe_list_with_qos = [
             (f"{topic_prefix}{base_topic_control}", 1),
             (f"{topic_prefix}{base_topic_status}", 0),
             (f"{topic_prefix}{base_topic_gps}", 0),
+            (f"{topic_prefix}{base_topic_logs}", 0),  # Logs von Pi
         ]
         if pi_status_config_topic:
             subscribe_list_with_qos.append((f"{topic_prefix}{pi_status_config_topic}", 0))
@@ -54,6 +56,7 @@ class MqttService:
         self._on_status_message_callback = None
         self._on_pi_status_message_callback = None
         self._on_gps_message_callback = None
+        self._on_logs_message_callback = None
 
         self.handler.set_message_callback(self._internal_on_message)
         logger.info("MqttService initialisiert.")
@@ -70,6 +73,9 @@ class MqttService:
             elif msg.topic == self.handler.topic_gps: 
                 if self._on_gps_message_callback:
                     self._on_gps_message_callback(payload)
+            elif msg.topic == self.handler.topic_logs:
+                if self._on_logs_message_callback:
+                    self._on_logs_message_callback(payload)
             elif self.pi_status_topic_for_comparison and msg.topic == self.pi_status_topic_for_comparison:
                 if self._on_pi_status_message_callback:
                     self._on_pi_status_message_callback(payload)
@@ -84,6 +90,9 @@ class MqttService:
 
     def set_gps_update_callback(self, callback):
         self._on_gps_message_callback = callback
+
+    def set_logs_update_callback(self, callback):
+        self._on_logs_message_callback = callback
 
     def connect(self):
         self.handler.connect()
