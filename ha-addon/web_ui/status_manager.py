@@ -252,16 +252,27 @@ class StatusManager:
                 }
                 self.mqtt_service.publish("worx/processed", json.dumps(ha_payload))
 
-    def update_ha_mower_status(self, display_status):
-        """Aktualisiert den Mäher-Status basierend auf Cloud-Daten."""
+    def update_ha_mower_status(self, display_status, imu_data=None):
+        """Aktualisiert den Mäher-Status und optionale IMU-Daten basierend auf Cloud-Daten."""
         status_to_emit = None
         
         with self.lock:
+            # Aktualisiere GUI-Variablen, auch wenn sich display_status nicht ändert
+            changed = False
             if self.current_mower_status['mower_status'] != display_status:
                 self.current_mower_status['mower_status'] = display_status
+                changed = True
+                
+            if imu_data:
+                self.current_mower_status['imu_pitch'] = imu_data.get('pitch', 0)
+                self.current_mower_status['imu_roll'] = imu_data.get('roll', 0)
+                self.current_mower_status['imu_yaw'] = imu_data.get('yaw', 0)
+                changed = True
+
+            if changed:
                 self.current_mower_status['last_update'] = datetime.now().strftime("%H:%M:%S")
                 status_to_emit = self.current_mower_status.copy()
         
         if status_to_emit:
-            logger.info(f"[StatusManager] Cloud-Status übernommen: {display_status}")
+            logger.debug(f"[StatusManager] Cloud-Status/IMU aktualisiert: {display_status}")
             self._emit_socketio_event('status_update', status_to_emit, "Mäher-Status (Cloud)")
