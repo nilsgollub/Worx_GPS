@@ -26,6 +26,7 @@ Im Add-on-Reiter **Konfiguration** die MQTT-Daten eintragen:
 | `mqtt_port` | `1883` | MQTT-Port |
 | `mqtt_user` | (leer) | MQTT-Benutzer |
 | `mqtt_password` | (leer) | MQTT-Passwort |
+| `ha_mower_entity` | (leer) | HA Entity-ID des Mähers (z.B. `lawn_mower.m`) |
 | `debug_logging` | `false` | Ausführliche Logs |
 
 ---
@@ -39,6 +40,32 @@ Im Add-on-Reiter **Konfiguration** die MQTT-Daten eintragen:
 - **Simulator** - ChaosSimulator zum Testen ohne echten Mäher
 - **Auto-Heatmaps** - 3 Karten werden nach jeder Session automatisch generiert
 - **HA-Autopilot** - Pollt Mäher-Status und steuert Aufzeichnung automatisch
+- **Zentrales Logging** - Live-Logs von WebUI und Pi mit Filterung
+
+---
+
+## Autopilot
+
+Der Autopilot pollt alle 30 Sekunden den Mäher-Status über die HA Supervisor API und steuert die GPS-Aufnahme automatisch.
+
+**Voraussetzung:** `ha_mower_entity` muss in der Add-on-Konfiguration gesetzt sein (z.B. `lawn_mower.m`). Die Entity findet man unter **Einstellungen → Geräte & Dienste → Landroid**.
+
+| Mäher-Status | Aktion |
+|---|---|
+| `mowing`, `starting`, `edge cutting`, `searching zone`, `at home` | ▶️ Aufnahme starten |
+| `docked`, `charging`, `idle`, `rain delay`, `paused`, `returning` | ⏹️ Aufnahme stoppen |
+| `error`, `trapped`, `locked`, `manual stop`, `out of bounds` | ⚠️ Problem melden |
+
+---
+
+## Zentrales Logging
+
+Das Logging-System sammelt Logs von WebUI und Pi Zero an einem Ort:
+
+- **WebUI → Logs** Seite mit Live-Anzeige und Auto-Refresh
+- **Filterung** nach Quelle (`webui`, `pi_gps_rec`) und Level (INFO, WARNING, ERROR)
+- **Pi-Fehler** (GPS-Probleme, Exceptions) werden automatisch per MQTT gesendet
+- **API:** `/api/logs` und `/api/logs/sources`
 
 ---
 
