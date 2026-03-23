@@ -190,11 +190,19 @@ class WorxCloudService:
                 logger.error("[WorxCloud] Keine Mäher gefunden oder Verbindung zur API/MQTT fehlgeschlagen.")
                 return
             
-            self._device_name = self._cloud.devices[0].name if self._cloud.devices else "Unbekannt"
-            self._serial = self._cloud.devices[0].serial if self._cloud.devices else "N/A"
-            logger.info(f"[WorxCloud] Mäher verbunden: {self._device_name} ({self._serial})")
+            if self._cloud.devices:
+                # pyworxcloud.devices ist ein Dictionary {serial: DeviceHandler}
+                first_device = list(self._cloud.devices.values())[0]
+                self._device_name = first_device.name
+                self._serial = first_device.serial
+                logger.info(f"[WorxCloud] Mäher verbunden: {self._device_name} ({self._serial})")
+            else:
+                logger.warning("[WorxCloud] Authentifizierung erfolgreich, aber keine Mäher im Account gefunden.")
+                self._device_name = "Kein Mäher"
+                self._serial = "N/A"
+
             self._connected = True
-            logger.info(f"[WorxCloud] Verbunden. {len(self._cloud.devices)} Gerät(e) gefunden.")
+            logger.info(f"[WorxCloud] Verbindung steht. {len(self._cloud.devices)} Gerät(e) im Zugriff.")
         except Exception as e:
             logger.error(f"[WorxCloud] Verbindungsfehler: {e}", exc_info=True)
             return
