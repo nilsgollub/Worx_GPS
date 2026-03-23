@@ -193,8 +193,8 @@ class WorxCloudService:
             if self._cloud.devices:
                 # pyworxcloud.devices ist ein Dictionary {serial: DeviceHandler}
                 first_device = list(self._cloud.devices.values())[0]
-                self._device_name = first_device.name
-                self._serial = first_device.serial
+                self._device_name = getattr(first_device, "name", "Unbekannt")
+                self._serial = getattr(first_device, "sn", "N/A")
                 logger.info(f"[WorxCloud] Mäher verbunden: {self._device_name} ({self._serial})")
             else:
                 logger.warning("[WorxCloud] Authentifizierung erfolgreich, aber keine Mäher im Account gefunden.")
