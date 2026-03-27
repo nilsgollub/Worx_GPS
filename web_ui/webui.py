@@ -186,17 +186,40 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
 
+# --- Diagnose: Dateistruktur im Container (für 404-Debugging) ---
+def log_directory_structure(path, label="Struktur", depth=1):
+    try:
+        if os.path.isdir(path):
+            entries = os.listdir(path)
+            logger.info(f"[{label}] Inhalt von {path}: {entries}")
+            if depth > 0:
+                for entry in entries:
+                    full_p = os.path.join(path, entry)
+                    if os.path.isdir(full_p):
+                        log_directory_structure(full_p, f"{label} SUB", depth - 1)
+        else:
+            logger.warning(f"[{label}] Pfad nicht gefunden: {path}")
+    except Exception as e:
+        logger.error(f"[{label}] Fehler beim Scannen von {path}: {e}")
+
+# Initialisiere Diagnose
+log_directory_structure("/app", "CONTAINER ROOT")
+log_directory_structure(project_root, "PROJECT ROOT")
+
 # --- Frontend Pfade (für Docker/Add-on optimiert) ---
-frontend_dist = os.path.join(project_root, 'frontend', 'dist')
-# Fallback für Docker: Falls in /app installiert
-if not os.path.isdir(frontend_dist) and os.path.join('/', 'app', 'frontend', 'dist'):
-    frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
+# 1. Versuche Standard-Pfad im Docker-Container (/app/frontend/dist)
+frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
+if not os.path.isdir(frontend_dist):
+    # 2. Versuche relativen Pfad (lokale Entwicklung)
+    frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+    if not os.path.isdir(frontend_dist):
+        # 3. Letzter Rettungsring: Falls es im ha-addon/frontend/dist liegt
+        frontend_dist = os.path.join(project_root, 'ha-addon', 'frontend', 'dist')
+
+logger.info(f"[Config] Nutze Frontend-Pfad (Static): {frontend_dist}")
 
 app.template_folder = frontend_dist
 app.static_folder = frontend_dist
-
-# For serving static assets inside the Vite build (js/css)
-
 app.static_url_path = ''
 
 CORS(app) # Enable CORS for React Frontend API calls
