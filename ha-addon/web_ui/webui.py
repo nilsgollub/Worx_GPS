@@ -157,7 +157,23 @@ webui_handler = WebUILogHandler(log_collector)
 webui_handler.setLevel(logging.DEBUG)
 logging.getLogger().addHandler(webui_handler)
 
+# --- Frontend Pfade (für Docker/Add-on im Home Assistant optimiert) ---
+# Im Docker-Image liegen die Dateien IMMER unter /app/frontend/dist
+frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
 
+# Falls wir lokal entwickeln (außerhalb von Docker), versuchen wir relativ
+if not os.path.isdir(frontend_dist):
+    frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+
+logger.info(f"[Config] Nutze Frontend-Pfad (Static): {frontend_dist}")
+
+# --- Flask App Initialisierung ---
+# Wir deaktivieren static_url_path, damit Flask nicht versucht, Dateien automatisch auszuliefern
+# (Das Ingress-System macht das Routing sonst kaputt)
+app = Flask(__name__, 
+            static_folder=frontend_dist, 
+            static_url_path=None,   # WICHTIG: Flask-Automatik aus!
+            template_folder=frontend_dist)
 
 # --- Home Assistant Ingress Middleware ---
 class IngressMiddleware:
@@ -165,42 +181,55 @@ class IngressMiddleware:
         self.app = app
 
     def __call__(self, environ, start_response):
+        # Home Assistant übergibt den Pfad-Präfix für Ingress im Header 'X-Ingress-Path'
+        ingress_path = environ.get('HTTP_X_INGRESS_PATH', '').rstrip('/')
         path_info = environ.get('PATH_INFO', '')
-        ingress_path = environ.get('HTTP_X_INGRESS_PATH')
         
-        # Nur eingreifen, wenn wir wirklich über HA Ingress kommen
         if ingress_path:
-            logger.debug(f"[IngressMiddleware] HA Ingress erkannt: {ingress_path}")
-            environ['SCRIPT_NAME'] = ingress_path.rstrip('/')
+            logger.info(f"[IngressMiddleware] DEBUG: Before transformation - PATH_INFO: {path_info}, Ingress-Path: {ingress_path}")
+            # SCRIPT_NAME ist die Basis-URL für url_for()
+            environ['SCRIPT_NAME'] = ingress_path
+            # Ingress Pfade fangen oft mit dem Präfix an, Flask braucht aber das reine Routing
             if path_info.startswith(ingress_path):
-                environ['PATH_INFO'] = path_info[len(ingress_path):]
-                if not environ['PATH_INFO'].startswith('/'):
-                    environ['PATH_INFO'] = '/' + environ['PATH_INFO']
+                environ['PATH_INFO'] = path_info[len(ingress_path):] or '/'
+            
+            logger.info(f"[IngressMiddleware] DEBUG: After transformation - PATH_INFO: {environ['PATH_INFO']}")
         
         return self.app(environ, start_response)
 
 # --- Flask & SocketIO Setup ---
-
-app = Flask(__name__)
+# Middleware auf die BESTEHENDE app anwenden (NICHT neu erstellen!)
 app.wsgi_app = IngressMiddleware(app.wsgi_app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
 
-frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+CORS(app)  # Enable CORS for React Frontend API calls
 
-app.template_folder = frontend_dist
+# --- Diagnose: Dateistruktur im Container (für 404-Debugging) ---
+def log_directory_structure(path, label="Struktur", depth=1):
+    try:
+        if os.path.isdir(path):
+            entries = os.listdir(path)
+            logger.info(f"[{label}] Inhalt von {path}: {entries}")
+            if depth > 0:
+                for entry in entries:
+                    full_p = os.path.join(path, entry)
+                    if os.path.isdir(full_p):
+                        log_directory_structure(full_p, f"{label} SUB", depth - 1)
+        else:
+            logger.warning(f"[{label}] Pfad nicht gefunden: {path}")
+    except Exception as e:
+        logger.error(f"[{label}] Fehler beim Scannen von {path}: {e}")
 
-app.static_folder = frontend_dist
+# Initialisiere Diagnose
+log_directory_structure("/app", "CONTAINER ROOT")
+log_directory_structure(project_root, "PROJECT ROOT")
 
-# For serving static assets inside the Vite build (js/css)
+logger.info(f"[Config] Flask static_folder: {app.static_folder}")
+logger.info(f"[Config] Flask template_folder: {app.template_folder}")
 
-app.static_url_path = ''
-
-CORS(app) # Enable CORS for React Frontend API calls
-
-# Eventlet entfernt wegen Kompatibilitätsproblemen auf Windows, falle zurück auf default (threading/werkzeug)
-
+# SocketIO Setup (einmalig, mit Timeouts)
 socketio = SocketIO(app, async_mode=None, ping_timeout=20, ping_interval=10, cors_allowed_origins="*")
 
 
@@ -231,28 +260,22 @@ def ping():
 @app.route('/<path:path>')
 def serve_react(path):
     """
-    Serve the React UI. Supports both direct IP access and HA Ingress.
+    Universeller React-Handler. Unterstützt direkte Aufrufe und HA Ingress.
+    Liefert statische Dateien aus oder fällt auf index.html zurück (SPA-Routing).
     """
-    if path and path.startswith('api/'):
-        return jsonify({"error": "API route not found"}), 404
+    # 1. Ignoriere API-Routen (die haben eigene Handler)
+    if path.startswith('api/'):
+        return jsonify({"error": "API Route not found"}), 404
 
-    # 1. Bereinige den Pfad (entferne Ingress-Präfix, falls im URL-Pfad vorhanden)
-    ingress_path = request.headers.get('X-Ingress-Path', '').strip('/')
-    clean_path = path
-    if ingress_path and path.startswith(ingress_path):
-        clean_path = path[len(ingress_path):].lstrip('/')
+    # 2. Suche Datei im statischen Ordner
+    filename = path if path else 'index.html'
+    full_path = os.path.join(app.static_folder, filename)
 
-    # 2. Prüfe, ob es eine statische Datei (Asset) ist
-    target_file = clean_path if clean_path else 'index.html'
-    full_path = os.path.join(app.static_folder, target_file)
+    if os.path.isfile(full_path):
+        return send_from_directory(app.static_folder, filename)
 
-    # logger.debug(f"[ServeReact] Path: {path} | Clean: {clean_path} | Full: {full_path}")
-
-    if os.path.exists(full_path) and os.path.isfile(full_path):
-        # Wichtig: Mime-Types für JS/CSS sicherstellen
-        return send_from_directory(app.static_folder, target_file)
-    
-    # 3. Fallback: Immer index.html (für React Router)
+    # 3. Fallback: Alles andere an index.html (React Router übernimmt)
+    # logger.debug(f"[ServeReact] Fallback -> index.html für Pfad: {path}")
     return send_from_directory(app.static_folder, 'index.html')
 
 
@@ -563,9 +586,16 @@ def control():
 
 
 
-        command_map = {'start_recording': 'START_REC', 'stop_recording': 'STOP_REC',
-
-                       'generate_heatmaps': 'GENERATE_HEATMAPS', 'shutdown': 'SHUTDOWN'}
+        command_map = {
+            'start_recording': 'START_REC', 
+            'stop_recording': 'STOP_REC',
+            'generate_heatmaps': 'GENERATE_HEATMAPS', 
+            'shutdown': 'SHUTDOWN',
+            'git_pull': 'GIT_PULL',
+            'restart_service': 'RESTART_SERVICE',
+            'reboot_pi': 'REBOOT_PI',
+            'wipe_buffer': 'WIPE_BUFFER'
+        }
 
         message = command_map.get(command)
 
@@ -1115,6 +1145,28 @@ def api_simulator_toggle():
     else:
         simulator_instance.start()
         return jsonify({"running": True})
+
+
+@app.route('/')
+def index():
+    """Explizite Route für den Root-Pfad."""
+    logger.debug(f"DEBUG: Index / aufgerufen. PATH_INFO: {request.environ.get('PATH_INFO')}")
+    return serve_react("")
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    """Catch-all für das React-Frontend (SPA). Leitet alles zur index.html weiter."""
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    
+    # Sicherstellen, dass index.html existiert und Log-Check
+    index_path = os.path.join(app.static_folder, 'index.html')
+    if index_path and os.path.exists(index_path):
+        return send_from_directory(app.static_folder, 'index.html')
+    else:
+        logger.error(f"FATAL: index.html nicht gefunden in {app.static_folder}. Pfad war: {path}")
+        return f"Frontend Dateien fehlen (index.html) in {app.static_folder}. Bitte Add-on neu bauen.", 404
 
 # --- Start ---
 

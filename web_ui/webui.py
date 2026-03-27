@@ -175,13 +175,6 @@ app = Flask(__name__,
             static_url_path=None,   # WICHTIG: Flask-Automatik aus!
             template_folder=frontend_dist)
 
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    """Manuelle Auslieferung statischer Dateien."""
-    return send_from_directory(os.path.join(app.static_folder, 'static'), filename)
-
-CORS(app) # Enable CORS for React Frontend API calls
-
 # --- Home Assistant Ingress Middleware ---
 class IngressMiddleware:
     def __init__(self, app):
@@ -205,12 +198,13 @@ class IngressMiddleware:
         return self.app(environ, start_response)
 
 # --- Flask & SocketIO Setup ---
-
-app = Flask(__name__)
+# Middleware auf die BESTEHENDE app anwenden (NICHT neu erstellen!)
 app.wsgi_app = IngressMiddleware(app.wsgi_app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
+
+CORS(app)  # Enable CORS for React Frontend API calls
 
 # --- Diagnose: Dateistruktur im Container (für 404-Debugging) ---
 def log_directory_structure(path, label="Struktur", depth=1):
@@ -232,12 +226,10 @@ def log_directory_structure(path, label="Struktur", depth=1):
 log_directory_structure("/app", "CONTAINER ROOT")
 log_directory_structure(project_root, "PROJECT ROOT")
 
-socketio = SocketIO(app, async_mode=None, cors_allowed_origins="*")
+logger.info(f"[Config] Flask static_folder: {app.static_folder}")
+logger.info(f"[Config] Flask template_folder: {app.template_folder}")
 
-CORS(app) # Enable CORS for React Frontend API calls
-
-# Eventlet entfernt wegen Kompatibilitätsproblemen auf Windows, falle zurück auf default (threading/werkzeug)
-
+# SocketIO Setup (einmalig, mit Timeouts)
 socketio = SocketIO(app, async_mode=None, ping_timeout=20, ping_interval=10, cors_allowed_origins="*")
 
 

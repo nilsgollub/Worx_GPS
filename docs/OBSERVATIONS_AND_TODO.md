@@ -1,6 +1,6 @@
 # 📝 Changelog, Bekannte Fehler & Roadmap
 
-> **Version:** 2.5.8 | **Stand:** 2026-03-27
+> **Version:** 2.5.9 | **Stand:** 2026-03-27
 
 ---
 
@@ -37,6 +37,14 @@
 ---
 
 ## ✅ Changelog (abgeschlossene Arbeiten)
+
+### v2.5.9 (2026-03-27)
+- **Kritischer Bugfix: WebUI 404 Not Found:**
+  - Ursache: `app = Flask(__name__)` wurde in `webui.py` **doppelt** aufgerufen (Zeile 173 und 209). Die zweite Initialisierung überschrieb die korrekt konfigurierte App (mit `static_folder=frontend_dist`) durch eine leere Standard-App.
+  - Dadurch zeigte `app.static_folder` auf den falschen Pfad und `send_from_directory()` konnte `index.html` nicht finden → 404.
+  - Fix: Zweite `Flask(__name__)`-Initialisierung entfernt, IngressMiddleware und ProxyFix auf die bestehende App angewendet.
+  - Zusätzlich: Doppelte SocketIO- und CORS-Initialisierungen bereinigt.
+  - Diagnose-Logging für `static_folder` und `template_folder` hinzugefügt.
 
 ### v2.5.8 (2026-03-27)
 - **Remote Pi Management:** Buttons für Git Pull, Restart Service, Reboot und Buffer Wipe in WebUI (Einstellungen) integriert.
