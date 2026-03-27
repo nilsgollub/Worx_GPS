@@ -165,22 +165,16 @@ class IngressMiddleware:
         self.app = app
 
     def __call__(self, environ, start_response):
-        path_info = environ.get('PATH_INFO', '')
         # Home Assistant übergibt den Pfad-Präfix für Ingress im Header 'X-Ingress-Path'
         ingress_path = environ.get('HTTP_X_INGRESS_PATH', '').rstrip('/')
         
         if ingress_path:
-            # logger.debug(f"[IngressMiddleware] HA Ingress erkannt: {ingress_path} (Path: {path_info})")
-            
-            # SCRIPT_NAME ist die Basis-URL, unter der die App im Proxy erreichbar ist
-            # Flask nutzt dies automatisch für url_for()
+            # SCRIPT_NAME ist die Basis-URL für url_for()
             environ['SCRIPT_NAME'] = ingress_path
-            
-            # Falls der Pfad bereits mit dem Ingress-Präfix beginnt (manche Browser laden so), entfernen wir ihn
+            # Ingress Pfade fangen oft mit dem Präfix an, Flask braucht aber das reine Routing
+            path_info = environ.get('PATH_INFO', '')
             if path_info.startswith(ingress_path):
-                environ['PATH_INFO'] = path_info[len(ingress_path):]
-                if not environ['PATH_INFO'].startswith('/'):
-                    environ['PATH_INFO'] = '/' + environ['PATH_INFO']
+                environ['PATH_INFO'] = path_info[len(ingress_path):] or '/'
         
         return self.app(environ, start_response)
 
@@ -239,31 +233,22 @@ def ping():
 @app.route('/<path:path>')
 def serve_react(path):
     """
-    Serve the React UI. Supports both direct IP access and HA Ingress.
+    Universeller React-Handler. Unterstützt direkte Aufrufe und HA Ingress.
+    Liefert statische Dateien aus oder fällt auf index.html zurück (SPA-Routing).
     """
-    # Wir blockieren api/ hier nicht blind, da Flask explizite @app.route('/api/...') bevorzugt
-    # und wir hier nur den Fallback für statische Dateien/React-Router behandeln.
+    # 1. Ignoriere API-Routen (die haben eigene Handler)
+    if path.startswith('api/'):
+        return jsonify({"error": "API Route not found"}), 404
 
-    # 1. Bereinige den Pfad (entferne Ingress-Präfix, falls im URL-Pfad vorhanden)
-    ingress_path = request.headers.get('X-Ingress-Path', '').strip('/')
-    clean_path = path
-    if ingress_path and path.startswith(ingress_path):
-        clean_path = path[len(ingress_path):].lstrip('/')
+    # 2. Suche Datei im statischen Ordner
+    filename = path if path else 'index.html'
+    full_path = os.path.join(app.static_folder, filename)
 
-    # 2. Prüfe, ob es eine statische Datei (Asset) ist
-    target_file = clean_path if clean_path else 'index.html'
-    full_path = os.path.join(app.static_folder, target_file)
+    if os.path.isfile(full_path):
+        return send_from_directory(app.static_folder, filename)
 
-    # logger.debug(f"[ServeReact] Path: {path} | Clean: {clean_path} | Full: {full_path}")
-
-    if os.path.exists(full_path) and os.path.isfile(full_path):
-        return send_from_directory(app.static_folder, target_file)
-    
-    # Debug: Wo suchen wir?
-    if not target_file == 'index.html':
-        logger.warning(f"[ServeReact] 404 - Datei nicht gefunden: {full_path} (Statik-Ordner: {app.static_folder})")
-
-    # 3. Fallback: Immer index.html (für React Router)
+    # 3. Fallback: Alles andere an index.html (React Router übernimmt)
+    # logger.debug(f"[ServeReact] Fallback -> index.html für Pfad: {path}")
     return send_from_directory(app.static_folder, 'index.html')
 
 
