@@ -582,9 +582,16 @@ def control():
 
 
 
-        command_map = {'start_recording': 'START_REC', 'stop_recording': 'STOP_REC',
-
-                       'generate_heatmaps': 'GENERATE_HEATMAPS', 'shutdown': 'SHUTDOWN'}
+        command_map = {
+            'start_recording': 'START_REC', 
+            'stop_recording': 'STOP_REC',
+            'generate_heatmaps': 'GENERATE_HEATMAPS', 
+            'shutdown': 'SHUTDOWN',
+            'git_pull': 'GIT_PULL',
+            'restart_service': 'RESTART_SERVICE',
+            'reboot_pi': 'REBOOT_PI',
+            'wipe_buffer': 'WIPE_BUFFER'
+        }
 
         message = command_map.get(command)
 

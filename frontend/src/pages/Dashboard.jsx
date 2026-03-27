@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, RefreshCw, Navigation, Home, Pause } from 'lucide-react';
+import { 
+  Play, Square, Activity, Satellite, MapPin, Cpu, ExternalLink, 
+  RefreshCw, Navigation, Home, Pause, Download, Trash, Power 
+} from 'lucide-react';
 import { socket, API_URL } from '../App';
 import LiveMapWidget from '../components/LiveMapWidget';
 
@@ -261,6 +264,45 @@ export default function Dashboard() {
         </div>
         <div className="text-small text-muted mt-2">
            Pi Update: {pi?.last_update || '-'}
+        </div>
+
+        {/* Pi Zero Remote Control */}
+        <div style={{borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 15, paddingTop: 15}}>
+          <span className="text-small text-muted mb-2 block" style={{display: 'block', marginBottom: 10, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em'}}>Pi Zero Remote Control:</span>
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8}}>
+            <button 
+              className="btn btn-small" 
+              style={{background: 'rgba(56, 139, 253, 0.15)', color: '#58a6ff', fontSize: '0.75rem', padding: '6px 4px'}}
+              onClick={() => sendCommand('git_pull')}
+              title="Aktualisiert den Code vom GitHub Repository"
+            >
+              <Download size={14} style={{marginRight: 4}}/> Git Pull
+            </button>
+            <button 
+              className="btn btn-small" 
+              style={{background: 'rgba(56, 139, 253, 0.15)', color: '#58a6ff', fontSize: '0.75rem', padding: '6px 4px'}}
+              onClick={() => sendCommand('restart_service')}
+              title="Startet den Worx GPS Dienst neu"
+            >
+              <RefreshCw size={14} style={{marginRight: 4}}/> Restart
+            </button>
+            <button 
+              className="btn btn-small" 
+              style={{background: 'rgba(215, 58, 73, 0.15)', color: '#f85149', fontSize: '0.75rem', padding: '6px 4px'}}
+              onClick={() => sendCommand('wipe_buffer')}
+              title="Löscht den lokalen GPS-Puffer"
+            >
+              <Trash size={14} style={{marginRight: 4}}/> Wipe
+            </button>
+            <button 
+              className="btn btn-small" 
+              style={{background: 'rgba(215, 58, 73, 0.15)', color: '#f85149', fontSize: '0.75rem', padding: '6px 4px'}}
+              onClick={() => sendCommand('reboot_pi')}
+              title="Startet den gesamten Raspberry Pi neu"
+            >
+              <Power size={14} style={{marginRight: 4}}/> Reboot
+            </button>
+          </div>
         </div>
       </div>
 
