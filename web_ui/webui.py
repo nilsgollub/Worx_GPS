@@ -166,12 +166,17 @@ class IngressMiddleware:
 
     def __call__(self, environ, start_response):
         path_info = environ.get('PATH_INFO', '')
-        ingress_path = environ.get('HTTP_X_INGRESS_PATH')
+        # Home Assistant übergibt den Pfad-Präfix für Ingress im Header 'X-Ingress-Path'
+        ingress_path = environ.get('HTTP_X_INGRESS_PATH', '').rstrip('/')
         
-        # Nur eingreifen, wenn wir wirklich über HA Ingress kommen
         if ingress_path:
-            logger.debug(f"[IngressMiddleware] HA Ingress erkannt: {ingress_path}")
-            environ['SCRIPT_NAME'] = ingress_path.rstrip('/')
+            # logger.debug(f"[IngressMiddleware] HA Ingress erkannt: {ingress_path} (Path: {path_info})")
+            
+            # SCRIPT_NAME ist die Basis-URL, unter der die App im Proxy erreichbar ist
+            # Flask nutzt dies automatisch für url_for()
+            environ['SCRIPT_NAME'] = ingress_path
+            
+            # Falls der Pfad bereits mit dem Ingress-Präfix beginnt (manche Browser laden so), entfernen wir ihn
             if path_info.startswith(ingress_path):
                 environ['PATH_INFO'] = path_info[len(ingress_path):]
                 if not environ['PATH_INFO'].startswith('/'):
