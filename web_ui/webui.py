@@ -167,14 +167,17 @@ class IngressMiddleware:
     def __call__(self, environ, start_response):
         # Home Assistant übergibt den Pfad-Präfix für Ingress im Header 'X-Ingress-Path'
         ingress_path = environ.get('HTTP_X_INGRESS_PATH', '').rstrip('/')
+        path_info = environ.get('PATH_INFO', '')
         
         if ingress_path:
+            logger.info(f"[IngressMiddleware] DEBUG: Before transformation - PATH_INFO: {path_info}, Ingress-Path: {ingress_path}")
             # SCRIPT_NAME ist die Basis-URL für url_for()
             environ['SCRIPT_NAME'] = ingress_path
             # Ingress Pfade fangen oft mit dem Präfix an, Flask braucht aber das reine Routing
-            path_info = environ.get('PATH_INFO', '')
             if path_info.startswith(ingress_path):
                 environ['PATH_INFO'] = path_info[len(ingress_path):] or '/'
+            
+            logger.info(f"[IngressMiddleware] DEBUG: After transformation - PATH_INFO: {environ['PATH_INFO']}")
         
         return self.app(environ, start_response)
 
@@ -1141,6 +1144,12 @@ def api_simulator_toggle():
         return jsonify({"running": True})
 
 
+@app.route('/')
+def index():
+    """Explizite Route für den Root-Pfad."""
+    logger.debug(f"DEBUG: Index / aufgerufen. PATH_INFO: {request.environ.get('PATH_INFO')}")
+    return serve_react("")
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react(path):
@@ -1150,11 +1159,11 @@ def serve_react(path):
     
     # Sicherstellen, dass index.html existiert und Log-Check
     index_path = os.path.join(app.static_folder, 'index.html')
-    if os.path.exists(index_path):
+    if index_path and os.path.exists(index_path):
         return send_from_directory(app.static_folder, 'index.html')
     else:
-        logger.error(f"FATAL: index.html nicht gefunden in {app.static_folder}. Frontend wird 404 werfen.")
-        return "Frontend Dateien fehlen (index.html). Bitte Add-on neu bauen.", 404
+        logger.error(f"FATAL: index.html nicht gefunden in {app.static_folder}. Pfad war: {path}")
+        return f"Frontend Dateien fehlen (index.html) in {app.static_folder}. Bitte Add-on neu bauen.", 404
 
 # --- Start ---
 
