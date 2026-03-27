@@ -157,7 +157,30 @@ webui_handler = WebUILogHandler(log_collector)
 webui_handler.setLevel(logging.DEBUG)
 logging.getLogger().addHandler(webui_handler)
 
+# --- Frontend Pfade (für Docker/Add-on im Home Assistant optimiert) ---
+# Im Docker-Image liegen die Dateien IMMER unter /app/frontend/dist
+frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
 
+# Falls wir lokal entwickeln (außerhalb von Docker), versuchen wir relativ
+if not os.path.isdir(frontend_dist):
+    frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+
+logger.info(f"[Config] Nutze Frontend-Pfad (Static): {frontend_dist}")
+
+# --- Flask App Initialisierung ---
+# Wir deaktivieren static_url_path, damit Flask nicht versucht, Dateien automatisch auszuliefern
+# (Das Ingress-System macht das Routing sonst kaputt)
+app = Flask(__name__, 
+            static_folder=frontend_dist, 
+            static_url_path=None,   # WICHTIG: Flask-Automatik aus!
+            template_folder=frontend_dist)
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Manuelle Auslieferung statischer Dateien."""
+    return send_from_directory(os.path.join(app.static_folder, 'static'), filename)
+
+CORS(app) # Enable CORS for React Frontend API calls
 
 # --- Home Assistant Ingress Middleware ---
 class IngressMiddleware:
@@ -209,19 +232,7 @@ def log_directory_structure(path, label="Struktur", depth=1):
 log_directory_structure("/app", "CONTAINER ROOT")
 log_directory_structure(project_root, "PROJECT ROOT")
 
-# --- Frontend Pfade (für Docker/Add-on im Home Assistant optimiert) ---
-# Im Docker-Image liegen die Dateien IMMER unter /app/frontend/dist
-frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
-
-# Falls wir lokal entwickeln (außerhalb von Docker), suchen wir relativ
-if not os.path.isdir(frontend_dist):
-    frontend_dist = os.path.join(project_root, 'frontend', 'dist')
-
-logger.info(f"[Config] Nutze Frontend-Pfad (Static): {frontend_dist}")
-
-app.template_folder = frontend_dist
-app.static_folder = frontend_dist
-app.static_url_path = ''
+socketio = SocketIO(app, async_mode=None, cors_allowed_origins="*")
 
 CORS(app) # Enable CORS for React Frontend API calls
 
