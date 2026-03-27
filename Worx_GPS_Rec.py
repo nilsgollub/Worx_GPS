@@ -148,6 +148,8 @@ class WorxGpsRec:
             "RESTART_SERVICE": self._remote_restart_service,
             "REBOOT": self._remote_reboot,
             "WIPE_BUFFER": self._remote_wipe_buffer,
+            "GNSS_SBAS": lambda: self._remote_set_gnss("sbas"),
+            "GNSS_GLONASS": lambda: self._remote_set_gnss("glonass"),
         }
 
         if payload in command_actions:
@@ -343,6 +345,22 @@ class WorxGpsRec:
         except Exception as e:
             logging.error(f"Buffer Wipe Fehler: {e}")
             self._send_feedback("WIPE_BUFFER", False, str(e)[:100])
+
+    def _remote_set_gnss(self, mode):
+        """Wechselt den GNSS-Modus (SBAS/GLONASS) zur Laufzeit."""
+        try:
+            if self.gps_handler:
+                success = self.gps_handler.set_gnss_mode(mode)
+                if success:
+                    logging.info(f"GNSS-Modus auf '{mode}' umgeschaltet")
+                    self._send_feedback("GNSS", True, f"Modus auf {mode.upper()} gewechselt")
+                else:
+                    self._send_feedback("GNSS", False, f"Umschaltung auf {mode} fehlgeschlagen")
+            else:
+                self._send_feedback("GNSS", False, "GpsHandler nicht verfügbar")
+        except Exception as e:
+            logging.error(f"GNSS Umschaltung Fehler: {e}")
+            self._send_feedback("GNSS", False, str(e)[:100])
 
     # --- NEUE HILFSFUNKTION zum Lesen der Temperatur ---
     def _get_cpu_temperature(self):

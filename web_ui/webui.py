@@ -514,6 +514,13 @@ def save_config():
         # Prüfe ob alle gespeicherten Keys hot-reloaded wurden
         all_reloaded = all(k in hot_reloaded for k in saved_keys)
         
+        # --- GNSS-Modus live an den Pi senden (kein Restart nötig) ---
+        if 'GPS_GNSS_MODE' in saved_keys and mqtt_service and mqtt_service.is_connected():
+            gnss_val = dotenv_values(env_file_path).get('GPS_GNSS_MODE', 'sbas')
+            mqtt_cmd = 'GNSS_GLONASS' if gnss_val == 'glonass' else 'GNSS_SBAS'
+            mqtt_service.publish_command(mqtt_cmd)
+            logger.info(f"[GNSS] Live-Umschaltung an Pi gesendet: {mqtt_cmd}")
+        
         if all_reloaded:
             message = f"Konfiguration aktualisiert ({', '.join(saved_keys)}). Alle Änderungen wurden sofort übernommen."
         elif hot_reloaded:
@@ -1107,6 +1114,8 @@ PI_COMMANDS = {
     'restart_service': 'RESTART_SERVICE',
     'reboot': 'REBOOT',
     'wipe_buffer': 'WIPE_BUFFER',
+    'gnss_sbas': 'GNSS_SBAS',
+    'gnss_glonass': 'GNSS_GLONASS',
 }
 
 @app.route('/api/pi/command', methods=['POST'])

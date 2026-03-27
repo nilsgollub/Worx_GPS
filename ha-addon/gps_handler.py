@@ -190,6 +190,30 @@ class GpsHandler:
         else:
             self._configure_ublox_sbas()
 
+    def set_gnss_mode(self, mode):
+        """Wechselt den GNSS-Modus zur Laufzeit (ohne Neustart).
+        Args:
+            mode: 'sbas' oder 'glonass'
+        Returns:
+            True bei Erfolg, False bei Fehler
+        """
+        if mode not in ('sbas', 'glonass'):
+            logger.error(f"Ungültiger GNSS-Modus: '{mode}'")
+            return False
+        
+        if self.ser_gps is None or not self.ser_gps.is_open:
+            logger.error("GNSS-Umschaltung nicht möglich: Keine serielle Verbindung")
+            return False
+        
+        logger.info(f"Wechsle GNSS-Modus auf '{mode}'...")
+        if mode == 'glonass':
+            self._configure_ublox_glonass()
+        else:
+            self._configure_ublox_sbas()
+        
+        logger.info(f"GNSS-Modus erfolgreich auf '{mode}' gewechselt")
+        return True
+
     def _configure_ublox_autonomous(self):
         """Aktiviert AssistNow Autonomous (AOP) auf dem u-blox Modul."""
         if self.ser_gps is None or not self.ser_gps.is_open:
