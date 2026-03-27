@@ -238,8 +238,8 @@ def serve_react(path):
     """
     Serve the React UI. Supports both direct IP access and HA Ingress.
     """
-    if path and path.startswith('api/'):
-        return jsonify({"error": "API route not found"}), 404
+    # Wir blockieren api/ hier nicht blind, da Flask explizite @app.route('/api/...') bevorzugt
+    # und wir hier nur den Fallback für statische Dateien/React-Router behandeln.
 
     # 1. Bereinige den Pfad (entferne Ingress-Präfix, falls im URL-Pfad vorhanden)
     ingress_path = request.headers.get('X-Ingress-Path', '').strip('/')
