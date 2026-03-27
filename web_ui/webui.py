@@ -82,10 +82,13 @@ from web_ui.ha_discovery import HADiscoveryService
 
 
 # --- Logging ---
-
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - [%(name)s:%(lineno)d] - %(message)s') # Geändert auf DEBUG und detaillierteres Format
+log_level = logging.DEBUG if os.getenv('LOG_LEVEL', 'INFO').upper() == 'DEBUG' else logging.INFO
+logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
 
 logger = logging.getLogger(__name__)
+
+# Werkzeug (HTTP-Request-Logs) ruhiger stellen
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 # --- Centralized Log Collector ---
 class LogCollector:
@@ -186,14 +189,13 @@ class IngressMiddleware:
         path_info = environ.get('PATH_INFO', '')
         
         if ingress_path:
-            logger.info(f"[IngressMiddleware] DEBUG: Before transformation - PATH_INFO: {path_info}, Ingress-Path: {ingress_path}")
             # SCRIPT_NAME ist die Basis-URL für url_for()
             environ['SCRIPT_NAME'] = ingress_path
             # Ingress Pfade fangen oft mit dem Präfix an, Flask braucht aber das reine Routing
             if path_info.startswith(ingress_path):
                 environ['PATH_INFO'] = path_info[len(ingress_path):] or '/'
             
-            logger.info(f"[IngressMiddleware] DEBUG: After transformation - PATH_INFO: {environ['PATH_INFO']}")
+            logger.debug(f"[Ingress] {path_info} → {environ['PATH_INFO']}")
         
         return self.app(environ, start_response)
 
@@ -206,28 +208,17 @@ app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
 
 CORS(app)  # Enable CORS for React Frontend API calls
 
-# --- Diagnose: Dateistruktur im Container (für 404-Debugging) ---
-def log_directory_structure(path, label="Struktur", depth=1):
-    try:
-        if os.path.isdir(path):
-            entries = os.listdir(path)
-            logger.info(f"[{label}] Inhalt von {path}: {entries}")
-            if depth > 0:
-                for entry in entries:
-                    full_p = os.path.join(path, entry)
-                    if os.path.isdir(full_p):
-                        log_directory_structure(full_p, f"{label} SUB", depth - 1)
-        else:
-            logger.warning(f"[{label}] Pfad nicht gefunden: {path}")
-    except Exception as e:
-        logger.error(f"[{label}] Fehler beim Scannen von {path}: {e}")
-
-# Initialisiere Diagnose
-log_directory_structure("/app", "CONTAINER ROOT")
-log_directory_structure(project_root, "PROJECT ROOT")
-
-logger.info(f"[Config] Flask static_folder: {app.static_folder}")
-logger.info(f"[Config] Flask template_folder: {app.template_folder}")
+# --- Startup-Diagnose ---
+logger.info(f"=== STARTUP DIAGNOSE ===")
+logger.info(f"  static_folder : {app.static_folder}")
+logger.info(f"  template_folder: {app.template_folder}")
+_idx = os.path.join(app.static_folder or '', 'index.html')
+logger.info(f"  index.html     : {'✓ GEFUNDEN' if os.path.isfile(_idx) else '✗ FEHLT (!)'}  ({_idx})")
+if app.static_folder and os.path.isdir(app.static_folder):
+    logger.info(f"  dist Inhalt    : {os.listdir(app.static_folder)}")
+else:
+    logger.error(f"  static_folder existiert NICHT: {app.static_folder}")
+logger.info(f"========================")
 
 # SocketIO Setup (einmalig, mit Timeouts)
 socketio = SocketIO(app, async_mode=None, ping_timeout=20, ping_interval=10, cors_allowed_origins="*")
