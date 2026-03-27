@@ -192,10 +192,13 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'fallback-sehr-geheim')
 
+# --- Frontend Pfade (für Docker/Add-on optimiert) ---
 frontend_dist = os.path.join(project_root, 'frontend', 'dist')
+# Fallback für Docker: Falls in /app installiert
+if not os.path.isdir(frontend_dist) and os.path.join('/', 'app', 'frontend', 'dist'):
+    frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
 
 app.template_folder = frontend_dist
-
 app.static_folder = frontend_dist
 
 # For serving static assets inside the Vite build (js/css)
@@ -254,9 +257,12 @@ def serve_react(path):
     # logger.debug(f"[ServeReact] Path: {path} | Clean: {clean_path} | Full: {full_path}")
 
     if os.path.exists(full_path) and os.path.isfile(full_path):
-        # Wichtig: Mime-Types für JS/CSS sicherstellen
         return send_from_directory(app.static_folder, target_file)
     
+    # Debug: Wo suchen wir?
+    if not target_file == 'index.html':
+        logger.warning(f"[ServeReact] 404 - Datei nicht gefunden: {full_path} (Statik-Ordner: {app.static_folder})")
+
     # 3. Fallback: Immer index.html (für React Router)
     return send_from_directory(app.static_folder, 'index.html')
 
