@@ -206,15 +206,13 @@ def log_directory_structure(path, label="Struktur", depth=1):
 log_directory_structure("/app", "CONTAINER ROOT")
 log_directory_structure(project_root, "PROJECT ROOT")
 
-# --- Frontend Pfade (für Docker/Add-on optimiert) ---
-# 1. Versuche Standard-Pfad im Docker-Container (/app/frontend/dist)
+# --- Frontend Pfade (für Docker/Add-on im Home Assistant optimiert) ---
+# Im Docker-Image liegen die Dateien IMMER unter /app/frontend/dist
 frontend_dist = os.path.join('/', 'app', 'frontend', 'dist')
+
+# Falls wir lokal entwickeln (außerhalb von Docker), suchen wir relativ
 if not os.path.isdir(frontend_dist):
-    # 2. Versuche relativen Pfad (lokale Entwicklung)
     frontend_dist = os.path.join(project_root, 'frontend', 'dist')
-    if not os.path.isdir(frontend_dist):
-        # 3. Letzter Rettungsring: Falls es im ha-addon/frontend/dist liegt
-        frontend_dist = os.path.join(project_root, 'ha-addon', 'frontend', 'dist')
 
 logger.info(f"[Config] Nutze Frontend-Pfad (Static): {frontend_dist}")
 
