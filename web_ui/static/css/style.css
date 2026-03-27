@@ -1,0 +1,101 @@
+/* Allgemeine Stile */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    padding-top: 56px; /* Höhe der Navbar, um Überlappung zu vermeiden */
+    padding-bottom: 60px; /* Höhe des Footers */
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.container-fluid {
+    flex: 1; /* Lässt den Hauptinhalt den verfügbaren Platz einnehmen */
+}
+
+/* Navbar Anpassungen */
+.navbar {
+    box-shadow: 0 2px 4px rgba(0,0,0,.1);
+}
+
+/* Footer Anpassungen */
+.footer {
+    background-color: #f8f9fa; /* Helles Grau, passend zu Bootstrap */
+    border-top: 1px solid #e7e7e7;
+    font-size: 0.9em;
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    z-index: 1030; /* Über anderen Elementen, aber unter Modals etc. */
+}
+
+.footer .connection-status {
+    margin-left: 15px;
+}
+
+/* Karten-Container Stile */
+.map-container-home {
+    border-radius: 0.375rem; /* Passend zu Bootstrap Cards */
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 350px;
+}
+
+.heatmap-iframe-home {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+#liveMap {
+    height: 65vh; /* Höhe der Live-Karte */
+    width: 100%;
+    border: 1px solid #ccc;
+    border-radius: 0.25rem;
+}
+
+.heatmap-container { /* Für maps.html */
+    position: relative;
+    width: 100%;
+    height: 75vh;
+    border: 1px solid #ccc;
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+.heatmap-iframe { /* Für maps.html */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+/* Status-Anzeigen und Badges */
+.status-indicator {
+    font-size: 0.95em;
+}
+
+/* Tabellen-Styling für Statistiken (Problemzonen) */
+.problem-zone-table th {
+    position: sticky; /* Lässt den Header beim Scrollen stehen */
+    top: 0;
+    background-color: #f8f9fa; /* Hintergrund für den Header */
+    z-index: 1; /* Stellt sicher, dass der Header über dem Inhalt liegt */
+}
+
+.table-responsive-sm.problem-zone-table-container { /* Eigener Container für Scroll-Höhe */
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* Hilfsklassen */
+.sticky-top {
+    top: 1rem; /* Etwas Abstand von oben für sticky Elemente */
+}

@@ -1,0 +1,12 @@
+.git
+.venv
+.idea
+__pycache__
+*.pyc
+frontend/node_modules
+data/*.csv
+heatmaps/*.html
+heatmaps/*.png
+worx_gps.db
+tmp_*
+*.log

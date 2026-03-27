@@ -1,0 +1,10 @@
+.live-page .live-map {
+  height: 65vh;
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.live-page .status-card {
+  margin-bottom: 1rem;
+}

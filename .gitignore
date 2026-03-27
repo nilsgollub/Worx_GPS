@@ -1,0 +1,45 @@
+# Environment & Secrets
+.env
+worx_pi_sshkey*
+.ssh/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Node / Frontend
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Generated heatmaps & images
+**/heatmaps/
+heatmaps/
+ha-addon/heatmaps/
+**/heatmaps/*.png
+**/heatmaps/*.jpg
+**/heatmaps/*.jpeg
+
+# Data & Database
+data/
+ha-addon/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Build artifacts
+directcom/obj/
+
+# OS
+Thumbs.db
+.DS_Store

@@ -1,0 +1,39 @@
+name: "Worx GPS Monitor"
+version: "2.5.9"
+slug: "worx_gps_monitor"
+description: "Echtzeit-Tracking und Heatmap-Visualisierung für Worx Landroid Mäher."
+url: "https://github.com/nilsgollub/Worx_GPS"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+map:
+  - share:rw
+  - config:rw
+  - ssl:ro
+  - data:rw
+ingress: true
+ingress_port: 5001
+ports:
+  5001/tcp: 5001
+panel_icon: "mdi:robot-mower"
+panel_title: "Worx GPS"
+homeassistant_api: true
+options:
+  debug_logging: false
+  mqtt_host: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_user: ""
+  mqtt_password: ""
+  worx_email: ""
+  worx_password: ""
+  worx_cloud_type: "worx"
+schema:
+  debug_logging: bool
+  mqtt_host: str
+  mqtt_port: int
+  mqtt_user: str?
+  mqtt_password: password?
+  worx_email: str?
+  worx_password: password?
+  worx_cloud_type: str?

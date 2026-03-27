@@ -1,0 +1,32 @@
+[Unit]
+Description=Worx GPS Recorder Service
+After=network-online.target
+Wants=network-online.target
+Documentation=file:///home/nilsgollub/Worx_GPS/RASPBERRY_PI_DEPLOYMENT.md
+
+[Service]
+Type=simple
+WorkingDirectory=/home/nilsgollub/Documents/GitHub/Worx_GPS
+ExecStart=/home/nilsgollub/Documents/GitHub/Worx_GPS/.venv/bin/python /home/nilsgollub/Documents/GitHub/Worx_GPS/Worx_GPS_Rec.py
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=worx_gps_rec
+
+# Environment
+Environment="PATH=/home/nilsgollub/Documents/GitHub/Worx_GPS/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+
+# Security (reduced for user service)
+NoNewPrivileges=true
+
+# Performance
+CPUQuota=50%
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

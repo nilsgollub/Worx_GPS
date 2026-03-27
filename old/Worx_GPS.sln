@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorxMqttInterface", "directcom\WorxMqttInterface.csproj", "{A65DE5BE-AF51-FD79-5F58-AF6C8A73E4FC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A65DE5BE-AF51-FD79-5F58-AF6C8A73E4FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A65DE5BE-AF51-FD79-5F58-AF6C8A73E4FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A65DE5BE-AF51-FD79-5F58-AF6C8A73E4FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A65DE5BE-AF51-FD79-5F58-AF6C8A73E4FC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0B4039C7-6A80-4AB0-B532-78251F5CB733}
+	EndGlobalSection
+EndGlobal
