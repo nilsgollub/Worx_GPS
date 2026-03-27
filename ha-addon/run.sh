@@ -68,6 +68,56 @@ else
     export LOG_LEVEL="INFO"
 fi
 
+# 3c. Erstelle persistente .env in /data, falls keine existiert (WICHTIG für HA Add-on!)
+# Dadurch kann config.py alle Variablen finden, auch die wir nicht in config.yaml haben.
+PERSISTENT_ENV="/data/.env"
+if [ ! -f "$PERSISTENT_ENV" ]; then
+    echo "[System] Initialisiere persistente .env in $PERSISTENT_ENV..."
+    cat <<EOF > "$PERSISTENT_ENV"
+# Worx GPS Add-on - Automatisierte Konfiguration
+MQTT_HOST=$MQTT_HOST
+MQTT_PORT=$MQTT_PORT
+MQTT_USER=$MQTT_USER
+MQTT_PASSWORD=$MQTT_PASS
+MQTT_TOPIC_GPS=worx/gps
+MQTT_TOPIC_STATUS=worx/status
+MQTT_TOPIC_CONTROL=worx/control
+MQTT_TOPIC_PI_STATUS=worx/pi/temperature
+PI_STATUS_INTERVAL=30
+WORX_EMAIL=$WORX_EMAIL
+WORX_PASSWORD=$WORX_PASSWORD
+WORX_CLOUD_TYPE=$WORX_CLOUD_TYPE
+GPS_SERIAL_PORT=/dev/ttyACM0
+GPS_BAUDRATE=9600
+TEST_MODE=FALSE
+FLASK_PORT=5001
+FLASK_DEBUG=FALSE
+GEO_ZOOM_START=20
+GEO_MAX_ZOOM=22
+DEAD_RECKONING_ENABLED=FALSE
+MOVING_AVERAGE_WINDOW=5
+KALMAN_MEASUREMENT_NOISE=0.5
+KALMAN_PROCESS_NOISE=0.2
+HDOP_THRESHOLD=2.5
+MAX_SPEED_MPS=1.5
+OUTLIER_DETECTION_ENABLE=TRUE
+HEATMAP_GENERATE_PNG=FALSE
+HEATMAP_RADIUS=5
+HEATMAP_BLUR=10
+EOF
+    echo "[System] .env erfolgreich initialisiert."
+else
+    # Falls Datei existiert, aktualisiere nur die Kern-Secrets aus den HA-Optionen
+    # (Damit Änderungen in der HA-GUI auch in der .env landen)
+    echo "[System] Aktualisiere Secrets in bestehender .env..."
+    sed -i "s/^MQTT_HOST=.*/MQTT_HOST=$MQTT_HOST/" "$PERSISTENT_ENV"
+    sed -i "s/^MQTT_PORT=.*/MQTT_PORT=$MQTT_PORT/" "$PERSISTENT_ENV"
+    sed -i "s/^MQTT_USER=.*/MQTT_USER=$MQTT_USER/" "$PERSISTENT_ENV"
+    sed -i "s/^MQTT_PASSWORD=.*/MQTT_PASSWORD=$MQTT_PASS/" "$PERSISTENT_ENV"
+    sed -i "s/^WORX_EMAIL=.*/WORX_EMAIL=$WORX_EMAIL/" "$PERSISTENT_ENV"
+    sed -i "s/^WORX_PASSWORD=.*/WORX_PASSWORD=$WORX_PASSWORD/" "$PERSISTENT_ENV"
+fi
+
 # 4. Dienste starten
 echo "[System] Starte Worx GPS Dienste..."
 
