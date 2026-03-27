@@ -1142,6 +1142,22 @@ def api_simulator_toggle():
         simulator_instance.start()
         return jsonify({"running": True})
 
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    """Catch-all für das React-Frontend (SPA). Leitet alles zur index.html weiter."""
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    
+    # Sicherstellen, dass index.html existiert und Log-Check
+    index_path = os.path.join(app.static_folder, 'index.html')
+    if os.path.exists(index_path):
+        return send_from_directory(app.static_folder, 'index.html')
+    else:
+        logger.error(f"FATAL: index.html nicht gefunden in {app.static_folder}. Frontend wird 404 werfen.")
+        return "Frontend Dateien fehlen (index.html). Bitte Add-on neu bauen.", 404
+
 # --- Start ---
 
 if __name__ == '__main__':
