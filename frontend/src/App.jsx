@@ -92,10 +92,24 @@ function PageTitle() {
 
 function App() {
   const [mqttStatus, setMqttStatus] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (type, message) => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 6000);
+  };
 
   useEffect(() => {
     socket.on('connect', () => {
       console.log('Socket connected');
+    });
+
+    // Pi-Feedback Live-Toasts
+    socket.on('pi_feedback', (data) => {
+      addToast(data.type, data.message);
     });
 
     const checkStatus = async () => {
@@ -107,7 +121,10 @@ function App() {
     
     checkStatus();
     const interval = setInterval(checkStatus, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      socket.off('pi_feedback');
+    };
   }, []);
 
   return (
@@ -139,9 +156,37 @@ function App() {
             <Route path="/stats" element={<Stats />} />
             <Route path="/database" element={<DatabaseManager />} />
             <Route path="/logs" element={<Logs />} />
-            <Route path="/config" element={<Config />} />
+            <Route path="/config" element={<Config addToast={addToast} />} />
           </Routes>
         </main>
+
+        {/* Global Toast Container */}
+        <div style={{
+          position: 'fixed', top: 20, right: 20, zIndex: 9999,
+          display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 400
+        }}>
+          {toasts.map(toast => (
+            <div key={toast.id} style={{
+              padding: '14px 20px',
+              borderRadius: 12,
+              background: toast.type === 'success' 
+                ? 'linear-gradient(135deg, rgba(46,160,67,0.95), rgba(35,134,54,0.95))'
+                : 'linear-gradient(135deg, rgba(218,54,51,0.95), rgba(164,14,11,0.95))',
+              border: `1px solid ${toast.type === 'success' ? 'rgba(63,185,80,0.5)' : 'rgba(255,123,114,0.5)'}`,
+              color: '#fff',
+              fontSize: '0.9rem',
+              fontWeight: 500,
+              backdropFilter: 'blur(12px)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+              animation: 'slideInRight 0.3s ease-out',
+              display: 'flex', alignItems: 'center', gap: 10,
+              cursor: 'pointer'
+            }} onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}>
+              <span style={{fontSize: '1.2rem'}}>{toast.type === 'success' ? '✅' : '❌'}</span>
+              {toast.message}
+            </div>
+          ))}
+        </div>
       </div>
     </Router>
   );

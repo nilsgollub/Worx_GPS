@@ -142,17 +142,26 @@ class WorxGpsRec:
             "shutdown": self.initiate_shutdown
         }
 
+        # --- Remote Management Befehle ---
+        remote_commands = {
+            "GIT_PULL": self._remote_git_pull,
+            "RESTART_SERVICE": self._remote_restart_service,
+            "REBOOT": self._remote_reboot,
+            "WIPE_BUFFER": self._remote_wipe_buffer,
+        }
+
         if payload in command_actions:
             action = command_actions[payload]
             logging.info(f"Führe Aktion für Befehl '{payload}' aus.")
-            action()  # Rufe die entsprechende Methode auf
+            action()
+        elif payload in remote_commands:
+            logging.info(f"Remote-Befehl empfangen: '{payload}'")
+            remote_commands[payload]()
         elif payload in mode_mapping:
             new_mode = mode_mapping[payload]
             logging.info(f"Versuche GPS-Modus auf '{new_mode}' zu ändern (via '{payload}').")
             if not self.gps_handler.change_gps_mode(new_mode):
                 logging.warning(f"Fehler beim Ändern des GPS-Modus auf '{new_mode}'.")
-                # Optional: MQTT-Statusnachricht senden
-                # self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, f"error_gps_mode_{new_mode}")
         else:
             logging.warning(f"Unbekannter Befehl empfangen: '{payload}'")
             self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_command")
@@ -259,6 +268,81 @@ class WorxGpsRec:
         except Exception as e:
             logging.error(f"Unerwarteter Fehler beim Ausführen des Shutdown-Befehls: {e}", exc_info=True)
             self.mqtt_handler.publish_message(self.mqtt_handler.topic_status, "error_shutdown_unexpected")
+
+    # --- Remote Management Methoden ---
+    def _send_feedback(self, command, success, detail=""):
+        """Sendet Feedback über MQTT Logs-Topic zurück an die WebUI."""
+        status = "SUCCESS" if success else "FAILED"
+        message = f"[{command}] {status}" + (f": {detail}" if detail else "")
+        log_data = {
+            "level": "INFO" if success else "ERROR",
+            "message": message,
+            "timestamp": datetime.now().isoformat(),
+            "source": "pi_gps_rec"
+        }
+        try:
+            self.mqtt_handler.publish_message("worx/logs", json.dumps(log_data))
+        except Exception as e:
+            logging.error(f"Feedback konnte nicht gesendet werden: {e}")
+
+    def _remote_git_pull(self):
+        """Führt git pull im Projektverzeichnis aus."""
+        try:
+            import os
+            project_dir = os.path.dirname(os.path.abspath(__file__))
+            result = subprocess.run(
+                ["git", "pull"], cwd=project_dir,
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                logging.info(f"Git Pull erfolgreich: {output}")
+                self._send_feedback("GIT_PULL", True, output[:100])
+            else:
+                error = result.stderr.strip()
+                logging.error(f"Git Pull fehlgeschlagen: {error}")
+                self._send_feedback("GIT_PULL", False, error[:100])
+        except Exception as e:
+            logging.error(f"Git Pull Fehler: {e}")
+            self._send_feedback("GIT_PULL", False, str(e)[:100])
+
+    def _remote_restart_service(self):
+        """Startet den worx-gps-rec Service neu."""
+        try:
+            self._send_feedback("RESTART_SERVICE", True, "Service wird neu gestartet...")
+            time.sleep(1)  # Kurz warten damit die Nachricht gesendet wird
+            result = subprocess.run(
+                ["sudo", "systemctl", "restart", "worx-gps-rec"],
+                capture_output=True, text=True, timeout=10
+            )
+            # Nach dem Restart kommt kein Feedback mehr, da der Prozess beendet wird
+        except Exception as e:
+            logging.error(f"Service Restart Fehler: {e}")
+            self._send_feedback("RESTART_SERVICE", False, str(e)[:100])
+
+    def _remote_reboot(self):
+        """Startet den Raspberry Pi neu."""
+        try:
+            self._send_feedback("REBOOT", True, "Pi wird neu gestartet...")
+            time.sleep(1)
+            subprocess.run(["sudo", "reboot"], capture_output=True, text=True, timeout=10)
+        except Exception as e:
+            logging.error(f"Reboot Fehler: {e}")
+            self._send_feedback("REBOOT", False, str(e)[:100])
+
+    def _remote_wipe_buffer(self):
+        """Löscht den GPS-Datenpuffer."""
+        try:
+            if self.data_recorder:
+                self.data_recorder.clear_buffer()
+                buffer_size = len(self.data_recorder.buffer) if hasattr(self.data_recorder, 'buffer') else 0
+                logging.info("GPS-Buffer wurde geleert")
+                self._send_feedback("WIPE_BUFFER", True, f"Buffer geleert (jetzt: {buffer_size} Einträge)")
+            else:
+                self._send_feedback("WIPE_BUFFER", False, "DataRecorder nicht verfügbar")
+        except Exception as e:
+            logging.error(f"Buffer Wipe Fehler: {e}")
+            self._send_feedback("WIPE_BUFFER", False, str(e)[:100])
 
     # --- NEUE HILFSFUNKTION zum Lesen der Temperatur ---
     def _get_cpu_temperature(self):

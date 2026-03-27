@@ -1101,6 +1101,35 @@ def api_database_export_all():
         headers={'Content-Disposition': 'attachment; filename=worx_gps_export_all.json'}
     )
 
+# --- Remote Pi Management API ---
+PI_COMMANDS = {
+    'git_pull': 'GIT_PULL',
+    'restart_service': 'RESTART_SERVICE',
+    'reboot': 'REBOOT',
+    'wipe_buffer': 'WIPE_BUFFER',
+}
+
+@app.route('/api/pi/command', methods=['POST'])
+def api_pi_command():
+    """Sendet einen Remote-Befehl an den Pi über MQTT."""
+    data = request.get_json()
+    command = data.get('command', '') if data else ''
+    
+    if command not in PI_COMMANDS:
+        return jsonify({'error': f'Unbekannter Befehl: {command}', 'valid_commands': list(PI_COMMANDS.keys())}), 400
+    
+    mqtt_command = PI_COMMANDS[command]
+    
+    if mqtt_service and mqtt_service.is_connected():
+        success = mqtt_service.publish_command(mqtt_command)
+        if success:
+            logger.info(f"[Remote] Befehl '{mqtt_command}' an Pi gesendet")
+            return jsonify({'status': 'sent', 'command': mqtt_command})
+        else:
+            return jsonify({'error': 'MQTT publish fehlgeschlagen'}), 500
+    else:
+        return jsonify({'error': 'MQTT nicht verbunden'}), 503
+
 # --- Simulator API ---
 simulator_instance = None
 
@@ -1164,20 +1193,33 @@ if __name__ == '__main__':
 
         mqtt_service.set_gps_update_callback(lambda payload: data_service.handle_gps_data(payload))
         
-        # Log-Callback für Pi-Logs
+        # Log-Callback für Pi-Logs + Live-Feedback an Browser
         def handle_pi_logs(payload):
             try:
-                # Erwarte JSON: {"level": "INFO", "message": "...", "timestamp": "..."}
                 import json
                 log_data = json.loads(payload)
+                level = log_data.get("level", "INFO")
+                message = log_data.get("message", "")
+                
                 log_collector.add_log(
-                    level=log_data.get("level", "INFO"),
-                    message=log_data.get("message", ""),
+                    level=level,
+                    message=message,
                     source="pi_gps_rec",
                     timestamp=log_data.get("timestamp")
                 )
+                
+                # Live-Feedback: Erkenne Kommando-Ergebnisse und sende an Browser
+                msg_upper = message.upper()
+                if "SUCCESS" in msg_upper or "FAILED" in msg_upper or "ERROR" in msg_upper:
+                    feedback_type = "success" if "SUCCESS" in msg_upper else "error"
+                    socketio.emit('pi_feedback', {
+                        'type': feedback_type,
+                        'message': message,
+                        'level': level
+                    })
+                    logger.info(f"[Feedback] Pi-Rückmeldung an UI: [{feedback_type}] {message}")
+                    
             except json.JSONDecodeError:
-                # Fallback: plain text als INFO-Log
                 log_collector.add_log("INFO", payload, "pi_gps_rec")
         
         mqtt_service.set_logs_update_callback(handle_pi_logs)

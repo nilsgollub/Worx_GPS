@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Settings, Save, Trash2, AlertTriangle } from 'lucide-react';
+import { Settings, Save, Trash2, AlertTriangle, GitBranch, RotateCcw, Power, Eraser, Loader2 } from 'lucide-react';
 
-export default function Config() {
+export default function Config({ addToast }) {
   const [config, setConfig] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [includeGeofences, setIncludeGeofences] = useState(false);
+  const [commandLoading, setCommandLoading] = useState({});
 
   useEffect(() => {
     axios.get('/api/config').then(res => {
       const cfg = res.data.config || {};
-      // Convert booleans to 'on'/'off' for React checkbox state consistency
       const mappedCfg = { ...cfg };
       ['outlier_detection', 'dead_reckoning', 'rec_test_mode', 'heatmap_generate_png', 'debug_logging'].forEach(key => {
         if (typeof mappedCfg[key] === 'boolean') {
@@ -42,9 +42,9 @@ export default function Config() {
 
     try {
       const res = await axios.post('/config/save', formData);
-      alert(res.data.message);
+      if (addToast) addToast('success', res.data.message || 'Einstellungen gespeichert');
     } catch(err) {
-      alert('Fehler beim Speichern');
+      if (addToast) addToast('error', 'Fehler beim Speichern');
     } finally {
       setSaving(false);
     }
@@ -52,33 +52,93 @@ export default function Config() {
 
   const handleDatabaseReset = async () => {
     const geofenceText = includeGeofences ? ' und alle Geofences' : '';
-    const warningText = `⚠️ Wirklich alle Mähsessions${geofenceText} löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden. Alle Heatmaps werden ebenfalls gelöscht.`;
+    const warningText = `⚠️ Wirklich alle Mähsessions${geofenceText} löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`;
     
-    if (!confirm(warningText)) {
-      return;
-    }
+    if (!confirm(warningText)) return;
 
     setResetting(true);
     try {
       const res = await axios.post('/api/database/reset', { include_geofences: includeGeofences });
-      alert(res.data.message);
-      // Seite neu laden um Statistiken zu aktualisieren
+      if (addToast) addToast('success', res.data.message);
       window.location.reload();
     } catch(err) {
-      const message = err.response?.data?.message || 'Fehler beim Zurücksetzen der Datenbank';
-      alert(message);
+      const message = err.response?.data?.message || 'Fehler beim Zurücksetzen';
+      if (addToast) addToast('error', message);
     } finally {
       setResetting(false);
     }
   }
 
+  const sendPiCommand = async (command, label) => {
+    if (command === 'reboot' && !confirm('⚠️ Pi wirklich neu starten?')) return;
+    if (command === 'restart_service' && !confirm('Service wirklich neu starten?')) return;
+
+    setCommandLoading(prev => ({ ...prev, [command]: true }));
+    try {
+      const res = await axios.post('/api/pi/command', { command });
+      if (addToast) addToast('success', `${label}: Befehl gesendet`);
+    } catch(err) {
+      const msg = err.response?.data?.error || 'Fehler';
+      if (addToast) addToast('error', `${label}: ${msg}`);
+    } finally {
+      setTimeout(() => {
+        setCommandLoading(prev => ({ ...prev, [command]: false }));
+      }, 2000);
+    }
+  }
+
   if (loading) return <div>Lade Einstellungen...</div>;
+
+  const piButtons = [
+    { command: 'git_pull', label: 'Git Pull', icon: <GitBranch size={16}/>, color: '#58a6ff', bg: 'rgba(88,166,255,0.15)', border: 'rgba(88,166,255,0.3)' },
+    { command: 'restart_service', label: 'Service Restart', icon: <RotateCcw size={16}/>, color: '#d2a8ff', bg: 'rgba(210,168,255,0.15)', border: 'rgba(210,168,255,0.3)' },
+    { command: 'wipe_buffer', label: 'Buffer Wipe', icon: <Eraser size={16}/>, color: '#f0883e', bg: 'rgba(240,136,62,0.15)', border: 'rgba(240,136,62,0.3)' },
+    { command: 'reboot', label: 'Pi Reboot', icon: <Power size={16}/>, color: '#ff7b72', bg: 'rgba(255,123,114,0.15)', border: 'rgba(255,123,114,0.3)' },
+  ];
 
   return (
     <div className="glass-card" style={{maxWidth: 800}}>
       <h3 style={{marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8}}>
-        <Settings size={22} color="#c9d1d9"/> Systemkonfiguration (v2.3.0)
+        <Settings size={22} color="#c9d1d9"/> Systemkonfiguration
       </h3>
+
+      {/* === Remote Pi Management === */}
+      <div className="glass-panel" style={{padding: 20, marginBottom: 24}}>
+        <h4 style={{marginBottom: 16, color: '#3fb950', display: 'flex', alignItems: 'center', gap: 8}}>
+          <Power size={18}/> Remote Pi Management
+        </h4>
+        <p style={{color: '#8b949e', fontSize: '0.85rem', marginBottom: 16}}>
+          Befehle werden über MQTT an den Pi Zero gesendet. Rückmeldungen erscheinen als Benachrichtigungen.
+        </p>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10}}>
+          {piButtons.map(btn => (
+            <button
+              key={btn.command}
+              onClick={() => sendPiCommand(btn.command, btn.label)}
+              disabled={commandLoading[btn.command]}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '12px 16px',
+                background: btn.bg,
+                border: `1px solid ${btn.border}`,
+                borderRadius: 10,
+                color: btn.color,
+                fontWeight: 600,
+                fontSize: '0.85rem',
+                cursor: commandLoading[btn.command] ? 'wait' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: commandLoading[btn.command] ? 0.6 : 1,
+                fontFamily: 'var(--font-family)',
+              }}
+              onMouseEnter={e => { if (!commandLoading[btn.command]) { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = `0 4px 16px ${btn.bg}`; }}}
+              onMouseLeave={e => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = 'none'; }}
+            >
+              {commandLoading[btn.command] ? <Loader2 size={16} className="spinner"/> : btn.icon}
+              {btn.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <form onSubmit={handleSave} className="flex-column gap-4">
         
@@ -156,7 +216,7 @@ export default function Config() {
           </div>
         </div>
 
-        {/* --- NEUE ZEILE FÜR GPS FILTERUNG & MODUL --- */}
+        {/* --- GPS FILTERUNG & MODUL --- */}
         <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:24}}>
           <div className="glass-panel" style={{padding: 20}}>
             <h4 style={{marginBottom: 16, color:'#d2a8ff'}}>GPS Filterung (Post-Processing)</h4>
@@ -253,7 +313,7 @@ export default function Config() {
                 <option value="glonass">GPS + GLONASS (Mehr Satelliten)</option>
               </select>
               <small className="text-muted" style={{fontSize: '0.75rem', marginTop: 4}}>
-                Hinweis: NEO-7M kann nicht beides gleichzeitig.
+                Hinweis: NEO-7M kann nicht beides gleichzeitig. Wird beim Speichern an den Pi übertragen.
               </small>
             </div>
 

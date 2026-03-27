@@ -1,0 +1,52 @@
+Ausgangssituation:
+Ich habe einen Rasenmäherroboter im folgenden "Worx" genannt. Dieser wird mit einem Raspberry Pi Zero W (nachfolgend "Pi" genannt) und einem GPS-Modul U-BLOX NEO-7M ausgestattet. Ein Mähvorgang dauert etwa 2h.
+Außerdem betreibe ich einen Homeassistent der via haoss auf einem Raspberry Pi installiert ist. Dort läuft als Integration ein mqtt Server.
+Die Entwicklung findet in Google Antigravity statt.
+
+Problemscenarien:
+	- Der Mäher verliert häufig die Verbindung zum WiFi
+	- Es gibt Stellen mit schlechter GPS abdeckung
+	- Wenn der Roboter steckenbleibt (Problemmeldung sollte erfolgen), schaltet er sich nach einer Zeit ab-> Stromzufuhr Raspi wird gekappt -> was passiert wenn an dieser Stelle kein WIFI vorhanden ist? Wird diese Problemstelle beim nächten start mitübermittelt?
+	
+
+
+Ziel: 
+
+Endziel: 
+Ich will Heatmaps die zeigen wo der Worx bei letzten Mähvorgängen gemäht hat und eine Heatmap die Problemzonen in meinem Garten zeigt, wo der Worx Probleme hat. Diese Heatmaps sollen jeweils überlagert mit einer GoogleMaps Karte im HomeAssistant angezeigt werden
+
+Erfassungsskript:
+	- Der Pi erhält über MQTT vom Homeassistant den Befehl mit der Aufzeichnung der GPS Punkte zu starten. 
+	- Punkte die nicht auf meinem Grundstück liegen sollen verworfen werden, dies soll über einen Flag deaktivierbar sein
+	- Das Speicherintervall für die GPS Daten soll als Variable einfach geändert werden können. Startwert 2s
+	- Wenn vom Homeassistant die Nachricht kommt, dass das mähen abgeschlossen ist werden die gespeicherten Daten per MQTT verschickt (Topic worx/gps)
+	- Nach dem erfolgreichen verschicken der Daten soll der Speicher wieder geleert werden
+	- Da die WIFI verbindung immer wieder unterbrochen werden kann muss dieser Fall abgedeckt sein (reconnect)
+	- Falls vom Homeassistant die Nachricht kommt das der Worx ein Problem hat, oder sich aus den GPS Daten ergibt, dass der Worx lange an der gleichen Stelle steht, soll die aktuelle Position ermittelt werden und sobald eine WIFI verbindung besteht über mqtt verschickt werden 
+	- Zum testen gibt es einen Fake GPS Modus, für den Fall dass kein GPS Empfang möglich ist werden zufällige Werte innerhalb des Grundstückes generiert und genauso verarbeitet, wie die real erfassten Werte
+	- Es gibt einen Testmodus der einen lokalen mqtt Broker nutzt und die GPS Daten nicht auf das Grundstück begrenzt
+	- Das Skript muss zum testen sowohl auf Windows als auch auf dem Raspberry Pi laufen
+	
+
+Skript zur Auswertung:
+	- Die GPS Daten eines Mähvorganges sollen empfangen werden und  abgespeichert werden. daraus sollen insgesamt 3 Heatmaps erstellt und mit einer GoogleMaps Karte überlagert werden. Diese sollen als HTML gespeichert werden und die Möglichkeit bietet zwischen dem openstreetmap und dem Google Maps layer zu wechseln. Die erste heatmap soll den letzten mähvorgang anzeigen, die zweite die letzten 10 Mähvorgange, die dritte die letzten 10 Mähvorgänge kumuliert 
+	- Falls möglich soll in der heatmap des letzten Mähvorganges der Pfad als Pfeile zwischen den GPS Punkten markiert werden
+	- Die GPS Daten die bei einem Problem des Worx geschickt werden, sollen in einer datei gesammelt werden und dann kumuliert zu einer extra Heatmap verarbeitet werden. Sodass ich eine Karte der "Problemzonen" in meinem Garten bekomme. Einträge die älter als 2 Monate sind sollten gelöscht werden
+	- Die HTML Daten müssen für Homassistant noch in eine .png datei gespeichtert werden
+	- Die Karten sollen mir als Kachel auf meinem Homeassistant dashboard gezeigt werden. 
+	- Der Kartenausschnitt sollte in etwa auf mein Grundstück begrenzt sein
+	- Zum Testen will ich das Skript zunächst auf einem PC laufen lassen und dieses später auf einen extra Raspberry Pi laufen lassen
+	- Alle Passwörter und API Keys sollen in einer .env Datei gespeichert werden die dann lokal bleibt
+	
+
+ schon mal ein paar Informationen vorab:
+
+MQTT:
+Hostname des Brokers: "192.168.1.117" 
+Port: 1883 
+Topics: worx/control, worx/gps, worx/status
+
+Grundstücksgrenzen:
+Für die Grundstücksfläche kann vereinfachend ein Rechteck mit den Eckpunkten mit folgenden Koordinaten angenommen werden: 46.81210953044129, 7.132857102160196;46.81208383084379, 7.133170920611345;46.811839684054874, 7.1328396678017985;46.811825916345796, 7.133157509566425
+
+Aktueller Stand: 
