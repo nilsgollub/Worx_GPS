@@ -1147,27 +1147,6 @@ def api_simulator_toggle():
         return jsonify({"running": True})
 
 
-@app.route('/')
-def index():
-    """Explizite Route für den Root-Pfad."""
-    logger.debug(f"DEBUG: Index / aufgerufen. PATH_INFO: {request.environ.get('PATH_INFO')}")
-    return serve_react("")
-
-@app.route('/', defaults={'path': ''})
-@app.route('/<path:path>')
-def serve_react(path):
-    """Catch-all für das React-Frontend (SPA). Leitet alles zur index.html weiter."""
-    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
-    
-    # Sicherstellen, dass index.html existiert und Log-Check
-    index_path = os.path.join(app.static_folder, 'index.html')
-    if index_path and os.path.exists(index_path):
-        return send_from_directory(app.static_folder, 'index.html')
-    else:
-        logger.error(f"FATAL: index.html nicht gefunden in {app.static_folder}. Pfad war: {path}")
-        return f"Frontend Dateien fehlen (index.html) in {app.static_folder}. Bitte Add-on neu bauen.", 404
-
 # --- Start ---
 
 if __name__ == '__main__':
