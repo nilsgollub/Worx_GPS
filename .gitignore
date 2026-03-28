@@ -43,3 +43,6 @@ directcom/obj/
 # OS
 Thumbs.db
 .DS_Store
+mqtt_handler - Kopie.py
+.gitignore
+Worx_GPS_Rec - Kopie.py

@@ -5,8 +5,8 @@
 ---
 
 ## 🐛 Bekannte Fehler (Known Issues)
-
-*(Aktuell keine kritischen Fehler bekannt)*
+die verbindung zur webui über externe geräte im netwerk ist nicht zuverlässig 
+mqtt verbindung des pi zero funtioniert momentan nicht
 
 ---
 
